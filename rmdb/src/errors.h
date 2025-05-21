@@ -28,7 +28,7 @@ class RMDBError : public std::exception {
     std::string _msg;
 };
 
-class InternalError : public RMDBError {
+class InternalError : public RMDBError { // 表示programming tool本身的问题，而非自己代码的问题
    public:
     InternalError(const std::string &msg) : RMDBError(msg) {}
 };
