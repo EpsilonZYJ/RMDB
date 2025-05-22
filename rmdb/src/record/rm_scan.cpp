@@ -19,18 +19,18 @@ RmScan::RmScan(const RmFileHandle *file_handle) : file_handle_(file_handle) {
     // Todo:
     // 初始化file_handle和rid（指向第一个存放了记录的位置）
     if(file_handle_->file_hdr_.num_pages == 1){
-        rid_ = {1, -1};
+        rid_={1,-1};
         return;
     }//只有一个文件头
     int i = 1;
-    RmPageHandle page_handle = file_handle_->fetch_page_handle(i);
+    RmPageHandle page_handle = file_handle_->fetch_page_handle(1);
     while (i < file_handle_->file_hdr_.num_pages - 1&&page_handle.page_hdr->num_records == 0)
     {
         file_handle_->buffer_pool_manager_->unpin_page(page_handle.page->get_page_id(), false);
         page_handle = file_handle_->fetch_page_handle(++i);
     }//找到第一个不为空的页面
     int first_record = Bitmap::first_bit(1, page_handle.bitmap, file_handle_->file_hdr_.num_records_per_page);
-    if(first_record == file_handle_->file_hdr_.num_records_per_page){
+    if(file_handle_->file_hdr_.num_records_per_page==first_record){
         rid_ = {i, -1};
     }//无有效记录
     else rid_ = {i, first_record};
@@ -50,17 +50,16 @@ void RmScan::next() {
     int next_slot = Bitmap::next_bit(1, page_handle.bitmap, rid_.slot_no + 1, file_handle_->file_hdr_.num_records_per_page);//下一个空闲槽
     if (next_slot < file_handle_->file_hdr_.num_records_per_page) {
         rid_.slot_no = next_slot;
-        buffer_pool_manager_->unpin_page(page_handle.page->get_page_id(), false);
+        file_handle_->buffer_pool_manager_->unpin_page(page_handle.page->get_page_id(), false);
         return;
     }//找到了有效记录
-    buffer_pool_manager_->unpin_page(page_handle.page->get_page_id(), false);
+    file_handle_->buffer_pool_manager_->unpin_page(page_handle.page->get_page_id(), false);
     rid_.page_no++;
     rid_.slot_no = -1;//到下一页
     while (rid_.page_no < file_handle_->file_hdr_.num_pages) {
         page_handle = file_handle_->fetch_page_handle(rid_.page_no);
-        next_slot = Bitmap::first_bit(1, page_handle.bitmap, 
-                                      file_handle_->file_hdr_.num_records_per_page);    
-        buffer_pool_manager_->unpin_page(page_handle.page->get_page_id(), false);
+        next_slot = Bitmap::first_bit(1, page_handle.bitmap,file_handle_->file_hdr_.num_records_per_page);    
+        file_handle_->buffer_pool_manager_->unpin_page(page_handle.page->get_page_id(), false);
         if (next_slot < file_handle_->file_hdr_.num_records_per_page) {
             rid_.slot_no = next_slot;
             return;
