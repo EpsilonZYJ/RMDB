@@ -55,7 +55,7 @@ struct Value {
 
     void init_raw(int len) {
         assert(raw == nullptr);
-        raw = std::make_shared<RmRecord>(len);
+        raw = std::make_shared<RmRecord>(len); // 创建一个RmRecord对象
         if (type == TYPE_INT) {
             assert(len == sizeof(int));
             *(int *)(raw->data) = int_val;

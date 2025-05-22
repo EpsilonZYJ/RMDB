@@ -116,7 +116,8 @@ void DiskManager::create_file(const std::string &path) {
     /* 第二个参数表示原子性地创建文件
         第三个参数表示所有者可读写，其他用户只读*/
     int fd = open(path.c_str(), O_CREAT | O_EXCL, 0644);
-    fchmod(fd, 0644);
+    fchmod(fd, 0644); //!因为会受到umask影响 //TODO 也许可以有更合理的处理方法
+
     if(fd == -1) 
         throw InternalError("DiskManager::create_file: Open Error");
 
