@@ -22,18 +22,17 @@ RmScan::RmScan(const RmFileHandle *file_handle) : file_handle_(file_handle) {
         rid_={1,-1};
         return;
     }//只有一个文件头
-    int i = 1;
+    int page_ptr = 1;
     RmPageHandle page_handle = file_handle_->fetch_page_handle(1);
-    while (i < file_handle_->file_hdr_.num_pages - 1&&page_handle.page_hdr->num_records == 0)
-    {
+    while (page_ptr < file_handle_->file_hdr_.num_pages - 1&&page_handle.page_hdr->num_records == 0){
         file_handle_->buffer_pool_manager_->unpin_page(page_handle.page->get_page_id(), false);
-        page_handle = file_handle_->fetch_page_handle(++i);
+        page_handle = file_handle_->fetch_page_handle(++page_ptr);
     }//找到第一个不为空的页面
     int first_record = Bitmap::first_bit(1, page_handle.bitmap, file_handle_->file_hdr_.num_records_per_page);
     if(file_handle_->file_hdr_.num_records_per_page==first_record){
-        rid_ = {i, -1};
+        rid_.page_no = page_ptr;
     }//无有效记录
-    else rid_ = {i, first_record};
+    else rid_ = {page_ptr, first_record};
     file_handle_->buffer_pool_manager_->unpin_page(page_handle.page->get_page_id(), false);
 }
 
@@ -43,30 +42,24 @@ RmScan::RmScan(const RmFileHandle *file_handle) : file_handle_(file_handle) {
 void RmScan::next() {
     // Todo:
     // 找到文件中下一个存放了记录的非空闲位置，用rid_来指向这个位置
-    if (rid_.page_no >= file_handle_->file_hdr_.num_pages) {
-        return;//到文件末尾了
-    }
+    int Max= file_handle_->file_hdr_.num_records_per_page,slot_no;
     RmPageHandle page_handle = file_handle_->fetch_page_handle(rid_.page_no);
-    int next_slot = Bitmap::next_bit(1, page_handle.bitmap, rid_.slot_no + 1, file_handle_->file_hdr_.num_records_per_page);//下一个空闲槽
-    if (next_slot < file_handle_->file_hdr_.num_records_per_page) {
-        rid_.slot_no = next_slot;
+    while(1){
+        slot_no = Bitmap::next_bit(1, page_handle.bitmap, Max, rid_.slot_no);
+        if(slot_no < Max){
+            rid_.slot_no=slot_no;
+            file_handle_->buffer_pool_manager_->unpin_page(page_handle.page->get_page_id(), false);
+            break;
+        }//找到了非空闲位置
         file_handle_->buffer_pool_manager_->unpin_page(page_handle.page->get_page_id(), false);
-        return;
-    }//找到了有效记录
-    file_handle_->buffer_pool_manager_->unpin_page(page_handle.page->get_page_id(), false);
-    rid_.page_no++;
-    rid_.slot_no = -1;//到下一页
-    while (rid_.page_no < file_handle_->file_hdr_.num_pages) {
-        page_handle = file_handle_->fetch_page_handle(rid_.page_no);
-        next_slot = Bitmap::first_bit(1, page_handle.bitmap,file_handle_->file_hdr_.num_records_per_page);    
-        file_handle_->buffer_pool_manager_->unpin_page(page_handle.page->get_page_id(), false);
-        if (next_slot < file_handle_->file_hdr_.num_records_per_page) {
-            rid_.slot_no = next_slot;
-            return;
-        }  
         rid_.page_no++;
-    }//重复查找
-    rid_.page_no = file_handle_->file_hdr_.num_pages;
+        if(is_end()){
+            rid_.slot_no=-1;
+            break;
+        }//到文件末尾了
+        page_handle = file_handle_->fetch_page_handle(rid_.page_no);
+        rid_.slot_no = -1;//继续在下一页寻找
+    }
 }
 
 /**
@@ -74,7 +67,7 @@ void RmScan::next() {
  */
 bool RmScan::is_end() const {
     // Todo: 修改返回值
-    return rid_.page_no >= file_handle_->file_hdr_.num_pages || (rid_.slot_no == -1 && rid_.page_no > 0);
+    return rid_.page_no >= file_handle_->file_hdr_.num_pages;
 }
 
 /**
