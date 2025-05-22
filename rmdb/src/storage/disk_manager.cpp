@@ -9,7 +9,7 @@ MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 See the Mulan PSL v2 for more details. */
 
 #include "storage/disk_manager.h"
-
+#include <cerrno>
 #include <assert.h>    // for assert
 #include <string.h>    // for memset
 #include <sys/stat.h>  // for stat
@@ -114,8 +114,9 @@ void DiskManager::create_file(const std::string &path) {
     if(is_file(path)) throw FileExistsError(path);
 
     /* 第二个参数表示原子性地创建文件
-        第三个参数表示owner可读写，其他人只能读*/
-    int fd = open(path.c_str(), O_CREAT | O_EXCL, 644);
+        第三个参数表示所有者可读写，其他用户只读*/
+    int fd = open(path.c_str(), O_CREAT | O_EXCL, 0644);
+    fchmod(fd, 0644);
     if(fd == -1) 
         throw InternalError("DiskManager::create_file: Open Error");
 
@@ -156,7 +157,7 @@ int DiskManager::open_file(const std::string &path) {
     if (path2fd_.count(path)) throw FileNotClosedError(path);
 
     int fd = open(path.c_str(), O_RDWR);
-    if(fd == -1) throw InternalError("DiskManager::open_file: Open Error");
+    if(fd == -1)  throw InternalError("DiskManager::open_file: Open Error");
 
     path2fd_[path] = fd;
     fd2path_[fd] = path;
