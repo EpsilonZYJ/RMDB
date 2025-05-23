@@ -70,6 +70,38 @@ struct Value {
             memcpy(raw->data, str_val.c_str(), str_val.size());
         }
     }
+
+    bool operator==(const struct Value& rhs) const {
+        if (type != rhs.type) return false;
+
+        switch(type) {
+            case TYPE_INT:    return int_val == rhs.int_val;
+            case TYPE_FLOAT:  return float_val == rhs.float_val;
+            case TYPE_STRING: return str_val == rhs.str_val;
+            default:          return false;
+        }
+    }
+
+    bool operator!=(const struct Value& rhs) const {
+        return !(*this == rhs);
+    }
+
+    bool operator<(const Value &rhs) const {
+        if (type != rhs.type) 
+            throw IncompatibleTypeError(coltype2str(type), coltype2str(rhs.type));
+        switch (type) {
+            case TYPE_INT:    return int_val < rhs.int_val;
+            case TYPE_FLOAT:  return float_val < rhs.float_val;
+            case TYPE_STRING: return str_val.compare(rhs.str_val) < 0;
+            default: throw InternalError("Unexpected value type");
+        }
+    }
+
+    bool operator>(const Value &rhs) const { return rhs < *this; }
+
+    bool operator<=(const Value &rhs) const { return !(rhs < *this); }
+
+    bool operator>=(const Value &rhs) const { return !(*this < rhs); }
 };
 
 enum CompOp { OP_EQ, OP_NE, OP_LT, OP_GT, OP_LE, OP_GE };
@@ -80,6 +112,18 @@ struct Condition {
     bool is_rhs_val;  // true if right-hand side is a value (not a column)
     TabCol rhs_col;   // right-hand side column
     Value rhs_val;    // right-hand side value
+
+    bool check(const Value& lhs, const Value& rhs) const {
+        switch (op) {
+            case OP_EQ: return lhs == rhs;
+            case OP_NE: return lhs != rhs;
+            case OP_LT: return lhs < rhs;
+            case OP_GT: return lhs > rhs;
+            case OP_LE: return lhs <= rhs;
+            case OP_GE: return lhs >= rhs;
+            default: throw InternalError("Unexpected operator");
+        }
+    }
 };
 
 struct SetClause {

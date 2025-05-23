@@ -17,13 +17,13 @@ See the Mulan PSL v2 for more details. */
 
 class UpdateExecutor : public AbstractExecutor {
    private:
-    TabMeta tab_;
-    std::vector<Condition> conds_;
-    RmFileHandle *fh_;
-    std::vector<Rid> rids_;
-    std::string tab_name_;
-    std::vector<SetClause> set_clauses_;
-    SmManager *sm_manager_;
+    TabMeta tab_;                       // 表的元和数据
+    std::vector<Condition> conds_;      // update的条件(?)
+    RmFileHandle *fh_;                  // 表的数据文件句柄
+    std::vector<Rid> rids_;             // 各个记录的标识，表示update的位置(?)
+    std::string tab_name_;              // 表名称
+    std::vector<SetClause> set_clauses_;// 更新语句
+    SmManager *sm_manager_;             // 系统管理器，负责元数据管理和DDL语句的执行
 
    public:
     UpdateExecutor(SmManager *sm_manager, const std::string &tab_name, std::vector<SetClause> set_clauses,
@@ -37,8 +37,17 @@ class UpdateExecutor : public AbstractExecutor {
         rids_ = rids;
         context_ = context;
     }
+
+    // 由于是update，Next()只调用一次（同insert，delete）
     std::unique_ptr<RmRecord> Next() override {
-        
+        // 仿照executor_insert的示例
+        // Make record buffer
+        for(Rid rid: rids_) {
+            bool invalid = true;
+            for(Condition &cond: conds_) {
+                if(cond.check())
+            }
+        } 
         return nullptr;
     }
 
