@@ -41,13 +41,7 @@ class UpdateExecutor : public AbstractExecutor {
     // 由于是update，Next()只调用一次（同insert，delete）
     std::unique_ptr<RmRecord> Next() override {
         // 仿照executor_insert的示例
-        // Make record buffer
-        for(Rid rid: rids_) {
-            bool invalid = true;
-            for(Condition &cond: conds_) {
-                if(cond.check())
-            }
-        } 
+        
         return nullptr;
     }
 

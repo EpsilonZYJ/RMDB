@@ -85,7 +85,23 @@ void SmManager::drop_db(const std::string& db_name) {
  * @param {string&} db_name 数据库名称，与文件夹同名
  */
 void SmManager::open_db(const std::string& db_name) {
-    
+    if (!is_dir(db_name)) 
+        throw DatabaseNotFoundError(db_name);
+    if (chdir(db_name.c_str()) < 0)   // 改变当前线程的工作路进到db_name
+        throw UnixError();
+    std::ifstream ifs(DB_META_NAME); // 打开数据库元数据文件
+    ifs >> db_; // 读取数据库元数据
+
+    // 进行其他打开数据库的操作，例如加载表信息、初始化缓存等
+    // 创建fhs,ihs
+     for (auto &entry: db_.tabs_) { // 遍历tabs
+        const std::string &tab_name = entry.first;
+        fhs_.emplace(tab_name, rm_manager_->open_file(tab_name));
+        for(auto &ix: entry.second.indexes) { // TabMeta中的IndexMeta
+            ihs_.emplace(ix_manager_->get_index_name(tab_name, ix.cols), 
+                        ix_manager_->open_index(tab_name, ix.cols));
+        }
+     }
 }
 
 /**
@@ -101,7 +117,21 @@ void SmManager::flush_meta() {
  * @description: 关闭数据库并把数据落盘
  */
 void SmManager::close_db() {
-    
+    flush_meta();
+
+    for (auto &entry : fhs_) {
+        auto &fh = entry.second;
+        rm_manager_->close_file(fh.get()); // 记录文件落盘
+    }
+    for(auto &entry : ihs_) {
+        auto &ih = entry.second;
+        ix_manager_->close_index(ih.get()); // 索引文件落盘
+    }
+
+    fhs_.clear();
+    ihs_.clear();
+
+    if(chdir("..") < 0) throw UnixError();
 }
 
 /**
@@ -184,11 +214,27 @@ void SmManager::create_table(const std::string& tab_name, const std::vector<ColD
 
 /**
  * @description: 删除表
- * @param {string&} tab_name 表的名称
  * @param {Context*} context
  */
 void SmManager::drop_table(const std::string& tab_name, Context* context) {
+    if(!db_.is_table(tab_name)) 
+        throw TableNotFoundError(tab_name);
+
+    // 删除索引
+    auto indexes = db_.get_table(tab_name).indexes;
+    for(auto &index: indexes) 
+        drop_index(tab_name, index.cols, context);
     
+    // 删除表
+    auto &fh = fhs_[tab_name];
+    // fh->clear_pages(); // 似乎不需要
+    rm_manager_->close_file(fh.get());   // 关闭文件
+    rm_manager_->destroy_file(tab_name); // 删除文件
+
+    // 元数据清理
+    db_.tabs_.erase(tab_name);
+    fhs_.erase(tab_name);
+    flush_meta();
 }
 
 /**
