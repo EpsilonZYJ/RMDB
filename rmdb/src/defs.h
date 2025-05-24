@@ -28,6 +28,7 @@ std::istream &operator>>(std::istream &is, T &enum_val) {
     return is;
 }
 
+/* 对每个记录的唯一标识 */
 struct Rid {
     int page_no;
     int slot_no;

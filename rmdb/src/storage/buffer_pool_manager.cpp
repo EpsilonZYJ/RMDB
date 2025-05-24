@@ -239,11 +239,16 @@ void BufferPoolManager::flush_all_pages(int fd) {
     std::lock_guard lock(latch_);
     
     for(auto &it: page_table_) {
-        // Page* page = &pages_[it.second];
-        // if(page->id_.fd == fd) flush_page(page->id_);
         Page *page = &pages_[it.second];
-        if (page->is_dirty_) {
-            disk_manager_->write_page(page->id_.fd, page->id_.page_no, page->data_, PAGE_SIZE);
+        // if(page->id_.fd == fd) flush_page(page->id_); //?为什么这个不行
+        if (it.first.fd == fd && page->is_dirty_) {
+            disk_manager_->
+                write_page(
+                    page->id_.fd, 
+                    page->id_.page_no, 
+                    page->data_, 
+                    PAGE_SIZE
+                );
             page->is_dirty_ = false;
         }
     }

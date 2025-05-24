@@ -44,7 +44,39 @@ class ProjectionExecutor : public AbstractExecutor {
     void nextTuple() override {}
 
     std::unique_ptr<RmRecord> Next() override {
+        std::unique_ptr<RmRecord> record = prev_->Next();
+//TODO refactor!
+        if (record)
+        {
+            // 创建一个向量来存储投影后的记录数据
+            char *data = new char[len_]; // 分配内存
+
+            // 遍历选定的列，并复制对应的数据
+            for (size_t i = 0; i < sel_idxs_.size(); ++i)
+            {
+                size_t sel_idx = sel_idxs_[i];
+                size_t offset = cols_[i].offset;
+                size_t origin_offset=prev_->cols()[sel_idx].offset;
+                char* dest=data+offset;
+                char* src=record->data + origin_offset;
+                size_t length=cols_[i].len;
+                std::memcpy(dest, src, length);
+            }
+
+            // 使用投影后的数据创建一个新的 RmRecord，并返回它
+            auto temp=std::make_unique<RmRecord>(len_, data);
+            return temp;
+        }
         return nullptr;
+    }
+
+    bool is_end() const override{
+        return prev_->is_end();
+    }
+
+    const std::vector<ColMeta> &cols() const override {
+    // 提供适当的实现，返回具体的 ColMeta 对象或者 std::vector<ColMeta>
+        return cols_;
     }
 
     Rid &rid() override { return _abstract_rid; }

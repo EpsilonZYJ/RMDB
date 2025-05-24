@@ -19,6 +19,8 @@ See the Mulan PSL v2 for more details. */
 // used for data_send
 static int const_offset = -1;
 
+/* 数据库查询执行上下文（Execution Context）封装，
+用于在数据库操作（如查询执行、事务处理）中传递和管理运行时所需的组件和状态 (from ds) */
 class Context {
 public:
     Context (LockManager *lock_mgr, LogManager *log_mgr, 

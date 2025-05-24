@@ -14,6 +14,7 @@ See the Mulan PSL v2 for more details. */
 #include "executor_abstract.h"
 #include "index/ix.h"
 #include "system/sm.h"
+#include "check_condition.h"
 
 class DeleteExecutor : public AbstractExecutor {
    private:
@@ -37,6 +38,25 @@ class DeleteExecutor : public AbstractExecutor {
     }
 
     std::unique_ptr<RmRecord> Next() override {
+        // 仿照executor_insert的示例
+        for(auto& rid: rids_ ) {
+            // 读取当前记录
+            RmRecord old_record = *fh_->get_record(rid, context_);
+            
+            // 检查条件是否满足，若不满足则跳过，不进行更新
+            // 这里的条件是指update语句中的where条件
+            bool satisfy = true;
+            for(auto& cond: conds_) 
+                if(!check_condition(old_record, tab_, cond)) {
+                    satisfy = false;
+                    break;
+                }
+            if (!satisfy) continue;
+
+            fh_->delete_record(rid, context_); // 更新数据文件中的记录
+
+            //TODO 增加索引更新
+        }
         return nullptr;
     }
 

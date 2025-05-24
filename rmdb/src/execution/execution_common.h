@@ -23,3 +23,5 @@ auto ReconstructTuple(const TabMeta *schema, const RmRecord &base_tuple, const T
 
 
 auto IsWriteWriteConflict(timestamp_t tuple_ts, Transaction *txn) -> bool;
+
+
