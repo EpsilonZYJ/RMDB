@@ -22,7 +22,7 @@ See the Mulan PSL v2 for more details. */
 
 class Query{
     public:
-    std::shared_ptr<ast::TreeNode> parse;
+    std::shared_ptr<ast::TreeNode> parse;//抽象语法树
     // TODO jointree
     // where条件
     std::vector<Condition> conds;

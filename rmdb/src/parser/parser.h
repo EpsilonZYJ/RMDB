@@ -13,3 +13,4 @@ See the Mulan PSL v2 for more details. */
 #include "ast_printer.h"
 #include "ast.h"
 #include "parser_defs.h"
+//将sql语句解析为抽象语法树（ast）
