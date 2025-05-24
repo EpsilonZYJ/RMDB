@@ -17,13 +17,17 @@ See the Mulan PSL v2 for more details. */
  */
 std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse)
 {
-    std::shared_ptr<Query> query = std::make_shared<Query>();
-    if (auto x = std::dynamic_pointer_cast<ast::SelectStmt>(parse))
+    std::shared_ptr<Query> query = std::make_shared<Query>();//初始化空query
+    if (auto x = std::dynamic_pointer_cast<ast::SelectStmt>(parse))//select语句
     {
         // 处理表名
         query->tables = std::move(x->tabs);
         /** TODO: 检查表是否存在 */
-
+        for (auto &tab_name : query->tables) {
+            if (!sm_manager_->db_.is_table(tab_name)) {
+                throw TableNotFoundError(tab_name);
+            }
+        }
         // 处理target list，再target list中添加上表名，例如 a.id
         for (auto &sv_sel_col : x->cols) {
             TabCol sel_col = {.tab_name = sv_sel_col->tab_name, .col_name = sv_sel_col->col_name};
@@ -37,7 +41,7 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse)
             for (auto &col : all_cols) {
                 TabCol sel_col = {.tab_name = col.tab_name, .col_name = col.name};
                 query->cols.push_back(sel_col);
-            }
+            }//slelect *
         } else {
             // infer table name from column name
             for (auto &sel_col : query->cols) {
@@ -49,7 +53,19 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse)
         check_clause(query->tables, query->conds);
     } else if (auto x = std::dynamic_pointer_cast<ast::UpdateStmt>(parse)) {
         /** TODO: */
-
+        //处理更新的set子句
+        for (auto &sv_set_clause : x->set_clauses) {
+            SetClause set_clause;
+            set_clause.lhs = sv_set_clause->col_name;
+            set_clause.rhs = convert_sv_value(sv_set_clause->val);
+            query->set_clauses.push_back(set_clause);
+        }
+        // 处理where条件
+        get_clause(x->conds, query->conds);
+        check_clause({x->tab_name}, query->conds);
+    } else if (auto x = std::dynamic_pointer_cast<ast::CreateStmt>(parse)) {
+        // 处理表名
+        query->tables = std::move(x->tabs);
     } else if (auto x = std::dynamic_pointer_cast<ast::DeleteStmt>(parse)) {
         //处理where条件
         get_clause(x->conds, query->conds);
@@ -75,17 +91,31 @@ TabCol Analyze::check_column(const std::vector<ColMeta> &all_cols, TabCol target
             if (col.name == target.col_name) {
                 if (!tab_name.empty()) {
                     throw AmbiguousColumnError(target.col_name);
-                }
+                }//列名歧义，已经找到了匹配的表，又出现了另一个，比如Stu.id和Course.id同时出现
                 tab_name = col.tab_name;
             }
         }
         if (tab_name.empty()) {
             throw ColumnNotFoundError(target.col_name);
-        }
+        }//没有找到匹配的列名
         target.tab_name = tab_name;
     } else {
         /** TODO: Make sure target column exists */
-        
+        bool found = false;
+        for (auto &col : all_cols) {
+            if (col.tab_name == target.tab_name && col.name == target.col_name) {
+                found = true;
+                break;
+            }
+        }        
+        if (!found) {
+            //列在指定的表中不存在，判断是表不存在还是列不存在
+            if (sm_manager_->db_.is_table(target.tab_name)) {
+                throw ColumnNotFoundError(target.col_name);
+            } else {
+                throw TableNotFoundError(target.tab_name);
+            }
+        }
     }
     return target;
 }
