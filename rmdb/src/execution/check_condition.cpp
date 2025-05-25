@@ -13,7 +13,15 @@ bool check_condition(const RmRecord& record, TabMeta& tab_, const Condition& con
     int len = tab_.get_col(cond.lhs_col.col_name)->len;
     lhs_value.init_raw(len);
     memcpy(lhs_value.raw->data, record.data + lhs_offset, len);
-
+    
+    if (lhs_value.type == TYPE_INT) {
+        lhs_value.int_val = *(int*)lhs_value.raw->data;
+    } else if (lhs_value.type == TYPE_FLOAT) {
+        lhs_value.float_val = *(float*)lhs_value.raw->data;
+    } else if (lhs_value.type == TYPE_STRING) {
+        lhs_value.str_val = std::string(lhs_value.raw->data);
+    }
+    
     // 获取右操作数的值
     Value rhs_value;
     if (cond.is_rhs_val) {
