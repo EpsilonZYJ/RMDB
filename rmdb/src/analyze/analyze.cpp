@@ -52,20 +52,33 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse)
         get_clause(x->conds, query->conds);
         check_clause(query->tables, query->conds);
     } else if (auto x = std::dynamic_pointer_cast<ast::UpdateStmt>(parse)) {
-        /** TODO: */
-        //处理更新的set子句
+        // 处理表名
+        query->tables.push_back(x->tab_name);
+        
+        // 检查表是否存在
+        if (!sm_manager_->db_.is_table(x->tab_name)) {
+            throw TableNotFoundError(x->tab_name);
+        }
+        
+        // 处理更新的set子句
+        TabMeta &tab = sm_manager_->db_.get_table(x->tab_name);
         for (auto &sv_set_clause : x->set_clauses) {
             SetClause set_clause;
-            set_clause.lhs.tab_name=x->tab_name;
+            set_clause.lhs.tab_name = x->tab_name;
             set_clause.lhs.col_name = sv_set_clause->col_name;
             set_clause.rhs = convert_sv_value(sv_set_clause->val);
+            
+            // 添加初始化raw字段的代码
+            auto col = tab.get_col(set_clause.lhs.col_name);
+            set_clause.rhs.init_raw(col->len);
+            
             query->set_clauses.push_back(set_clause);
         }
-        //处理where条件
+        
+        // 处理where条件
         get_clause(x->conds, query->conds);
         check_clause({x->tab_name}, query->conds);
     } else if (auto x = std::dynamic_pointer_cast<ast::DeleteStmt>(parse)) {
-        //处理where条件
         get_clause(x->conds, query->conds);
         check_clause({x->tab_name}, query->conds);        
     } else if (auto x = std::dynamic_pointer_cast<ast::InsertStmt>(parse)) {
