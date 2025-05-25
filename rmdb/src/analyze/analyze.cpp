@@ -56,16 +56,14 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse)
         //处理更新的set子句
         for (auto &sv_set_clause : x->set_clauses) {
             SetClause set_clause;
-            set_clause.lhs = sv_set_clause->col_name;
+            set_clause.lhs.tab_name=x->tab_name;
+            set_clause.lhs.col_name = sv_set_clause->col_name;
             set_clause.rhs = convert_sv_value(sv_set_clause->val);
             query->set_clauses.push_back(set_clause);
         }
-        // 处理where条件
+        //处理where条件
         get_clause(x->conds, query->conds);
         check_clause({x->tab_name}, query->conds);
-    } else if (auto x = std::dynamic_pointer_cast<ast::CreateStmt>(parse)) {
-        // 处理表名
-        query->tables = std::move(x->tabs);
     } else if (auto x = std::dynamic_pointer_cast<ast::DeleteStmt>(parse)) {
         //处理where条件
         get_clause(x->conds, query->conds);
