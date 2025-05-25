@@ -3,7 +3,7 @@
 
 #include "check_condition.h"
 
-bool check_condition(const RmRecord& record, TabMeta& tab_, Condition& cond) {
+bool check_condition(const RmRecord& record, TabMeta& tab_, const Condition& cond) {
     // 获取列信息
 
     // 获取左操作数的值
@@ -29,4 +29,11 @@ bool check_condition(const RmRecord& record, TabMeta& tab_, Condition& cond) {
     return cond.check(lhs_value, rhs_value);
 }
 
+bool check_condition(const RmRecord& record, TabMeta& tab_, const std::vector<Condition>& conds) {
+    for (const auto& cond : conds) 
+        if (!check_condition(record, tab_, cond))
+            return false;
+
+    return true;
+}
 #endif

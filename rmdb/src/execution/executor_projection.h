@@ -17,10 +17,10 @@ See the Mulan PSL v2 for more details. */
 
 class ProjectionExecutor : public AbstractExecutor {
    private:
-    std::unique_ptr<AbstractExecutor> prev_;        // 投影节点的儿子节点
+    std::unique_ptr<AbstractExecutor> prev_;        // 投影节点的儿子节点  // 只会有一个儿子
     std::vector<ColMeta> cols_;                     // 需要投影的字段
     size_t len_;                                    // 字段总长度
-    std::vector<size_t> sel_idxs_;                  
+    std::vector<size_t> sel_idxs_;                  // 需要投影的字段在原始输入列中的位置
 
    public:
     ProjectionExecutor(std::unique_ptr<AbstractExecutor> prev, const std::vector<TabCol> &sel_cols) {
@@ -39,45 +39,31 @@ class ProjectionExecutor : public AbstractExecutor {
         len_ = curr_offset;
     }
 
-    void beginTuple() override {}
+    void beginTuple() override { prev_->beginTuple(); }
 
-    void nextTuple() override {}
+    void nextTuple() override { prev_->nextTuple(); }
 
     std::unique_ptr<RmRecord> Next() override {
-        std::unique_ptr<RmRecord> record = prev_->Next();
-//TODO refactor!
-        if (record)
-        {
-            // 创建一个向量来存储投影后的记录数据
-            char *data = new char[len_]; // 分配内存
+        auto rec = prev_->Next();
+        auto &prev_cols = prev_->cols();
 
-            // 遍历选定的列，并复制对应的数据
-            for (size_t i = 0; i < sel_idxs_.size(); ++i)
-            {
-                size_t sel_idx = sel_idxs_[i];
-                size_t offset = cols_[i].offset;
-                size_t origin_offset=prev_->cols()[sel_idx].offset;
-                char* dest=data+offset;
-                char* src=record->data + origin_offset;
-                size_t length=cols_[i].len;
-                std::memcpy(dest, src, length);
-            }
+        std::unique_ptr<RmRecord> new_rec = std::make_unique<RmRecord>(len_);
+        int cur_offset = 0;
 
-            // 使用投影后的数据创建一个新的 RmRecord，并返回它
-            auto temp=std::make_unique<RmRecord>(len_, data);
-            return temp;
+        for (size_t i = 0; i < cols_.size(); i++){
+            size_t col_offset = prev_cols[sel_idxs_[i]].offset;
+            memcpy(new_rec->data + cur_offset, rec->data + col_offset, cols_[i].len);
+            cur_offset += cols_[i].len;
         }
-        return nullptr;
+
+        return new_rec;
     }
 
-    bool is_end() const override{
-        return prev_->is_end();
-    }
+    bool is_end() const override { return prev_->is_end(); }
 
-    const std::vector<ColMeta> &cols() const override {
-    // 提供适当的实现，返回具体的 ColMeta 对象或者 std::vector<ColMeta>
-        return cols_;
-    }
+    const std::vector<ColMeta> &cols() const override { return cols_; }
+
+    size_t tupleLen() const override { return len_; }
 
     Rid &rid() override { return _abstract_rid; }
 };

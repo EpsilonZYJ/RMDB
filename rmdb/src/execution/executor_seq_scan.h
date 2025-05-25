@@ -15,7 +15,10 @@ See the Mulan PSL v2 for more details. */
 #include "executor_abstract.h"
 #include "index/ix.h"
 #include "system/sm.h"
+#include "check_condition.h"
 
+/* 顺序扫描器，负责按顺序遍历表中所有记录，
+    并根据指定条件进行过滤*/
 class SeqScanExecutor : public AbstractExecutor {
    private:
     std::string tab_name_;              // 表的名称
@@ -47,13 +50,15 @@ class SeqScanExecutor : public AbstractExecutor {
 
     void beginTuple() override {
         scan_ = std::make_unique<RmScan>(fh_);
-        // rid_ = scan_->rid();
+        rid_ = scan_->rid();
         std::unique_ptr<RmRecord> rec;
-        while (!scan_->is_end())
-        {
+        while (!scan_->is_end()) {
             rec = fh_->get_record(scan_->rid(), context_);
-            // if(ConditionCheck::check_conditions(fed_conds_, rec))
-            //     break;
+            if(check_condition(
+                *rec, 
+                sm_manager_->db_.get_table(tab_name_), 
+                fed_conds_)
+              ) break;
             scan_->next();
         }
         rid_ = scan_->rid();
@@ -65,13 +70,13 @@ class SeqScanExecutor : public AbstractExecutor {
         // rid_ = scan_->rid();
         std::unique_ptr<RmRecord> rec;
         scan_->next();
-        while (!scan_->is_end())
-        {
+        while (!scan_->is_end()) {
             rec = fh_->get_record(scan_->rid(), context_);
-            // if(check_condition(fed_conds_, rec))
-            // {
-            //     break;
-            // }
+            if(check_condition(
+                *rec, 
+                sm_manager_->db_.get_table(tab_name_),
+                fed_conds_)
+              ) break;
             scan_->next();
         }
         rid_ = scan_->rid();
@@ -86,13 +91,6 @@ class SeqScanExecutor : public AbstractExecutor {
     size_t tupleLen() const override { return len_; }
 
     const std::vector<ColMeta> &cols() const override { return cols_; }
-
-    // int get_count() {
-    //     if(fed_conds_.size() != 0) {
-    //         return -1;
-    //     }
-    //     return fh_->get_record_count(context_);
-    // }
 
     Rid &rid() override { return rid_; }
 };
