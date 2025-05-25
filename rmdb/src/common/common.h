@@ -72,13 +72,28 @@ struct Value {
     }
 
     bool operator==(const struct Value& rhs) const {
-        if (type != rhs.type) return false;
+        //! 以下代码有点问题，因为如果类型不一样，直接比较会出错
+        // if (type != rhs.type) return false;
 
-        switch(type) {
-            case TYPE_INT:    return int_val == rhs.int_val;
-            case TYPE_FLOAT:  return float_val == rhs.float_val;
-            case TYPE_STRING: return str_val == rhs.str_val;
-            default:          return false;
+        // switch(type) {
+        //     case TYPE_INT:    return int_val == rhs.int_val;
+        //     case TYPE_FLOAT:  return float_val == rhs.float_val;
+        //     case TYPE_STRING: return str_val == rhs.str_val;
+        //     default:          return false;
+        // }
+        //TODO 也许用强制类型转换的方法会好一些，符合编译器的做法
+        if((type==TYPE_INT)&&(rhs.type==TYPE_FLOAT)){
+            return int_val == rhs.float_val;
+        }else if((type==TYPE_FLOAT)&&(rhs.type==TYPE_INT)){
+            return float_val == rhs.int_val;
+        }else if((type==TYPE_INT)&&(rhs.type==TYPE_INT)){
+            return int_val == rhs.int_val;
+        }else if((type==TYPE_FLOAT)&&(rhs.type==TYPE_FLOAT)){
+            return float_val == rhs.float_val;
+        }else if((type==TYPE_STRING)&&(rhs.type==TYPE_STRING)){
+            return str_val == rhs.str_val;
+        }else{
+            throw InternalError("Invalid value type");
         }
     }
 
@@ -87,13 +102,27 @@ struct Value {
     }
 
     bool operator<(const Value &rhs) const {
-        if (type != rhs.type) 
-            throw IncompatibleTypeError(coltype2str(type), coltype2str(rhs.type));
-        switch (type) {
-            case TYPE_INT:    return int_val < rhs.int_val;
-            case TYPE_FLOAT:  return float_val < rhs.float_val;
-            case TYPE_STRING: return str_val.compare(rhs.str_val) < 0;
-            default: throw InternalError("Unexpected value type");
+        // if (type != rhs.type) 
+        //     throw IncompatibleTypeError(coltype2str(type), coltype2str(rhs.type));
+        // switch (type) {
+        //     case TYPE_INT:    return int_val < rhs.int_val;
+        //     case TYPE_FLOAT:  return float_val < rhs.float_val;
+        //     case TYPE_STRING: return str_val.compare(rhs.str_val) < 0;
+        //     default: throw InternalError("Unexpected value type");
+        // }
+        //TODO 也许用强制类型转换的方法会好一些，符合编译器的做法
+        if((type==TYPE_INT)&&(rhs.type==TYPE_FLOAT)){
+            return int_val < rhs.float_val;
+        }else if((type==TYPE_FLOAT)&&(rhs.type==TYPE_INT)){
+            return float_val < rhs.int_val;
+        }else if((type==TYPE_INT)&&(rhs.type==TYPE_INT)){
+            return int_val < rhs.int_val;
+        }else if((type==TYPE_FLOAT)&&(rhs.type==TYPE_FLOAT)){
+            return float_val < rhs.float_val;
+        }else if((type==TYPE_STRING)&&(rhs.type==TYPE_STRING)){
+            return str_val < rhs.str_val;
+        }else{
+            throw InternalError("Invalid value type");
         }
     }
 

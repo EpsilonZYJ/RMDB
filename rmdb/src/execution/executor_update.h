@@ -48,13 +48,7 @@ class UpdateExecutor : public AbstractExecutor {
             
             // 检查条件是否满足，若不满足则跳过，不进行更新
             // 这里的条件是指update语句中的where条件
-            bool satisfy = true;
-            for(auto& cond: conds_) 
-                if(!check_condition(old_record, tab_, cond)) {
-                    satisfy = false;
-                    break;
-                }
-            if (!satisfy) continue;
+            if(!check_condition(old_record, tab_, conds_)) continue;
 
             // 进行更新
             RmRecord new_record(old_record);

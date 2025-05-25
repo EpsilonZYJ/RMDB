@@ -3,3 +3,5 @@
 #include "common/common.h"
 #include <system/sm.h>
 bool check_condition(const RmRecord& record, TabMeta& tab_, Condition& cond);
+
+bool check_condition(const RmRecord& record, TabMeta& tab_, const std::vector<Condition>& conds);
