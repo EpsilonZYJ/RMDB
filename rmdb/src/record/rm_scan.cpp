@@ -19,20 +19,43 @@ RmScan::RmScan(const RmFileHandle *file_handle) : file_handle_(file_handle) {
     // Todo:
     // 初始化file_handle和rid（指向第一个存放了记录的位置）
     if(file_handle_->file_hdr_.num_pages == 1){
-        rid_={1,-1};
+        rid_.page_no = file_handle_->file_hdr_.num_pages; // 超出页面范围表示结束
+        rid_.slot_no = -1;
         return;
-    }//只有一个文件头
+    }
+    
     int page_ptr = 1;
     RmPageHandle page_handle = file_handle_->fetch_page_handle(1);
-    while (page_ptr < file_handle_->file_hdr_.num_pages - 1&&page_handle.page_hdr->num_records == 0){
+    
+    // 找第一个非空页面
+    while (page_ptr < file_handle_->file_hdr_.num_pages && 
+           page_handle.page_hdr->num_records == 0){
         file_handle_->buffer_pool_manager_->unpin_page(page_handle.page->get_page_id(), false);
-        page_handle = file_handle_->fetch_page_handle(++page_ptr);
-    }//找到第一个不为空的页面
-    int first_record = Bitmap::first_bit(1, page_handle.bitmap, file_handle_->file_hdr_.num_records_per_page);
-    if(file_handle_->file_hdr_.num_records_per_page==first_record){
-        rid_.page_no = page_ptr;
-    }//无有效记录
-    else rid_ = {page_ptr, first_record};
+        page_ptr++;
+        
+        // 检查是否已经到了表末尾
+        if (page_ptr >= file_handle_->file_hdr_.num_pages) {
+            rid_.page_no = file_handle_->file_hdr_.num_pages;  // 表示表已空
+            rid_.slot_no = -1;
+            return;
+        }
+        
+        page_handle = file_handle_->fetch_page_handle(page_ptr);
+    }
+    
+    // 找到页面的第一个有效记录
+    int first_record = Bitmap::first_bit(1, page_handle.bitmap, 
+                        file_handle_->file_hdr_.num_records_per_page);
+    
+    if(first_record >= file_handle_->file_hdr_.num_records_per_page){
+        // 位图中找不到有效记录，可能位图与记录数不一致
+        rid_.page_no = file_handle_->file_hdr_.num_pages;  // 标记为结束
+        rid_.slot_no = -1;
+    } else {
+        // 找到有效记录
+        rid_ = {page_ptr, first_record};
+    }
+    
     file_handle_->buffer_pool_manager_->unpin_page(page_handle.page->get_page_id(), false);
 }
 
