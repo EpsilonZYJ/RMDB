@@ -53,6 +53,70 @@ struct Value {
         str_val = std::move(str_val_);
     }
 
+    Value() = default; // TODO 默认构造函数不是很好的设计，可能会导致未定义行为
+
+    // 拷贝构造
+    Value(const Value &other) noexcept
+        : type(other.type), raw(other.raw) {
+        if (type == TYPE_INT) {
+            int_val = other.int_val;
+        } else if (type == TYPE_FLOAT) {
+            float_val = other.float_val;
+        } else if (type == TYPE_STRING) {
+            str_val = other.str_val;
+        }
+    }
+
+    // 移动构造
+    Value(Value &&other) noexcept
+        : type(other.type), raw(std::move(other.raw)) {
+        if (type == TYPE_INT) {
+            int_val = other.int_val;
+            other.int_val = 0;
+        } else if (type == TYPE_FLOAT) {
+            float_val = other.float_val;
+            other.float_val = 0.0f;
+        } else if (type == TYPE_STRING) {
+            str_val = std::move(other.str_val);
+        }
+    }
+
+    // 拷贝赋值构造
+    Value &operator=(const Value &other) noexcept {
+        if (this != &other) {
+            type = other.type;
+            if (type == TYPE_INT) {
+                int_val = other.int_val;
+            } else if (type == TYPE_FLOAT) {
+                float_val = other.float_val;
+            } else if (type == TYPE_STRING) {
+                str_val = other.str_val;
+            }
+            raw = other.raw;
+        }
+        return *this;
+    }
+
+    // 移动赋值构造
+    Value &operator=(Value &&other) noexcept {
+        if (this != &other) {
+            type = other.type;
+            if (type == TYPE_INT) {
+                int_val = other.int_val;
+                other.int_val = 0;
+            } else if (type == TYPE_FLOAT) {
+                float_val = other.float_val;
+                other.float_val = 0.0f;
+            } else if (type == TYPE_STRING) {
+                str_val = std::move(other.str_val);
+            }
+            raw = std::move(other.raw);
+        }
+        return *this;
+    }
+
+    ~Value() = default;
+
     void init_raw(int len) {
         assert(raw == nullptr);
         raw = std::make_shared<RmRecord>(len); // 创建一个RmRecord对象
@@ -71,6 +135,23 @@ struct Value {
         }
     }
 
+    // TODO 这个函数会破坏原有的设计吗
+    void set_raw(int len) {
+        if (type == TYPE_INT) {
+            assert(len == sizeof(int));
+            *(int *)(raw->data) = int_val;
+        } else if (type == TYPE_FLOAT) {
+            assert(len == sizeof(float));
+            *(float *)(raw->data) = float_val;
+        } else if (type == TYPE_STRING) {
+            if (len < (int)str_val.size()) {
+                throw StringOverflowError();
+            }
+            memset(raw->data, 0, len);
+            memcpy(raw->data, str_val.c_str(), str_val.size());
+        }
+    }
+    
     bool operator==(const struct Value& rhs) const {
         //! 以下代码有点问题，因为如果类型不一样，直接比较会出错
         // if (type != rhs.type) return false;
@@ -131,6 +212,18 @@ struct Value {
     bool operator<=(const Value &rhs) const { return !(rhs < *this); }
 
     bool operator>=(const Value &rhs) const { return !(*this < rhs); }
+
+    void value_cast(ColType new_type) {
+        if (type == new_type) return;
+        if (type == TYPE_INT && new_type == TYPE_FLOAT) float_val = int_val;
+        else if (type == TYPE_FLOAT && new_type == TYPE_INT) int_val = float_val;
+        else if(type == TYPE_STRING && new_type == TYPE_INT) 
+            sscanf(str_val.c_str(), "%d", &int_val);
+        else if(type == TYPE_STRING && new_type == TYPE_FLOAT)
+            sscanf(str_val.c_str(), "%f", &float_val);
+        else throw IncompatibleTypeError(coltype2str(type), coltype2str(new_type));
+        type = new_type;
+    }
 };
 
 enum CompOp { OP_EQ, OP_NE, OP_LT, OP_GT, OP_LE, OP_GE };

@@ -55,8 +55,11 @@ class UpdateExecutor : public AbstractExecutor {
             for(auto& set_clauses: set_clauses_) {
                 auto col_meta = tab_.get_col(set_clauses.lhs.col_name);
                 int offset = col_meta->offset;
-                Value &value = set_clauses.rhs;
-
+                Value value = set_clauses.rhs; // 拷贝构造避免修改原值
+                if(col_meta->type != value.type) {
+                    value.value_cast(col_meta->type); // 确保类型匹配
+                    value.set_raw(col_meta->len); // 更改raw数据
+                }
                 memcpy(new_record.data + offset, value.raw->data, col_meta->len);
             }
 

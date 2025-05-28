@@ -50,38 +50,35 @@ class SeqScanExecutor : public AbstractExecutor {
 
     void beginTuple() override {
         scan_ = std::make_unique<RmScan>(fh_);
-        rid_ = scan_->rid();
         std::unique_ptr<RmRecord> rec;
-        while (!scan_->is_end()) {
-            rec = fh_->get_record(scan_->rid(), context_);
+
+        for(; !scan_->is_end(); scan_->next()) {
+            rid_ = scan_->rid();
+            rec = fh_->get_record(rid_, context_);
             if(check_condition(
                 *rec, 
                 sm_manager_->db_.get_table(tab_name_), 
                 fed_conds_)
               ) break;
-            scan_->next();
         }
-        rid_ = scan_->rid();
-
     }
 
+    /* 内部迭代器移动到下一个满足条件的记录 */
     void nextTuple() override {
-        // scan_->next();
-        // rid_ = scan_->rid();
         std::unique_ptr<RmRecord> rec;
-        scan_->next();
-        while (!scan_->is_end()) {
-            rec = fh_->get_record(scan_->rid(), context_);
+
+        for (scan_->next(); !scan_->is_end(); scan_->next()) {
+            rid_ = scan_->rid();
+            rec = fh_->get_record(rid_, context_);
             if(check_condition(
                 *rec, 
                 sm_manager_->db_.get_table(tab_name_),
                 fed_conds_)
               ) break;
-            scan_->next();
         }
-        rid_ = scan_->rid();
     }
 
+    /* 获取当前指针指向的记录数据 */
     std::unique_ptr<RmRecord> Next() override {
         return fh_->get_record(rid_, context_);
     }

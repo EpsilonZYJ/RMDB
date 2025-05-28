@@ -165,6 +165,14 @@ void Analyze::get_clause(const std::vector<std::shared_ptr<ast::BinaryExpr>> &sv
     }
 }
 
+// 判断两个类型是否可以比较
+bool Analyze::value_type_match(ColType type1, ColType type2) {
+    if (type1 == type2) return true;
+    if (type1 == ColType::TYPE_INT && type2 == ColType::TYPE_FLOAT) return true;
+    if (type1 == ColType::TYPE_FLOAT && type2 == ColType::TYPE_INT) return true;
+    return false;
+}
+
 void Analyze::check_clause(const std::vector<std::string> &tab_names, std::vector<Condition> &conds) {
     // auto all_cols = get_all_cols(tab_names);
     std::vector<ColMeta> all_cols;
@@ -188,9 +196,8 @@ void Analyze::check_clause(const std::vector<std::string> &tab_names, std::vecto
             auto rhs_col = rhs_tab.get_col(cond.rhs_col.col_name);
             rhs_type = rhs_col->type;
         }
-        if (lhs_type != rhs_type) {
+        if (!value_type_match(lhs_type, rhs_type)) 
             throw IncompatibleTypeError(coltype2str(lhs_type), coltype2str(rhs_type));
-        }
     }
 }
 
