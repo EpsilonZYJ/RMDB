@@ -208,6 +208,8 @@ class IxIndexHandle {
     bool coalesce(IxNodeHandle **neighbor_node, IxNodeHandle **node, IxNodeHandle **parent, int index,
                   Transaction *transaction, bool *root_is_latched);
 
+    bool IxIndexHandle::has_key(const char *key, Transaction *transaction);
+
     Iid lower_bound(const char *key);
 
     Iid upper_bound(const char *key);

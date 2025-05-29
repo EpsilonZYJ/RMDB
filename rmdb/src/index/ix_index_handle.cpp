@@ -84,13 +84,7 @@ page_id_t IxNodeHandle::internal_lookup(const char *key) {
     // 1. 查找当前非叶子节点中目标key所在孩子节点（子树）的位置
     // 2. 获取该孩子节点（子树）所在页面的编号
     // 3. 返回页面编号
-
-    int key_idx = lower_bound(key);
-    if(key_idx == 0) return value_at(key_idx);
-    
-    if(key_idx < page_hdr->num_key && Compare(get_key(key_idx), key) == 0)
-        return value_at(key_idx);
-    else return value_at(key_idx - 1);
+    return value_at(upper_bound(key) - 1);
     
 }
 
@@ -118,8 +112,8 @@ void IxNodeHandle::insert_pairs(int pos, const char *key, const Rid *rid, int n)
     if(pos < 0 || pos >= page_hdr->num_key) 
         throw std::out_of_range("IxNodeHandle::insert_pairs: pos out of range");
 
-    char* key_start = keys + pos * file_hdr->col_tot_len_; // 插入key的初始位置
-    char* rid_start = (char*)rids + pos * sizeof(Rid);     // 插入rid的初始位置
+    char* key_start = get_key(pos); // 插入key的初始位置
+    char* rid_start = (char*)get_rid(pos);     // 插入rid的初始位置
 
     // mmemove支持重叠内存的移动
     // "腾"出位置存放新插入的键值对
@@ -309,12 +303,12 @@ IxNodeHandle *IxIndexHandle::split(IxNodeHandle *node) {
     new_node->insert_pairs(0, 
                 node->get_key(node->get_min_size()), 
                 node->get_rid(node->get_min_size()), 
-                node->get_max_size() - node->get_min_size()); // 将右半部分的键值对插入到新结点
+                node->page_hdr->num_key - node->get_min_size()); // 将右半部分的键值对插入到新结点
     node->set_size(node->get_min_size()); // 更新原结点的键值对数量
 
     // 如果新的节点不是叶子结点，则需要更新孩子结点的父节点信息
     if(!new_node->is_leaf_page())
-        for(int i = 0; i < new_node->get_size(); i++) {
+        for(int i = 0; i <= new_node->get_size(); i++) {
             maintain_child(new_node.get(), i);
         }
 
@@ -342,15 +336,24 @@ void IxIndexHandle::insert_into_parent(IxNodeHandle *old_node, const char *key, 
     // 3. 获取key对应的rid，并将(key, rid)插入到父亲结点
     // 4. 如果父亲结点仍需要继续分裂，则进行递归插入
     // 提示：记得unpin page
+
+    // recursion base case
     if(old_node->is_root_page()) {
         auto new_root = create_node();
         new_root->set_parent_page_no(IX_NO_PAGE); // 新根节点没有父节点
         new_root->set_prev_leaf(IX_NO_PAGE); 
         new_root->set_next_leaf(IX_NO_PAGE); 
         new_root->page_hdr->is_leaf = false;
-        new_root->insert_pairs(0, key, new_node->get_rid(0), 1);
+        new_root->insert(old_node->get_key(0), {old_node->get_page_no(), -1});
+        new_root->insert(key, {new_node->get_page_no(), -1});
 
+        old_node->set_parent_page_no(new_root->get_page_no()); // 更新原结点的父节点信息
+        new_node->set_parent_page_no(new_root->get_page_no()); // 更新新结点的父节点信息
         file_hdr_->root_page_ = new_root->get_page_no(); // 更新文件头中的根节点信息
+
+        buffer_pool_manager_->unpin_page(new_root->get_page_id(), true); // 新建节点时会pin
+        
+        return;
         //? 不需要维护IxNodeHandle的IxFileHdr中的根节点信息吗
     }
 }
@@ -471,6 +474,11 @@ bool IxIndexHandle::coalesce(IxNodeHandle **neighbor_node, IxNodeHandle **node, 
     // 提示：如果是叶子结点且为最右叶子结点，需要更新file_hdr_.last_leaf
 
     return false;
+}
+
+// 自定义函数，判断有无索引为key
+bool IxIndexHandle::has_key(const char *key, Transaction *transaction) {
+    // TODO: 
 }
 
 /**

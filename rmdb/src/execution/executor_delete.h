@@ -50,8 +50,20 @@ class DeleteExecutor : public AbstractExecutor {
             bool debug = fh_->is_record(rid);
             fh_->delete_record(rid, context_); // 更新数据文件中的记录
 
-
-            //TODO 增加索引更新
+            for (size_t i = 0; i < tab_.indexes.size(); i++) {
+                auto& index = tab_.indexes[i]; // 获取当前遍历到的索引 类型为IndexMeta
+                auto ih = sm_manager_->ihs_.at(sm_manager_->get_ix_manager()->get_index_name(tab_name_, index.cols)).get(); // 获取对应的B+树，类型为IxNodeHandl
+                // 下面构造用于B+树索引的key
+                char *key = new char[index.col_tot_len];
+                int offset = 0;
+                for(size_t j = 0; j < index.col_num; ++j) { // col_num表示索引字段数量
+                    memcpy(key + offset, old_record.data + index.cols[j].offset, index.cols[j].len);
+                    offset += index.cols[j].len;
+                }
+                // 删除B+树索引中的记录
+                ih->delete_entry(key, context_->txn_);
+                delete []key;
+            }
         }
         return nullptr;
     }
