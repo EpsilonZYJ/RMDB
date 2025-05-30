@@ -82,6 +82,12 @@ class IndexEntryNotFoundError : public RMDBError {
     IndexEntryNotFoundError() : RMDBError("Index entry not found") {}
 };
 
+class IndexNotUniqueError : public RMDBError {
+   public:
+    IndexNotUniqueError(const std::string &index_name)
+        : RMDBError("Index is not unique: " + index_name) {}
+};
+
 // SM errors
 class DatabaseNotFoundError : public RMDBError {
    public:

@@ -46,6 +46,7 @@ inline int ix_compare(const char* a, const char* b, const std::vector<ColType>& 
     return 0;
 }
 
+
 /* 管理B+树中的每个节点 */
 class IxNodeHandle {
     friend class IxIndexHandle;
@@ -56,6 +57,12 @@ class IxNodeHandle {
     Page *page;                     // 存储节点的页面
     IxPageHdr *page_hdr;            // page->data的第一部分，指针指向首地址，长度为sizeof(IxPageHdr)
     char *keys;                     // page->data的第二部分，指针指向首地址，长度为file_hdr->keys_size，每个key的长度为file_hdr->col_len
+
+    /* 
+    rids: 
+        在叶子节点中：指向实际数据记录的 Rid 数组
+        在内部节点中：指向子节点页面的页号数组
+    */
     Rid *rids;                      // page->data的第三部分，指针指向首地址
 
    public:
@@ -155,6 +162,10 @@ class IxNodeHandle {
         assert(rid_idx < page_hdr->num_key);
         return rid_idx;
     }
+
+    inline int Compare(const char *a, const char *b) const {
+        return ix_compare(a, b, file_hdr->col_types_, file_hdr->col_lens_);
+    }
 };
 
 /* B+树 */
@@ -196,6 +207,8 @@ class IxIndexHandle {
 
     bool coalesce(IxNodeHandle **neighbor_node, IxNodeHandle **node, IxNodeHandle **parent, int index,
                   Transaction *transaction, bool *root_is_latched);
+
+    bool IxIndexHandle::has_key(const char *key, Transaction *transaction);
 
     Iid lower_bound(const char *key);
 

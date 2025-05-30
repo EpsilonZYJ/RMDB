@@ -50,32 +50,63 @@ class UpdateExecutor : public AbstractExecutor {
             // 这里的条件是指update语句中的where条件
             if(!check_condition(old_record, tab_, conds_)) continue;
 
-            // 进行更新
+            // 构造新的记录
             RmRecord new_record(old_record);
             for(auto& set_clauses: set_clauses_) {
                 auto col_meta = tab_.get_col(set_clauses.lhs.col_name);
                 int offset = col_meta->offset;
-                Value &value = set_clauses.rhs;
-
+                Value value = set_clauses.rhs; // 拷贝构造避免修改原值
+                if(col_meta->type != value.type) 
+                    value.value_cast(col_meta->type); // 确保新值与字段类型匹配
                 memcpy(new_record.data + offset, value.raw->data, col_meta->len);
             }
-
-            // // 更新索引前先删除旧索引
-            // auto indexes = tab_.get_indexes(); // Retrieve indexes from the table metadata
-            // for(auto &index: indexes) {
-            //     // 获取索引句柄
-            //     auto ih = sm_manager_->ihs_.at(sm_manager_->get_ix_manager()->get_index_name(tab_name_, index.cols)).get();
-            //     // 创建旧记录的索引键
-            //     auto old_key = ix::IxManager::create_key(old_record.data, index);
-            //     // 从索引中删除旧记录
-            //     ih->delete_entry(old_key.get(), context_->txn_);
-            // }
         
+            // 索引更新
+            auto **old_keys = new char *[tab_.indexes.size()];
+            auto **new_keys = new char *[tab_.indexes.size()];
+            auto **ihs = new IxIndexHandle *[tab_.indexes.size()];
+            for (size_t i = 0; i < tab_.indexes.size(); ++i) {
+                    auto &index = tab_.indexes[i]; // 获取当前遍历到的索引 类型为IndexMeta
+                    auto ih = sm_manager_->ihs_.at(sm_manager_->get_ix_manager()->get_index_name(tab_name_, index.cols)).get();
+                    old_keys[i] = new char[index.col_tot_len];
+                    new_keys[i] = new char[index.col_tot_len];
+                    ihs[i] = ih; // 存储B+树索引句柄
+                    int offset = 0;
+                    for (size_t j = 0; j < index.col_num; ++j) {
+                        memcpy(old_keys[i] + offset, 
+                               old_record.data + index.cols[j].offset, 
+                               index.cols[j].len);
+                        memcpy(new_keys[i] + offset,
+                               new_record.data + index.cols[j].offset, 
+                               index.cols[j].len);
+                        offset += index.cols[j].len;
+                    }
+                    if (old_keys[i] != new_keys[i] || !ihs[i]->has_key(new_keys[i], context_->txn_)) {
+                        for (int j = 0; j <= i; ++j) {
+                            delete []old_keys[j];
+                            delete []new_keys[j];
+                        }
+                        delete []old_keys;
+                        delete []new_keys;
+                        delete []ihs;
+                        throw IndexNotUniqueError(sm_manager_->get_ix_manager()->get_index_name(tab_name_, index.cols));
+                    }
+                    ++i;
+            }
+
             fh_->update_record(rid, new_record.data, context_); // 更新数据文件中的记录
 
-            //TODO 增加索引更新
-
+            for(size_t i = 0; i < tab_.indexes.size(); ++i) {
+                ihs[i]->delete_entry(old_keys[i], context_->txn_); 
+                ihs[i]->insert_entry(new_keys[i], rid, context_->txn_);
+                delete []old_keys[i];
+                delete []new_keys[i];
+            }
+            delete []old_keys;
+            delete []new_keys;
+            delete []ihs; 
         }
+
         return nullptr;
     }
 
