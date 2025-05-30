@@ -148,7 +148,7 @@ class IndexScanExecutor : public AbstractExecutor {
 
             if(!cond.is_rhs_val || col_name_to_index.count(cond.lhs_col.col_name) == 0) continue;
 
-            // 初始化边界信息，便于构建索引
+            // 初始化边界信息，便于构建索引 // TODO best practice: 将这一部分从构造函数的逻辑中抽离
             Bound& bound = bounds_[col_name_to_index[cond.lhs_col.col_name]];
             switch (cond.op) {
                 case OP_GT: case OP_GE:
