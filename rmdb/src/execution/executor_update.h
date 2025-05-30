@@ -50,19 +50,18 @@ class UpdateExecutor : public AbstractExecutor {
             // 这里的条件是指update语句中的where条件
             if(!check_condition(old_record, tab_, conds_)) continue;
 
-            // 进行更新
+            // 构造新的记录
             RmRecord new_record(old_record);
             for(auto& set_clauses: set_clauses_) {
                 auto col_meta = tab_.get_col(set_clauses.lhs.col_name);
                 int offset = col_meta->offset;
                 Value value = set_clauses.rhs; // 拷贝构造避免修改原值
-                if(col_meta->type != value.type) {
-                    value.value_cast(col_meta->type); // 确保类型匹配
-                    value.set_raw(col_meta->len); // 更改raw数据
-                }
+                if(col_meta->type != value.type) 
+                    value.value_cast(col_meta->type); // 确保新值与字段类型匹配
                 memcpy(new_record.data + offset, value.raw->data, col_meta->len);
             }
         
+            // 索引更新
             auto **old_keys = new char *[tab_.indexes.size()];
             auto **new_keys = new char *[tab_.indexes.size()];
             auto **ihs = new IxIndexHandle *[tab_.indexes.size()];

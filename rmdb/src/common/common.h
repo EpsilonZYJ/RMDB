@@ -223,6 +223,16 @@ struct Value {
             sscanf(str_val.c_str(), "%f", &float_val);
         else throw IncompatibleTypeError(coltype2str(type), coltype2str(new_type));
         type = new_type;
+
+        if (!raw) return;
+
+        int len;
+        switch (type){
+            case TYPE_INT:    len = sizeof(int);        break;
+            case TYPE_FLOAT:  len = sizeof(float);      break;
+            case TYPE_STRING: len = str_val.size() + 1; break;
+        }
+        set_raw(len);
     }
 };
 
