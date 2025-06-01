@@ -9,7 +9,6 @@ MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 See the Mulan PSL v2 for more details. */
 
 #pragma once
-
 #include <cassert>
 #include <cstring>
 #include <memory>
@@ -18,7 +17,7 @@ See the Mulan PSL v2 for more details. */
 #include "parser/ast.h"
 
 #include "parser/parser.h"
-
+#include "execution/executor_explain.h"
 typedef enum PlanTag{
     T_Invalid = 1,
     T_Help,
@@ -42,7 +41,9 @@ typedef enum PlanTag{
     T_NestLoop,
     T_SortMerge,    // sort merge join
     T_Sort,
-    T_Projection
+    T_Projection,
+    T_Explain,
+    T_Filter
 } PlanTag;
 
 // 查询执行计划
@@ -210,3 +211,34 @@ class plannerInfo{
     plannerInfo(std::shared_ptr<ast::SelectStmt> parse_):parse(std::move(parse_)){}
 
 };
+
+class ExplainPlan : public Plan {
+    public:
+        std::shared_ptr<Plan> plan_;
+        
+        ExplainPlan(PlanTag tag, std::shared_ptr<Plan> plan)
+            : Plan(), plan_(plan) {
+            Plan::tag = tag;  // 正确设置tag
+        }
+        
+        ~ExplainPlan() = default;
+        
+        std::unique_ptr<AbstractExecutor> get_executor(Context *context);
+    };
+
+    class FilterPlan : public Plan {
+        public:
+            std::shared_ptr<Plan> subplan_;  // 过滤操作的子计划
+            std::vector<Condition> conds_;   // 过滤条件
+        
+            FilterPlan(PlanTag tag, std::shared_ptr<Plan> subplan, std::vector<Condition> conds)
+            {
+                Plan::tag = tag;  
+                subplan_ = std::move(subplan);
+                conds_ = std::move(conds);
+            }
+            
+            ~FilterPlan() = default;
+        
+
+        };

@@ -34,9 +34,10 @@ class Query{
     std::vector<SetClause> set_clauses;
     //insert 的values值
     std::vector<Value> values;
-
+    //join的连接条件
+    std::vector<std::vector<Condition>> join_conds;
     Query(){}
-
+    bool is_explain = false; // 是否为explain语句
 };
 
 class Analyze

@@ -210,7 +210,7 @@ struct JoinExpr : public TreeNode {
     JoinType type;
 
     JoinExpr(std::string left_, std::string right_,
-               std::vector<std::shared_ptr<BinaryExpr>> conds_, JoinType type_) :
+               std::vector<std::shared_ptr<BinaryExpr>> conds_, JoinType type_=INNER_JOIN) :
             left(std::move(left_)), right(std::move(right_)), conds(std::move(conds_)), type(type_) {}
 };
 
@@ -220,19 +220,21 @@ struct SelectStmt : public TreeNode {
     std::vector<std::shared_ptr<BinaryExpr>> conds;
     std::vector<std::shared_ptr<JoinExpr>> jointree;
 
-    
     bool has_sort;
+    bool explain{false};
     std::shared_ptr<OrderBy> order;
 
 
     SelectStmt(std::vector<std::shared_ptr<Col>> cols_,
-               std::vector<std::string> tabs_,
-               std::vector<std::shared_ptr<BinaryExpr>> conds_,
-               std::shared_ptr<OrderBy> order_) :
-            cols(std::move(cols_)), tabs(std::move(tabs_)), conds(std::move(conds_)), 
-            order(std::move(order_)) {
-                has_sort = (bool)order;
-            }
+        std::vector<std::string> tabs_,
+        std::vector<std::shared_ptr<BinaryExpr>> conds_,
+        std::vector<std::shared_ptr<JoinExpr>> joins_,
+        std::shared_ptr<OrderBy> order_) :
+     cols(std::move(cols_)), tabs(std::move(tabs_)), 
+     conds(std::move(conds_)), jointree(std::move(joins_)),
+     order(std::move(order_)), explain(false) {
+         has_sort = (bool)order;
+     }
 };
 
 // set enable_nestloop
@@ -243,6 +245,15 @@ struct SetStmt : public TreeNode {
     SetStmt(SetKnobType &type, bool bool_value) : 
         set_knob_type_(type), bool_val_(bool_value) { }
 };
+
+
+class ExplainStmt: public TreeNode {
+    public:
+        std::shared_ptr<SelectStmt> select;
+        
+        ExplainStmt(std::shared_ptr<SelectStmt> select_) : select(std::move(select_)) {}
+        ~ExplainStmt() override = default;
+    };
 
 // Semantic value
 struct SemValue {

@@ -9,8 +9,8 @@ int yylex(YYSTYPE *yylval, YYLTYPE *yylloc);
 void yyerror(YYLTYPE *locp, const char* s) {
     std::cerr << "Parser Error at line " << locp->first_line << " column " << locp->first_column << ": " << s << std::endl;
 }
-
 using namespace ast;
+std::vector<std::shared_ptr<ast::JoinExpr>> current_joins;
 %}
 
 // request a pure (reentrant) parser
@@ -22,7 +22,7 @@ using namespace ast;
 
 // keywords
 %token SHOW TABLES CREATE TABLE DROP DESC INSERT INTO VALUES DELETE FROM ASC ORDER BY
-WHERE UPDATE SET SELECT INT CHAR FLOAT INDEX AND JOIN EXIT HELP TXN_BEGIN TXN_COMMIT TXN_ABORT TXN_ROLLBACK ORDER_BY ENABLE_NESTLOOP ENABLE_SORTMERGE
+WHERE UPDATE SET SELECT INT CHAR FLOAT INDEX AND JOIN ON EXIT HELP TXN_BEGIN TXN_COMMIT TXN_ABORT TXN_ROLLBACK ORDER_BY ENABLE_NESTLOOP ENABLE_SORTMERGE EXPLAIN
 // non-keywords
 %token LEQ NEQ GEQ T_EOF
 
@@ -156,7 +156,15 @@ dml:
     }
     |   SELECT selector FROM tableList optWhereClause opt_order_clause
     {
-        $$ = std::make_shared<SelectStmt>($2, $4, $5, $6);
+        $$ = std::make_shared<SelectStmt>($2, $4, $5, current_joins, $6);
+        current_joins.clear(); //清空，以便下一个语句使用
+    }
+    |   EXPLAIN SELECT selector FROM tableList optWhereClause opt_order_clause
+    {
+        auto select_stmt = std::make_shared<SelectStmt>($3, $5, $6, current_joins, $7);
+        current_joins.clear(); //清空，以便下一个语句使用
+        select_stmt->explain = true;
+        $$ = select_stmt;
     }
     ;
 
@@ -358,6 +366,27 @@ tableList:
     |   tableList JOIN tbName
     {
         $$.push_back($3);
+    }
+    | tableList JOIN tbName ON condition
+    {
+        $$ = $1;
+        $$.push_back($3);
+        
+        // 创建JOIN表达式
+        std::string right_tab = $3;
+        // 找到左表，这里简化为使用前一个表名
+        std::string left_tab = $1[$1.size() - 1];
+        
+        // 创建JOIN条件对象
+        auto join_expr = std::make_shared<JoinExpr>(
+            left_tab,
+            right_tab,
+            std::vector<std::shared_ptr<ast::BinaryExpr>>{$5},
+            INNER_JOIN
+        );
+        
+        // 存储JOIN表达式，将在创建SelectStmt时使用
+        current_joins.push_back(join_expr);
     }
     ;
 

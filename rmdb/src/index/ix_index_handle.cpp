@@ -262,7 +262,7 @@ bool IxIndexHandle::get_value(const char *key, std::vector<Rid> *result, Transac
     // TODO 处理并发事务
     buffer_pool_manager_->unpin_page(leaf_node->get_page_id(), false); // 记得unpin叶子结点
 
-    if(found) result->emplace_back(value);
+    //if(found) result->emplace_back(value);
 
     return found;
 }

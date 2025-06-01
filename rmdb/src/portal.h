@@ -30,7 +30,8 @@ typedef enum portalTag{
     PORTAL_ONE_SELECT,
     PORTAL_DML_WITHOUT_SELECT,
     PORTAL_MULTI_QUERY,
-    PORTAL_CMD_UTILITY
+    PORTAL_CMD_UTILITY,
+    PORTAL_EXPLAIN
 } portalTag;
 
 
@@ -58,8 +59,12 @@ class Portal
     // 将查询执行计划转换成对应的算子树
     std::shared_ptr<PortalStmt> start(std::shared_ptr<Plan> plan, Context *context)
     {
+        if (auto x = std::dynamic_pointer_cast<ExplainPlan>(plan)) {
+            // 创建一个特殊的 PortalStmt 来处理 EXPLAIN 命令
+            return std::make_shared<PortalStmt>(PORTAL_EXPLAIN, std::vector<TabCol>(), std::unique_ptr<AbstractExecutor>(), plan);
+        }
         // 这里可以将select进行拆分，例如：一个select，带有return的select等
-        if (auto x = std::dynamic_pointer_cast<OtherPlan>(plan)) {
+        else if (auto x = std::dynamic_pointer_cast<OtherPlan>(plan)) {
             return std::make_shared<PortalStmt>(PORTAL_CMD_UTILITY, std::vector<TabCol>(), std::unique_ptr<AbstractExecutor>(),plan);
         } else if(auto x = std::dynamic_pointer_cast<SetKnobPlan>(plan)) {
             return std::make_shared<PortalStmt>(PORTAL_CMD_UTILITY, std::vector<TabCol>(), std::unique_ptr<AbstractExecutor>(), plan); 
@@ -142,6 +147,18 @@ class Portal
                 ql->run_cmd_utility(portal->plan, txn_id, context);
                 break;
             }
+            case PORTAL_EXPLAIN:
+            {
+            if (auto explain_plan = std::dynamic_pointer_cast<ExplainPlan>(portal->plan)) {
+                // 创建 ExplainExecutor
+                auto executor = explain_plan->get_executor(context);   
+                // 定义输出列
+                std::vector<TabCol> explain_cols = {TabCol{"", "EXPLAIN"}}; 
+                // 使用 select_from 显示结果
+                ql->select_from(std::move(executor), std::move(explain_cols), context);
+            }
+            break;
+            }
             default:
             {
                 throw InternalError("Unexpected field type");
@@ -155,7 +172,10 @@ class Portal
 
     std::unique_ptr<AbstractExecutor> convert_plan_executor(std::shared_ptr<Plan> plan, Context *context)
     {
-        if(auto x = std::dynamic_pointer_cast<ProjectionPlan>(plan)){
+        if (auto x = std::dynamic_pointer_cast<ExplainPlan>(plan)) {
+            return x->get_executor(context);
+        }
+        else if(auto x = std::dynamic_pointer_cast<ProjectionPlan>(plan)){
             return std::make_unique<ProjectionExecutor>(convert_plan_executor(x->subplan_, context), 
                                                         x->sel_cols_);
         } else if(auto x = std::dynamic_pointer_cast<ScanPlan>(plan)) {

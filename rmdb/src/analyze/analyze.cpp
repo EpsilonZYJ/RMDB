@@ -18,7 +18,71 @@ See the Mulan PSL v2 for more details. */
 std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse)
 {
     std::shared_ptr<Query> query = std::make_shared<Query>();//初始化空query
-    if (auto x = std::dynamic_pointer_cast<ast::SelectStmt>(parse))//select语句
+    if (auto explain_stmt = std::dynamic_pointer_cast<ast::ExplainStmt>(parse)) {
+        // 复用 SelectStmt 的处理逻辑
+        query->parse = explain_stmt->select;
+        // 标记这是 EXPLAIN 查询
+        query->is_explain = true;
+        
+        // 处理选择语句内容（与 SelectStmt 相同的逻辑）
+        auto x = explain_stmt->select;
+        
+        // 处理表名
+        query->tables = std::move(x->tabs);
+        /** 检查表是否存在 */
+        for (auto &tab_name : query->tables) {
+            if (!sm_manager_->db_.is_table(tab_name)) {
+                throw TableNotFoundError(tab_name);
+            }
+        }
+        // 处理target list
+        for (auto &sv_sel_col : x->cols) {
+            TabCol sel_col = {.tab_name = sv_sel_col->tab_name, .col_name = sv_sel_col->col_name};
+            query->cols.push_back(sel_col);
+        }
+        
+        std::vector<ColMeta> all_cols;
+        get_all_cols(query->tables, all_cols);
+        if (query->cols.empty()) {
+            // select all columns
+            for (auto &col : all_cols) {
+                TabCol sel_col = {.tab_name = col.tab_name, .col_name = col.name};
+                query->cols.push_back(sel_col);
+            }
+        } else {
+            // infer table name from column name
+            for (auto &sel_col : query->cols) {
+                sel_col = check_column(all_cols, sel_col);  // 列元数据校验
+            }
+        }
+
+        //JOIN处理代码
+        if (!x->jointree.empty()) {
+            // 处理JOIN条件
+            for (const auto& join_expr : x->jointree) {
+                // 确保表存在
+                if (!sm_manager_->db_.is_table(join_expr->left)) {
+                    throw TableNotFoundError(join_expr->left);
+                }
+                if (!sm_manager_->db_.is_table(join_expr->right)) {
+                    throw TableNotFoundError(join_expr->right);
+                }
+                
+                // 处理JOIN条件
+                std::vector<Condition> join_conds;
+                get_clause(join_expr->conds, join_conds);
+                query->join_conds.push_back(join_conds);
+                
+                // 检查JOIN条件
+                check_clause({join_expr->left, join_expr->right}, join_conds);
+            }
+        }
+
+        //处理where条件
+        get_clause(x->conds, query->conds);
+        check_clause(query->tables, query->conds);
+    }
+    else if (auto x = std::dynamic_pointer_cast<ast::SelectStmt>(parse))//select语句
     {
         // 处理表名
         query->tables = std::move(x->tabs);
@@ -48,9 +112,33 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse)
                 sel_col = check_column(all_cols, sel_col);  // 列元数据校验
             }
         }
+
+        //JOIN处理代码
+        if (!x->jointree.empty()) {
+            // 处理JOIN条件
+            for (const auto& join_expr : x->jointree) {
+                // 确保表存在
+                if (!sm_manager_->db_.is_table(join_expr->left)) {
+                    throw TableNotFoundError(join_expr->left);
+                }
+                if (!sm_manager_->db_.is_table(join_expr->right)) {
+                    throw TableNotFoundError(join_expr->right);
+                }
+                
+                // 处理JOIN条件
+                std::vector<Condition> join_conds;
+                get_clause(join_expr->conds, join_conds);
+                query->join_conds.push_back(join_conds);
+                
+                // 检查JOIN条件
+                check_clause({join_expr->left, join_expr->right}, join_conds);
+            }
+        }
+
         //处理where条件
         get_clause(x->conds, query->conds);
         check_clause(query->tables, query->conds);
+        query->is_explain = x->explain;
     } else if (auto x = std::dynamic_pointer_cast<ast::UpdateStmt>(parse)) {
         // 处理表名
         query->tables.push_back(x->tab_name);
