@@ -24,4 +24,4 @@ public:
 };
 
 //创建执行器的辅助函数
-std::unique_ptr<AbstractExecutor> create_executor_for_plan(std::shared_ptr<Plan> plan, Context* context);
+// std::unique_ptr<AbstractExecutor> create_executor_for_plan(std::shared_ptr<Plan> plan, Context* context);

@@ -176,8 +176,10 @@ class Portal
             return x->get_executor(context);
         }
         else if(auto x = std::dynamic_pointer_cast<ProjectionPlan>(plan)){
+            std::cout<<"DEBUG: convert_plan_executor ProjectionPlan" << std::endl;
             return std::make_unique<ProjectionExecutor>(convert_plan_executor(x->subplan_, context), 
                                                         x->sel_cols_);
+            std::cout<<"DEBUG: convert_plan_executor ProjectionPlan 结束" << std::endl;
         } else if(auto x = std::dynamic_pointer_cast<ScanPlan>(plan)) {
             if(x->tag == T_SeqScan) {
                 return std::make_unique<SeqScanExecutor>(sm_manager_, x->tab_name_, x->conds_, context);

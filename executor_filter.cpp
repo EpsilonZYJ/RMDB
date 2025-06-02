@@ -115,34 +115,34 @@ Rid &FilterExecutor::rid() {
 }
 
 
-std::unique_ptr<AbstractExecutor> create_executor_for_plan(std::shared_ptr<Plan> plan, Context* context, SmManager* sm_manager) {
-    // 根据计划类型创建相应的执行器
-    if (auto scan_plan = std::dynamic_pointer_cast<ScanPlan>(plan)) {
-        if (scan_plan->tag == T_SeqScan) {
-            return std::make_unique<SeqScanExecutor>(sm_manager,scan_plan->tab_name_, scan_plan->conds_, context);
-        } else if (scan_plan->tag == T_IndexScan) {
-            return std::make_unique<IndexScanExecutor>(sm_manager,scan_plan->tab_name_,scan_plan->conds_,scan_plan->index_col_names_,context);
-        }
-    }
-    else if (auto join_plan = std::dynamic_pointer_cast<JoinPlan>(plan)) {
-        // 添加JoinPlan处理逻辑
-        auto left = create_executor_for_plan(join_plan->left_, context, sm_manager);
-        auto right = create_executor_for_plan(join_plan->right_, context, sm_manager);
-        return std::make_unique<NestedLoopJoinExecutor>(
-            std::move(left), 
-            std::move(right), 
-            join_plan->conds_
-        );
-    }
-     else if (auto proj_plan = std::dynamic_pointer_cast<ProjectionPlan>(plan)) {
-        auto child = create_executor_for_plan(proj_plan->subplan_, context,sm_manager);
-        return std::make_unique<ProjectionExecutor>(
-            std::move(child),
-            proj_plan->sel_cols_
-        );
-    } else if (auto filter_plan = std::dynamic_pointer_cast<FilterPlan>(plan)) {
-        auto child = create_executor_for_plan(filter_plan->subplan_, context, sm_manager);
-        return std::make_unique<FilterExecutor>(filter_plan, std::move(child));
-    }
-    throw std::runtime_error("未知的计划类型");
-}
+// std::unique_ptr<AbstractExecutor> create_executor_for_plan(std::shared_ptr<Plan> plan, Context* context, SmManager* sm_manager) {
+//     // 根据计划类型创建相应的执行器
+//     if (auto scan_plan = std::dynamic_pointer_cast<ScanPlan>(plan)) {
+//         if (scan_plan->tag == T_SeqScan) {
+//             return std::make_unique<SeqScanExecutor>(sm_manager,scan_plan->tab_name_, scan_plan->conds_, context);
+//         } else if (scan_plan->tag == T_IndexScan) {
+//             return std::make_unique<IndexScanExecutor>(sm_manager,scan_plan->tab_name_,scan_plan->conds_,scan_plan->index_col_names_,context);
+//         }
+//     }
+//     else if (auto join_plan = std::dynamic_pointer_cast<JoinPlan>(plan)) {
+//         // 添加JoinPlan处理逻辑
+//         auto left = create_executor_for_plan(join_plan->left_, context, sm_manager);
+//         auto right = create_executor_for_plan(join_plan->right_, context, sm_manager);
+//         return std::make_unique<NestedLoopJoinExecutor>(
+//             std::move(left), 
+//             std::move(right), 
+//             join_plan->conds_
+//         );
+//     }
+//      else if (auto proj_plan = std::dynamic_pointer_cast<ProjectionPlan>(plan)) {
+//         auto child = create_executor_for_plan(proj_plan->subplan_, context,sm_manager);
+//         return std::make_unique<ProjectionExecutor>(
+//             std::move(child),
+//             proj_plan->sel_cols_
+//         );
+//     } else if (auto filter_plan = std::dynamic_pointer_cast<FilterPlan>(plan)) {
+//         auto child = create_executor_for_plan(filter_plan->subplan_, context, sm_manager);
+//         return std::make_unique<FilterExecutor>(filter_plan, std::move(child));
+//     }
+//     throw std::runtime_error("未知的计划类型");
+// }

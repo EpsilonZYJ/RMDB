@@ -21,7 +21,7 @@ See the Mulan PSL v2 for more details. */
 #include "execution/executor_update.h"
 #include "index/ix.h"
 #include "record_printer.h"
-#include "execution/executor_filter.h" 
+//#include "execution/executor_filter.h" 
 #include <set>
 #include <cmath>
 // 目前的索引匹配规则为：完全匹配索引字段，且全部为单点查询，不会自动调整where条件的顺序
@@ -43,18 +43,14 @@ bool Planner::get_index_cols(std::string tab_name, std::vector<Condition> curr_c
  * @param tab_names 表名
  * @return std::vector<Condition>
  */
- std::vector<Condition> pop_conds(std::vector<Condition> &conds, std::string tab_name) {
+ std::vector<Condition> pop_conds(std::vector<Condition> &conds, std::string tab_names) {
+    // auto has_tab = [&](const std::string &tab_name) {
+    //     return std::find(tab_names.begin(), tab_names.end(), tab_name) != tab_names.end();
+    // };
     std::vector<Condition> solved_conds;
     auto it = conds.begin();
     while (it != conds.end()) {
-        if (it->is_rhs_val && it->lhs_col.tab_name == tab_name) {
-            // 涉及常量的条件，可以下推
-            solved_conds.emplace_back(std::move(*it));
-            it = conds.erase(it);
-        } else if (!it->is_rhs_val && 
-                  it->lhs_col.tab_name == tab_name && 
-                  it->rhs_col.tab_name == tab_name) {
-            // 同一个表的列比较，也可以下推
+        if ((tab_names.compare(it->lhs_col.tab_name) == 0 && it->is_rhs_val) || (it->lhs_col.tab_name.compare(it->rhs_col.tab_name) == 0)) {
             solved_conds.emplace_back(std::move(*it));
             it = conds.erase(it);
         } else {
@@ -63,6 +59,7 @@ bool Planner::get_index_cols(std::string tab_name, std::vector<Condition> curr_c
     }
     return solved_conds;
 }
+
 
 int push_conds(Condition *cond, std::shared_ptr<Plan> plan)
 {
@@ -127,7 +124,7 @@ std::shared_ptr<Query> Planner::logical_optimization(std::shared_ptr<Query> quer
 {
     
     //TODO 实现逻辑优化规则
-    // 1. 谓词下推 - 常量传播优化
+    //1. 谓词下推 - 常量传播优化
     predicate_pushdown(query, context);
     
     // 2. 投影下推
@@ -213,9 +210,9 @@ void Planner::predicate_pushdown(std::shared_ptr<Query> query, Context *context)
         }
     } while (changed); // 重复直到没有新条件产生
 
-    // 将连接条件和过滤条件分离，确保过滤条件尽可能下推
+    // // 将连接条件和过滤条件分离，确保过滤条件尽可能下推
     std::vector<Condition> join_conds;
-    std::vector<Condition> filter_conds;
+    // //std::vector<Condition> filter_conds;
     
     for (const auto& cond : query->conds) {
         if (!cond.is_rhs_val) {
@@ -225,13 +222,13 @@ void Planner::predicate_pushdown(std::shared_ptr<Query> query, Context *context)
                 continue;
             }
         }
-        // 这是过滤条件，应该尽可能下推
-        filter_conds.push_back(cond);
+    //     // 这是过滤条件，应该尽可能下推
+    //     filter_conds.push_back(cond);
     }
     
     // 更新query中的条件，先放过滤条件，再放连接条件
-    query->conds.clear();
-    query->conds.insert(query->conds.end(), filter_conds.begin(), filter_conds.end());
+    //query->conds.clear();
+    //query->conds.insert(query->conds.end(), filter_conds.begin(), filter_conds.end());
     query->conds.insert(query->conds.end(), join_conds.begin(), join_conds.end());
 }
 
@@ -290,6 +287,7 @@ size_t Planner::get_table_cardinality(const std::string& tab_name) {
     if (fh) {
         return fh->get_file_hdr().num_pages;  // 使用页数作为近似估计
     }
+    return 1;
 }
 
 size_t Planner::estimate_join_size(
@@ -375,34 +373,34 @@ size_t Planner::estimate_ndv(const std::string& tab_name, const std::string& col
 
 std::shared_ptr<Plan> Planner::physical_optimization(std::shared_ptr<Query> query, Context *context)
 {
+    std::cout << "DEBUG: physical_optimization 开始" << std::endl;
     std::shared_ptr<Plan> plan = make_one_rel(query);
-    
+    std::cout << "DEBUG: make_one_rel 完成" << std::endl;
     // 其他物理优化
 
     // 处理orderby
     plan = generate_sort_plan(query, std::move(plan)); 
-
+    std::cout << "DEBUG: generate_sort_plan 完成" << std::endl;
     return plan;
 }
 
-
-
 std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query)
 {
+    std::cout << "DEBUG: make_one_rel 开始" << std::endl;
     auto x = std::dynamic_pointer_cast<ast::SelectStmt>(query->parse);
     std::vector<std::string> tables = query->tables;
-    
+    std::cout << "DEBUG: 处理的表数量: " << tables.size() << std::endl;
     // 1. 为每个表创建扫描执行器
     std::vector<std::shared_ptr<Plan>> table_scan_executors(tables.size());
     std::vector<size_t> table_cardinalities(tables.size());
     
     // 创建扫描计划 - 分离过滤条件和表扫描
     for (size_t i = 0; i < tables.size(); i++) {
-        // 应用谓词下推 - 提取与表相关的条件
+        //应用谓词下推 - 提取与表相关的条件
         auto curr_conds = pop_conds(query->conds, tables[i]);
-        
-        // 检查是否有过滤条件
-        bool has_filters = !curr_conds.empty();
+        std::cout <<"DEBUG: 谓词下推完成"<< std::endl;
+        // // 检查是否有过滤条件
+        // bool has_filters = !curr_conds.empty();
         
         // 检查是否可以使用索引
         std::vector<std::string> index_col_names;
@@ -418,19 +416,17 @@ std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query)
             scan_plan = std::make_shared<ScanPlan>(T_IndexScan, sm_manager_, tables[i], 
                                                 std::vector<Condition>(), index_col_names);
         }
+        std::cout <<"DEBUG: 创建基本扫描计划完成"<< std::endl;
         
-        // 如果有过滤条件，创建单独的Filter节点
-        if (has_filters) {
-            // 使用原始的curr_conds创建Filter节点
-            table_scan_executors[i] = std::make_shared<FilterPlan>(T_Filter, scan_plan, curr_conds);
-        } else {
-            table_scan_executors[i] = scan_plan;
-        }
-        
+        //将scan_plan保存到table_scan_executors数组中
+        table_scan_executors[i] = scan_plan;
+
         // 获取表的基数(行数)
+        std::cout << "DEBUG: 获取表 " << tables[i] << " 的基数" << std::endl;
         table_cardinalities[i] = get_table_cardinality(tables[i]);
+        std::cout <<"DEBUG: 获取表基数完成"<< std::endl;
     }
-    
+    std::cout <<"DEBUG: 创建扫描计划完成"<< std::endl;
     // 只有一个表，不需要连接
     if (tables.size() == 1) {
         return table_scan_executors[0];
@@ -443,30 +439,19 @@ std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query)
     
     // 首先选择有过滤条件的表或基数最小的表
     size_t min_idx = 0;
-    bool has_filter = false;
+    //bool has_filter = false;
 
     for (size_t i = 0; i < tables.size(); i++) {
-        bool table_has_filter = false;
-        
-        // 检查该表是否有过滤条件
-        for (const auto& cond : query->conds) {
-            if (cond.is_rhs_val && cond.lhs_col.tab_name == tables[i]) {
-                table_has_filter = true;
-                break;
-            }
-        }
-        
         // 优先选择有过滤条件的表，或者在没有过滤条件的情况下选择基数最小的表
-        if ((table_has_filter && !has_filter) || 
-            (table_has_filter == has_filter && table_cardinalities[i] < table_cardinalities[min_idx])) {
+        if ( table_cardinalities[i] < table_cardinalities[min_idx]) {
             min_idx = i;
-            has_filter = table_has_filter;
+            //has_filter = table_has_filter;
         }
     }
-
+    
     join_order.push_back(min_idx);
     used[min_idx] = true;
-    
+    std::cout <<"DEBUG: 基数最小的表查找完成"<< std::endl;
     // 选择基数第二小的表或连接后结果最小的表
     size_t second_best_idx = SIZE_MAX;
     size_t min_result_size = SIZE_MAX;
@@ -477,7 +462,7 @@ std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query)
         // 估计与第一个表连接后的大小
         std::vector<size_t> current_joined = {min_idx};
         size_t result_size = estimate_join_size(current_joined, i, tables, table_cardinalities, query->conds);
-        
+        std::cout <<"DEBUG: 估计连接大小完成"<< std::endl;
         if (result_size < min_result_size) {
             min_result_size = result_size;
             second_best_idx = i;
@@ -497,7 +482,7 @@ std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query)
             
             // 估计加入当前已连接表的结果大小
             size_t result_size = estimate_join_size(join_order, i, tables, table_cardinalities, query->conds);
-            
+            std::cout <<"DEBUG: 估计加入当前已连接表的大小完成"<< std::endl;
             if (result_size < min_result_size) {
                 min_result_size = result_size;
                 best_idx = i;
@@ -553,7 +538,7 @@ std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query)
             join_conds
         );
     }
-    
+    std::cout <<"DEBUG: 构建左深树完成"<< std::endl;
     // 处理剩余的条件
     for (auto& cond : query->conds) {
         push_conds(&cond, join_plan);
@@ -848,10 +833,13 @@ std::shared_ptr<Plan> Planner::generate_sort_plan(std::shared_ptr<Query> query, 
  */
 std::shared_ptr<Plan> Planner::generate_select_plan(std::shared_ptr<Query> query, Context *context) {
     //逻辑优化
+    std::cout << "DEBUG: generate_select_plan 开始" << std::endl;
+    std::cout << "DEBUG: 开始逻辑优化" << std::endl;
     query = logical_optimization(std::move(query), context);
     
     //处理JOIN ON条件，将它们合并到WHERE条件中
     if (!query->join_conds.empty()) {
+        std::cout << "DEBUG: 处理 JOIN ON 条件，数量: " << query->join_conds.size() << std::endl;
         for (const auto& join_cond_set : query->join_conds) {
             // 将JOIN条件添加到WHERE条件列表中
             query->conds.insert(query->conds.end(), join_cond_set.begin(), join_cond_set.end());
@@ -860,18 +848,19 @@ std::shared_ptr<Plan> Planner::generate_select_plan(std::shared_ptr<Query> query
         // 清空join_conds，防止重复处理
         query->join_conds.clear();
     }
-
+    std::cout << "DEBUG: 开始物理优化" << std::endl;
 
     //物理优化
     auto sel_cols = query->cols;
     std::shared_ptr<Plan> plannerRoot = physical_optimization(query, context);
+    std::cout << "DEBUG: 创建投影计划" << std::endl;
     plannerRoot = std::make_shared<ProjectionPlan>(T_Projection, std::move(plannerRoot), 
                                                         std::move(sel_cols));
-
+    std::cout << "DEBUG: 创建投影计划完成" << std::endl;
     return plannerRoot;
 }
 
-// 生成DDL语句和DML语句的查询执行计划
+
 std::shared_ptr<Plan> Planner::do_planner(std::shared_ptr<Query> query, Context *context)
 {
     bool is_explain = query->is_explain;
@@ -956,5 +945,6 @@ std::shared_ptr<Plan> Planner::do_planner(std::shared_ptr<Query> query, Context 
     if (is_explain) {
         return std::make_shared<ExplainPlan>(T_Explain, plannerRoot);
     }
+    std::cout << "DEBUG: doplanner完成" << std::endl;
     return plannerRoot;
 }

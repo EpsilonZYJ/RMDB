@@ -23,7 +23,7 @@ private:
     
 public: 
     ExplainExecutor(ExplainPlan *plan, Context *context)
-    : AbstractExecutor(), plan_(plan), executed_(false) {}
+    : AbstractExecutor(), plan_(plan), executed_(false){} 
     
     void beginTuple() override;
     

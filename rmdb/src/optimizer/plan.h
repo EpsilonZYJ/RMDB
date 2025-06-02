@@ -42,8 +42,8 @@ typedef enum PlanTag{
     T_SortMerge,    // sort merge join
     T_Sort,
     T_Projection,
-    T_Explain,
-    T_Filter
+    T_Explain
+    //T_Filter
 } PlanTag;
 
 // 查询执行计划
@@ -224,21 +224,4 @@ class ExplainPlan : public Plan {
         ~ExplainPlan() = default;
         
         std::unique_ptr<AbstractExecutor> get_executor(Context *context);
-    };
-
-    class FilterPlan : public Plan {
-        public:
-            std::shared_ptr<Plan> subplan_;  // 过滤操作的子计划
-            std::vector<Condition> conds_;   // 过滤条件
-        
-            FilterPlan(PlanTag tag, std::shared_ptr<Plan> subplan, std::vector<Condition> conds)
-            {
-                Plan::tag = tag;  
-                subplan_ = std::move(subplan);
-                conds_ = std::move(conds);
-            }
-            
-            ~FilterPlan() = default;
-        
-
-        };
+};

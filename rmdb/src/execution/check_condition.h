@@ -17,6 +17,3 @@ bool check_condition(const RmRecord& record,
                      const std::vector<Condition>& conds);
                      #pragma once
 
-bool check_condition(const RmRecord* record, const Condition* cond, 
-                     const std::vector<ColMeta>& cols, 
-                     void* left_tuple, void* right_tuple);

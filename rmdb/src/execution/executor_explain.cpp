@@ -18,7 +18,7 @@ std::unique_ptr<RmRecord> ExplainExecutor::Next() {
         // 调用Planner的explain_plan函数生成树状格式的查询计划
         Planner planner(nullptr);
         planner.explain_plan(plan_->plan_, ss);
-        
+
         // 保存结果
         result_ = ss.str();
         
