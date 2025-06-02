@@ -219,10 +219,8 @@ class ExplainPlan : public Plan {
         
         ExplainPlan(PlanTag tag, std::shared_ptr<Plan> plan)
             : Plan(), plan_(plan) {
-            Plan::tag = tag;  // 正确设置tag
+            Plan::tag = tag;  
         }
-        
         ~ExplainPlan() = default;
-        
         std::unique_ptr<AbstractExecutor> get_executor(Context *context);
 };

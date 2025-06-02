@@ -215,10 +215,10 @@ void QlManager::run_explain(std::shared_ptr<Plan> plan, Context *context) {
         // 创建ExplainExecutor
         auto executor = x->get_executor(context);
         
-        // 使用一个简单的列定义显示计划
+        // 使用一个列定义显示计划
         std::vector<TabCol> explain_cols = {TabCol{"", "EXPLAIN"}};
         
-        // 使用既有的select_from方法显示结果
+        // 使用select_from方法显示结果
         select_from(std::move(executor), explain_cols, context);
     }
 }
