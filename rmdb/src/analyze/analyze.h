@@ -19,7 +19,8 @@ See the Mulan PSL v2 for more details. */
 #include "parser/parser.h"
 #include "system/sm.h"
 #include "common/common.h"
-
+#include <map>
+#include <set>
 class Query{
     public:
     std::shared_ptr<ast::TreeNode> parse;//抽象语法树
@@ -38,6 +39,8 @@ class Query{
     std::vector<std::vector<Condition>> join_conds;
     Query(){}
     bool is_explain = false; // 是否为explain语句
+    std::map<std::string, std::set<std::string>> table_required_cols;//储存每个表需要的列
+
 };
 
 class Analyze

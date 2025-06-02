@@ -138,113 +138,248 @@ void print_plan_tree(std::shared_ptr<Plan> plan, std::stringstream& ss, int inde
         }
         ss << "])" << std::endl;
         
-        // 先输出Filter节点，再输出Scan节点
-        // 首先收集所有右子树中的过滤条件
-        if (auto right_scan = std::dynamic_pointer_cast<ScanPlan>(join_plan->right_)) {
-            if (!right_scan->conds_.empty()) {
-                // 输出Filter节点
-                ss << tabs << "\tFilter(condition=[";
-                std::vector<std::string> filter_conds;
-                for (const auto& cond : right_scan->conds_) {
-                    std::stringstream cond_ss;
-                    cond_ss << right_scan->tab_name_ << "." << cond.lhs_col.col_name;
-                    
-                    switch (cond.op) {
-                        case OP_EQ: cond_ss << "="; break;
-                        case OP_NE: cond_ss << "<>"; break;
-                        case OP_LT: cond_ss << "<"; break;
-                        case OP_GT: cond_ss << ">"; break;
-                        case OP_LE: cond_ss << "<="; break;
-                        case OP_GE: cond_ss << ">="; break;
-                        default: cond_ss << "?"; break;
-                    }
-                    
-                    if (cond.is_rhs_val) {
-                        if (cond.rhs_val.type == TYPE_INT) {
-                            cond_ss << cond.rhs_val.int_val;
-                        } else if (cond.rhs_val.type == TYPE_FLOAT) {
-                            cond_ss << cond.rhs_val.float_val;
-                        } else {
-                            cond_ss << "'" << cond.rhs_val.str_val << "'";
+        // 关键修改：确定子树对应的表名
+    std::string left_table = "";
+    std::string right_table = "";
+    
+    // 检查左右子树是否为扫描节点或其上有投影节点
+    auto get_table_name = [](std::shared_ptr<Plan> p) -> std::string {
+        if (auto scan = std::dynamic_pointer_cast<ScanPlan>(p)) {
+            return scan->tab_name_;
+        } else if (auto proj = std::dynamic_pointer_cast<ProjectionPlan>(p)) {
+            if (auto scan = std::dynamic_pointer_cast<ScanPlan>(proj->subplan_)) {
+                return scan->tab_name_;
+            }
+        }
+        return "";
+    };
+    
+    left_table = get_table_name(join_plan->left_);
+    right_table = get_table_name(join_plan->right_);
+    
+    // 根据表名字典序决定输出顺序
+    if (!left_table.empty() && !right_table.empty()) {
+        if (left_table > right_table) {
+            // 如果左表名大于右表名，先处理右子树，再处理左子树
+            
+            // 处理右子树
+            if (auto right_scan = std::dynamic_pointer_cast<ScanPlan>(join_plan->right_)) {
+                if (!right_scan->conds_.empty()) {
+                    // 输出Filter节点
+                    ss << tabs << "\tFilter(condition=[";
+                    std::vector<std::string> filter_conds;
+                    for (const auto& cond : right_scan->conds_) {
+                        std::stringstream cond_ss;
+                        cond_ss << right_scan->tab_name_ << "." << cond.lhs_col.col_name;
+                        
+                        switch (cond.op) {
+                            case OP_EQ: cond_ss << "="; break;
+                            case OP_NE: cond_ss << "<>"; break;
+                            case OP_LT: cond_ss << "<"; break;
+                            case OP_GT: cond_ss << ">"; break;
+                            case OP_LE: cond_ss << "<="; break;
+                            case OP_GE: cond_ss << ">="; break;
+                            default: cond_ss << "?"; break;
                         }
+                        
+                        if (cond.is_rhs_val) {
+                            if (cond.rhs_val.type == TYPE_INT) {
+                                cond_ss << cond.rhs_val.int_val;
+                            } else if (cond.rhs_val.type == TYPE_FLOAT) {
+                                cond_ss << cond.rhs_val.float_val;
+                            } else {
+                                cond_ss << "'" << cond.rhs_val.str_val << "'";
+                            }
+                        }
+                        filter_conds.push_back(cond_ss.str());
                     }
-                    filter_conds.push_back(cond_ss.str());
+                    
+                    std::sort(filter_conds.begin(), filter_conds.end());
+                    first = true;
+                    for (const auto& cond : filter_conds) {
+                        if (!first) ss << ",";
+                        ss << cond;
+                        first = false;
+                    }
+                    ss << "])" << std::endl;
+                    
+                    // 输出Scan节点
+                    ss << tabs << "\t\tScan(table=" << right_scan->tab_name_ << ")" << std::endl;
+                } else {
+                    // 没有过滤条件，直接输出Scan
+                    ss << tabs << "\tScan(table=" << right_scan->tab_name_ << ")" << std::endl;
                 }
-                
-                std::sort(filter_conds.begin(), filter_conds.end());
-                first = true;
-                for (const auto& cond : filter_conds) {
-                    if (!first) ss << ",";
-                    ss << cond;
-                    first = false;
-                }
-                ss << "])" << std::endl;
-                
-                // 输出Scan节点
-                ss << tabs << "\t\tScan(table=" << right_scan->tab_name_ << ")" << std::endl;
             } else {
-                // 没有过滤条件，直接输出Scan
-                ss << tabs << "\tScan(table=" << right_scan->tab_name_ << ")" << std::endl;
+                // 不是简单的扫描节点，递归处理
+                print_plan_tree(join_plan->right_, ss, indent + 1);
+            }
+            
+            // 处理左子树
+            if (auto left_scan = std::dynamic_pointer_cast<ScanPlan>(join_plan->left_)) {
+                if (!left_scan->conds_.empty()) {
+                    // 输出Filter节点
+                    ss << tabs << "\tFilter(condition=[";
+                    std::vector<std::string> filter_conds;
+                    for (const auto& cond : left_scan->conds_) {
+                        std::stringstream cond_ss;
+                        cond_ss << left_scan->tab_name_ << "." << cond.lhs_col.col_name;
+                        
+                        switch (cond.op) {
+                            case OP_EQ: cond_ss << "="; break;
+                            case OP_NE: cond_ss << "<>"; break;
+                            case OP_LT: cond_ss << "<"; break;
+                            case OP_GT: cond_ss << ">"; break;
+                            case OP_LE: cond_ss << "<="; break;
+                            case OP_GE: cond_ss << ">="; break;
+                            default: cond_ss << "?"; break;
+                        }
+                        
+                        if (cond.is_rhs_val) {
+                            if (cond.rhs_val.type == TYPE_INT) {
+                                cond_ss << cond.rhs_val.int_val;
+                            } else if (cond.rhs_val.type == TYPE_FLOAT) {
+                                cond_ss << cond.rhs_val.float_val;
+                            } else {
+                                cond_ss << "'" << cond.rhs_val.str_val << "'";
+                            }
+                        }
+                        filter_conds.push_back(cond_ss.str());
+                    }
+                    
+                    std::sort(filter_conds.begin(), filter_conds.end());
+                    first = true;
+                    for (const auto& cond : filter_conds) {
+                        if (!first) ss << ",";
+                        ss << cond;
+                        first = false;
+                    }
+                    ss << "])" << std::endl;
+                    
+                    // 输出Scan节点
+                    ss << tabs << "\t\tScan(table=" << left_scan->tab_name_ << ")" << std::endl;
+                } else {
+                    // 没有过滤条件，直接输出Scan
+                    ss << tabs << "\tScan(table=" << left_scan->tab_name_ << ")" << std::endl;
+                }
+            } else {
+                // 不是简单的扫描节点，递归处理
+                print_plan_tree(join_plan->left_, ss, indent + 1);
             }
         } else {
-            // 不是简单的扫描节点，递归处理
-            print_plan_tree(join_plan->right_, ss, indent + 1);
-        }
-        
-        // 接着处理左子树
-        if (auto left_scan = std::dynamic_pointer_cast<ScanPlan>(join_plan->left_)) {
-            if (!left_scan->conds_.empty()) {
-                // 输出Filter节点
-                ss << tabs << "\tFilter(condition=[";
-                std::vector<std::string> filter_conds;
-                for (const auto& cond : left_scan->conds_) {
-                    std::stringstream cond_ss;
-                    cond_ss << left_scan->tab_name_ << "." << cond.lhs_col.col_name;
-                    
-                    switch (cond.op) {
-                        case OP_EQ: cond_ss << "="; break;
-                        case OP_NE: cond_ss << "<>"; break;
-                        case OP_LT: cond_ss << "<"; break;
-                        case OP_GT: cond_ss << ">"; break;
-                        case OP_LE: cond_ss << "<="; break;
-                        case OP_GE: cond_ss << ">="; break;
-                        default: cond_ss << "?"; break;
-                    }
-                    
-                    if (cond.is_rhs_val) {
-                        if (cond.rhs_val.type == TYPE_INT) {
-                            cond_ss << cond.rhs_val.int_val;
-                        } else if (cond.rhs_val.type == TYPE_FLOAT) {
-                            cond_ss << cond.rhs_val.float_val;
-                        } else {
-                            cond_ss << "'" << cond.rhs_val.str_val << "'";
+            // 默认顺序：先处理左子树，再处理右子树
+            
+            // 处理左子树
+            if (auto left_scan = std::dynamic_pointer_cast<ScanPlan>(join_plan->left_)) {
+                if (!left_scan->conds_.empty()) {
+                    // 输出Filter节点
+                    ss << tabs << "\tFilter(condition=[";
+                    std::vector<std::string> filter_conds;
+                    for (const auto& cond : left_scan->conds_) {
+                        std::stringstream cond_ss;
+                        cond_ss << left_scan->tab_name_ << "." << cond.lhs_col.col_name;
+                        
+                        switch (cond.op) {
+                            case OP_EQ: cond_ss << "="; break;
+                            case OP_NE: cond_ss << "<>"; break;
+                            case OP_LT: cond_ss << "<"; break;
+                            case OP_GT: cond_ss << ">"; break;
+                            case OP_LE: cond_ss << "<="; break;
+                            case OP_GE: cond_ss << ">="; break;
+                            default: cond_ss << "?"; break;
                         }
+                        
+                        if (cond.is_rhs_val) {
+                            if (cond.rhs_val.type == TYPE_INT) {
+                                cond_ss << cond.rhs_val.int_val;
+                            } else if (cond.rhs_val.type == TYPE_FLOAT) {
+                                cond_ss << cond.rhs_val.float_val;
+                            } else {
+                                cond_ss << "'" << cond.rhs_val.str_val << "'";
+                            }
+                        }
+                        filter_conds.push_back(cond_ss.str());
                     }
-                    filter_conds.push_back(cond_ss.str());
+                    
+                    std::sort(filter_conds.begin(), filter_conds.end());
+                    first = true;
+                    for (const auto& cond : filter_conds) {
+                        if (!first) ss << ",";
+                        ss << cond;
+                        first = false;
+                    }
+                    ss << "])" << std::endl;
+                    
+                    // 输出Scan节点
+                    ss << tabs << "\t\tScan(table=" << left_scan->tab_name_ << ")" << std::endl;
+                } else {
+                    // 没有过滤条件，直接输出Scan
+                    ss << tabs << "\tScan(table=" << left_scan->tab_name_ << ")" << std::endl;
                 }
-                
-                std::sort(filter_conds.begin(), filter_conds.end());
-                first = true;
-                for (const auto& cond : filter_conds) {
-                    if (!first) ss << ",";
-                    ss << cond;
-                    first = false;
-                }
-                ss << "])" << std::endl;
-                
-                // 输出Scan节点
-                ss << tabs << "\t\tScan(table=" << left_scan->tab_name_ << ")" << std::endl;
             } else {
-                // 没有过滤条件，直接输出Scan
-                ss << tabs << "\tScan(table=" << left_scan->tab_name_ << ")" << std::endl;
+                // 不是简单的扫描节点，递归处理
+                print_plan_tree(join_plan->left_, ss, indent + 1);
             }
-        } else {
-            // 不是简单的扫描节点，递归处理
-            print_plan_tree(join_plan->left_, ss, indent + 1);
+            
+            // 处理右子树
+            if (auto right_scan = std::dynamic_pointer_cast<ScanPlan>(join_plan->right_)) {
+                if (!right_scan->conds_.empty()) {
+                    // 输出Filter节点
+                    ss << tabs << "\tFilter(condition=[";
+                    std::vector<std::string> filter_conds;
+                    for (const auto& cond : right_scan->conds_) {
+                        std::stringstream cond_ss;
+                        cond_ss << right_scan->tab_name_ << "." << cond.lhs_col.col_name;
+                        
+                        switch (cond.op) {
+                            case OP_EQ: cond_ss << "="; break;
+                            case OP_NE: cond_ss << "<>"; break;
+                            case OP_LT: cond_ss << "<"; break;
+                            case OP_GT: cond_ss << ">"; break;
+                            case OP_LE: cond_ss << "<="; break;
+                            case OP_GE: cond_ss << ">="; break;
+                            default: cond_ss << "?"; break;
+                        }
+                        
+                        if (cond.is_rhs_val) {
+                            if (cond.rhs_val.type == TYPE_INT) {
+                                cond_ss << cond.rhs_val.int_val;
+                            } else if (cond.rhs_val.type == TYPE_FLOAT) {
+                                cond_ss << cond.rhs_val.float_val;
+                            } else {
+                                cond_ss << "'" << cond.rhs_val.str_val << "'";
+                            }
+                        }
+                        filter_conds.push_back(cond_ss.str());
+                    }
+                    
+                    std::sort(filter_conds.begin(), filter_conds.end());
+                    first = true;
+                    for (const auto& cond : filter_conds) {
+                        if (!first) ss << ",";
+                        ss << cond;
+                        first = false;
+                    }
+                    ss << "])" << std::endl;
+                    
+                    // 输出Scan节点
+                    ss << tabs << "\t\tScan(table=" << right_scan->tab_name_ << ")" << std::endl;
+                } else {
+                    // 没有过滤条件，直接输出Scan
+                    ss << tabs << "\tScan(table=" << right_scan->tab_name_ << ")" << std::endl;
+                }
+            } else {
+                // 不是简单的扫描节点，递归处理
+                print_plan_tree(join_plan->right_, ss, indent + 1);
+            }
         }
-        
-        return;
+    } else {
+        // 无法确定表名，使用默认处理逻辑
+        print_plan_tree(join_plan->left_, ss, indent + 1);
+        print_plan_tree(join_plan->right_, ss, indent + 1);
     }
+    
+    return;
+}
     
     // 处理扫描和过滤节点
     if (plan->tag == T_SeqScan || plan->tag == T_IndexScan) {

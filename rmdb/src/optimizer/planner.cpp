@@ -234,48 +234,48 @@ void Planner::predicate_pushdown(std::shared_ptr<Query> query, Context *context)
 
 void Planner::projection_pushdown(std::shared_ptr<Query> query, Context *context)
 {
-    // 收集查询中所有需要的列
-    std::unordered_set<std::string> used_cols;
+    // 为每个表初始化需要的列集合
+    std::map<std::string, std::set<std::string>> required_cols_by_table;
     
-    // 从SELECT子句收集
+    // 从SELECT子句收集需要的列
     for (const auto& col : query->cols) {
-        std::string col_id = col.tab_name + "." + col.col_name;
-        used_cols.insert(col_id);
+        if (!col.tab_name.empty() && !col.col_name.empty()) {
+            // 如果是明确的列引用,添加到所需列
+            required_cols_by_table[col.tab_name].insert(col.col_name);
+        }
     }
     
-    // 从WHERE子句条件中收集
+    // 从WHERE条件中收集需要的列
     for (const auto& cond : query->conds) {
-        std::string lhs_id = cond.lhs_col.tab_name + "." + cond.lhs_col.col_name;
-        used_cols.insert(lhs_id);
+        // 处理左侧列
+        if (!cond.lhs_col.tab_name.empty()) {
+            required_cols_by_table[cond.lhs_col.tab_name].insert(cond.lhs_col.col_name);
+        }
         
-        if (!cond.is_rhs_val) {
-            std::string rhs_id = cond.rhs_col.tab_name + "." + cond.rhs_col.col_name;
-            used_cols.insert(rhs_id);
+        // 处理右侧列
+        if (!cond.is_rhs_val && !cond.rhs_col.tab_name.empty()) {
+            required_cols_by_table[cond.rhs_col.tab_name].insert(cond.rhs_col.col_name);
         }
     }
     
-    // 从ORDER BY子句收集
-    auto x = std::dynamic_pointer_cast<ast::SelectStmt>(query->parse);
-    if (x && x->has_sort) {
-        std::string tab_name;
-        // 找出排序列所属的表
-        for (const auto& table : query->tables) {
-            const auto& tab_meta = sm_manager_->db_.get_table(table);
-            for (const auto& col : tab_meta.cols) {
-                if (col.name == x->order->cols->col_name) {
-                    tab_name = table;
-                    break;
-                }
+    // 从JOIN条件中收集需要的列
+    for (const auto& join_conds : query->join_conds) {
+        for (const auto& cond : join_conds) {
+            // 处理左侧列
+            if (!cond.lhs_col.tab_name.empty()) {
+                required_cols_by_table[cond.lhs_col.tab_name].insert(cond.lhs_col.col_name);
             }
-            if (!tab_name.empty()) break;
-        }
-        
-        if (!tab_name.empty()) {
-            std::string col_id = tab_name + "." + x->order->cols->col_name;
-            used_cols.insert(col_id);
+            
+            // 如果右侧列不是常量,处理右侧列
+            if (!cond.is_rhs_val && !cond.rhs_col.tab_name.empty()) {
+                required_cols_by_table[cond.rhs_col.tab_name].insert(cond.rhs_col.col_name);
+            }
         }
     }
     
+    // 保存到Query对象中供后续使用
+    query->table_required_cols = required_cols_by_table;
+
 }
 
 size_t Planner::get_table_cardinality(const std::string& tab_name) {
@@ -390,7 +390,7 @@ std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query)
     auto x = std::dynamic_pointer_cast<ast::SelectStmt>(query->parse);
     std::vector<std::string> tables = query->tables;
     std::cout << "DEBUG: 处理的表数量: " << tables.size() << std::endl;
-    // 1. 为每个表创建扫描执行器
+    // 为每个表创建扫描执行器
     std::vector<std::shared_ptr<Plan>> table_scan_executors(tables.size());
     std::vector<size_t> table_cardinalities(tables.size());
     
@@ -425,6 +425,29 @@ std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query)
         std::cout << "DEBUG: 获取表 " << tables[i] << " 的基数" << std::endl;
         table_cardinalities[i] = get_table_cardinality(tables[i]);
         std::cout <<"DEBUG: 获取表基数完成"<< std::endl;
+
+        // 应用投影下推：在扫描计划之上添加投影节点
+        // 先检查该表是否有需要的列集合
+        if (query->table_required_cols.find(tables[i]) != query->table_required_cols.end() && 
+            !query->table_required_cols[tables[i]].empty()) {
+            // 获取该表所需的列
+            const auto& required_cols = query->table_required_cols[tables[i]];
+            // 创建投影列表
+            std::vector<TabCol> proj_cols;
+            for (const auto& col_name : required_cols) {
+                proj_cols.push_back({.tab_name = tables[i], .col_name = col_name});
+            }
+            // 创建投影计划并替换原来的扫描计划
+            if (!proj_cols.empty()) {
+                // 添加约束：至少包含WHERE条件中用到的列和JOIN条件中用到的列
+                auto proj_plan = std::make_shared<ProjectionPlan>(
+                    T_Projection, table_scan_executors[i], proj_cols, false);
+                table_scan_executors[i] = proj_plan;
+                
+                std::cout << "DEBUG: 为表 " << tables[i] << " 应用了投影下推，保留了 " 
+                          << proj_cols.size() << " 个列" << std::endl;
+            }
+        }
     }
     std::cout <<"DEBUG: 创建扫描计划完成"<< std::endl;
     // 只有一个表，不需要连接
@@ -432,7 +455,7 @@ std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query)
         return table_scan_executors[0];
     }
     
-    // 2. 连接顺序优化 - 贪心算法
+    // 连接顺序优化 - 贪心算法
     // 使用vector跟踪已加入连接计划和未加入的表
     std::vector<bool> used(tables.size(), false);
     std::vector<size_t> join_order;
