@@ -71,7 +71,18 @@ class Portal
                 {
                     std::shared_ptr<ProjectionPlan> p = std::dynamic_pointer_cast<ProjectionPlan>(x->subplan_);
                     std::unique_ptr<AbstractExecutor> root= convert_plan_executor(p, context);
-                    return std::make_shared<PortalStmt>(PORTAL_ONE_SELECT, std::move(p->sel_cols_), std::move(root), plan);
+
+                    // 处理别名
+                    std::vector<TabCol> cols_to_be_showed = p->sel_cols_;
+                    for (size_t i = 0; i < p->alias_.size(); i++) 
+                        if (!p->alias_[i].empty()) 
+                            cols_to_be_showed[i].col_name = std::move(p->alias_[i]);
+                        
+                    return std::make_shared<PortalStmt>(
+                                PORTAL_ONE_SELECT, 
+                                std::move(cols_to_be_showed), 
+                                std::move(root), plan
+                            );
                 }
                     
                 case T_Update:

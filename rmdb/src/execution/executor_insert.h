@@ -9,6 +9,7 @@ MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 See the Mulan PSL v2 for more details. */
 
 #pragma once
+#define DEBUG 1
 #include "execution_defs.h"
 #include "execution_manager.h"
 #include "executor_abstract.h"
@@ -70,11 +71,16 @@ class InsertExecutor : public AbstractExecutor {
                 memcpy(key + offset, rec.data + index.cols[j].offset, index.cols[j].len);
                 offset += index.cols[j].len;
             }
-            if(ih->has_key(key, context_->txn_)) {// 检查有没有键的重复
+#if DEBUG
+            static int cnt;
+            cnt ++;
+            if(cnt == 2)
+            cnt = cnt ;
+#endif
+            if(!ih->has_key(key, context_->txn_)) {// 检查有没有键的重复
                 ihs[i] = ih; 
                 keys[i] = key; // 将key存储到keys数组中
-            }
-            else {
+            } else {
                 for(int k = 0; k < i; k++) delete[] keys[k];
                 delete[] keys;
                 delete[] ihs;

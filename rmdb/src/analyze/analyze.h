@@ -34,6 +34,16 @@ class Query{
     std::vector<SetClause> set_clauses;
     //insert 的values值
     std::vector<Value> values;
+    // 聚合类型
+    std::vector<AggType> agg_types;
+    // 别名
+    std::vector<std::string> alias;
+    // group by
+    std::vector<TabCol> group_bys;
+    // having 条件
+    std::vector<Condition> havings;
+    // order by
+    TabCol order_bys;
 
     Query(){}
 
@@ -50,10 +60,11 @@ public:
     std::shared_ptr<Query> do_analyze(std::shared_ptr<ast::TreeNode> root);
 
 private:
-    TabCol check_column(const std::vector<ColMeta> &all_cols, TabCol target);
+    TabCol check_column(const std::vector<ColMeta> &all_cols, TabCol &target);
     void get_all_cols(const std::vector<std::string> &tab_names, std::vector<ColMeta> &all_cols);
     void get_clause(const std::vector<std::shared_ptr<ast::BinaryExpr>> &sv_conds, std::vector<Condition> &conds);
-    void check_clause(const std::vector<std::string> &tab_names, std::vector<Condition> &conds);
+    void check_clause(const std::vector<std::string> &tab_names, std::vector<Condition> &conds, bool check_having=false);
+    void get_having_clause(const std::vector<std::shared_ptr<ast::HavingExpr> > &having_conds, std::vector<Condition> &conds);
     Value convert_sv_value(const std::shared_ptr<ast::Value> &sv_val);
     CompOp convert_sv_comp_op(ast::SvCompOp op);
     bool value_type_match(ColType type1, ColType type2);

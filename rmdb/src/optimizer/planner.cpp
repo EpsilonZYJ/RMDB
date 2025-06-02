@@ -138,7 +138,10 @@ std::shared_ptr<Plan> Planner::physical_optimization(std::shared_ptr<Query> quer
 }
 
 
-
+/**
+ * @brief 负责生成物理执行计划中的表访问和表连接部分。
+ * "one_rel"中的"rel"是"relation"(关系)的缩写，表示该函数将多个关系（表）整合成一个完整的执行计划。
+ */
 std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query)
 {
     auto x = std::dynamic_pointer_cast<ast::SelectStmt>(query->parse);
@@ -299,8 +302,36 @@ std::shared_ptr<Plan> Planner::generate_select_plan(std::shared_ptr<Query> query
     //物理优化
     auto sel_cols = query->cols;
     std::shared_ptr<Plan> plannerRoot = physical_optimization(query, context);
-    plannerRoot = std::make_shared<ProjectionPlan>(T_Projection, std::move(plannerRoot), 
-                                                        std::move(sel_cols));
+
+    // Check if this is an aggregate query
+    bool agg = false;
+    // Check if there are GROUP BY clauses
+    if (!query->group_bys.empty()) agg = true;
+    else // Check if there are any aggregate functions
+        for (AggType &agg_type : query->agg_types) 
+            if (agg_type != NO_AGG) {
+                agg = true; break;
+            }
+        
+
+    // Generate aggregate plan if needed（在projection之前增加aggregation节点）
+    if (agg) 
+        plannerRoot = std::make_shared<AggregatePlan>(
+            T_Aggregation,
+            std::move(plannerRoot),
+            std::move(query->cols),
+            std::move(query->agg_types),
+            std::move(query->group_bys),
+            std::move(query->havings)
+        );
+    // 查询执行树中表示聚合函数的节点为
+
+    plannerRoot = std::make_shared<ProjectionPlan>(
+            T_Projection, 
+            std::move(plannerRoot), 
+            std::move(sel_cols),
+            std::move(query->alias)
+        );
 
     return plannerRoot;
 }
@@ -377,10 +408,9 @@ std::shared_ptr<Plan> Planner::do_planner(std::shared_ptr<Query> query, Context 
                                                      std::vector<Value>(), query->conds, 
                                                      query->set_clauses);
     } else if (auto x = std::dynamic_pointer_cast<ast::SelectStmt>(query->parse)) {
-
         std::shared_ptr<plannerInfo> root = std::make_shared<plannerInfo>(x);
-        // 生成select语句的查询执行计划
-        std::shared_ptr<Plan> projection = generate_select_plan(std::move(query), context);
+        // 生成select语句的查询执行计划(projection总是在最顶层)
+        std::shared_ptr<Plan> projection = generate_select_plan(std::move(query), context); // 生成select语句的查询执行计划
         plannerRoot = std::make_shared<DMLPlan>(T_select, projection, std::string(), std::vector<Value>(),
                                                     std::vector<Condition>(), std::vector<SetClause>());
     } else {

@@ -44,6 +44,9 @@ class Optimizer {
         } else if (auto x = std::dynamic_pointer_cast<ast::TxnBegin>(query->parse)) {
             // begin;
             return std::make_shared<OtherPlan>(T_Transaction_begin, std::string());
+        } else if (auto x = std::dynamic_pointer_cast<ast::ShowIndex>(query->parse)) {
+            // show index;
+            return std::make_shared<OtherPlan>(T_ShowIndex, x->tab_name);
         } else if (auto x = std::dynamic_pointer_cast<ast::TxnAbort>(query->parse)) {
             // abort;
             return std::make_shared<OtherPlan>(T_Transaction_abort, std::string());
@@ -57,7 +60,7 @@ class Optimizer {
             // Set Knob Plan
             return std::make_shared<SetKnobPlan>(x->set_knob_type_, x->bool_val_);
         } else {
-            return planner_->do_planner(query, context);
+            return planner_->do_planner(query, context); // 生成DDL语句和DML语句的查询执行计划
         }
     }
 

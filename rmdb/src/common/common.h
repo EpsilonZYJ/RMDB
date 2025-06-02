@@ -17,6 +17,7 @@ See the Mulan PSL v2 for more details. */
 #include <vector>
 #include "defs.h"
 #include "record/rm_defs.h"
+#include "parser/parser.h"
 
 
 struct TabCol {
@@ -244,6 +245,9 @@ struct Condition {
     bool is_rhs_val;  // true if right-hand side is a value (not a column)
     TabCol rhs_col;   // right-hand side column
     Value rhs_val;    // right-hand side value
+
+    /* 新增 */
+    AggType agg_type = NO_AGG; // aggregation type, default is NO_AGG
 
     bool check(const Value& lhs, const Value& rhs) const {
         switch (op) {

@@ -23,6 +23,7 @@ using namespace ast;
 // keywords
 %token SHOW TABLES CREATE TABLE DROP DESC INSERT INTO VALUES DELETE FROM ASC ORDER BY
 WHERE UPDATE SET SELECT INT CHAR FLOAT INDEX AND JOIN EXIT HELP TXN_BEGIN TXN_COMMIT TXN_ABORT TXN_ROLLBACK ORDER_BY ENABLE_NESTLOOP ENABLE_SORTMERGE
+COUNT MAX MIN SUM AVG AS GROUP HAVING 
 // non-keywords
 %token LEQ NEQ GEQ T_EOF
 
@@ -41,10 +42,12 @@ WHERE UPDATE SET SELECT INT CHAR FLOAT INDEX AND JOIN EXIT HELP TXN_BEGIN TXN_CO
 %type <sv_expr> expr
 %type <sv_val> value
 %type <sv_vals> valueList
-%type <sv_str> tbName colName
+%type <sv_str> tbName colName alias asClause
 %type <sv_strs> tableList colNameList
 %type <sv_col> col
-%type <sv_cols> colList selector
+%type <sv_cols> colList selector group_by_clause
+%type <sv_col_extra_infos> select_list
+%type <sv_havings> having_clause having_clauses
 %type <sv_set_clause> setClause
 %type <sv_set_clauses> setClauses
 %type <sv_cond> condition
@@ -52,7 +55,7 @@ WHERE UPDATE SET SELECT INT CHAR FLOAT INDEX AND JOIN EXIT HELP TXN_BEGIN TXN_CO
 %type <sv_orderby>  order_clause opt_order_clause
 %type <sv_orderby_dir> opt_asc_desc
 %type <sv_setKnobType> set_knob_type
-
+%type <sv_col_extra_info> select_item
 %%
 start:
         stmt ';'
@@ -109,6 +112,10 @@ dbStmt:
     {
         $$ = std::make_shared<ShowTables>();
     }
+    |   SHOW INDEX FROM tbName
+    {
+        $$ = std::make_shared<ShowIndex>($4);
+    }
     ;
 
 setStmt:
@@ -154,9 +161,9 @@ dml:
     {
         $$ = std::make_shared<UpdateStmt>($2, $4, $5);
     }
-    |   SELECT selector FROM tableList optWhereClause opt_order_clause
+    |   SELECT select_list FROM tableList optWhereClause group_by_clause having_clauses opt_order_clause
     {
-        $$ = std::make_shared<SelectStmt>($2, $4, $5, $6);
+        $$ = std::static_pointer_cast<Expr>(std::make_shared<SelectStmt>($2, $4, $5, $6, $7, $8));
     }
     ;
 
@@ -338,12 +345,68 @@ setClause:
     }
     ;
 
+asClause:
+        AS alias
+    {
+        $$ = std::move($2);
+    }
+    |
+    {
+        $$ = "";
+    }
+    ;
+
+select_item:
+        col asClause
+    {
+        $$ = std::make_shared<ColExtraInfo>(std::move($1), NO_AGG, std::move($2));
+    }
+    |   COUNT '(' '*' ')' asClause
+    {
+        $$ = std::make_shared<ColExtraInfo>(std::make_shared<Col>("", ""), AGG_COUNT, std::move($5));
+    }
+    |   COUNT '(' col ')' asClause
+    {
+        $$ = std::make_shared<ColExtraInfo>(std::move($3), AGG_COUNT, std::move($5));
+    }
+    |   MAX '(' col ')' asClause
+    {
+        $$ = std::make_shared<ColExtraInfo>(std::move($3), AGG_MAX, std::move($5));
+    }
+    |   MIN '(' col ')' asClause
+    {
+        $$ = std::make_shared<ColExtraInfo>(std::move($3), AGG_MIN, std::move($5));
+    }
+    |   SUM '(' col ')' asClause
+    {
+        $$ = std::make_shared<ColExtraInfo>(std::move($3), AGG_SUM, std::move($5));
+    }
+    |   AVG '(' col ')' asClause
+    {
+        $$ = std::make_shared<ColExtraInfo>(std::move($3), AGG_AVG, std::move($5));
+    }
+    ;
+
 selector:
         '*'
     {
         $$ = {};
     }
     |   colList
+    ;
+select_list:
+        '*'
+    {
+        $$ = {};
+    }
+    |   select_item
+    {
+        $$.emplace_back(std::move($1));
+    }
+    |   select_list ',' select_item
+    {
+        $$.emplace_back(std::move($3));
+    }
     ;
 
 tableList:
@@ -382,6 +445,43 @@ opt_asc_desc:
     |       { $$ = OrderBy_DEFAULT; }
     ;    
 
+group_by_clause:
+        GROUP BY colList
+    {
+        $$ = std::move($3);
+    }
+    |   /* epsilon */
+    {
+        /* ignore */
+    }
+    ;
+
+having_clause:
+        select_item op expr
+    {
+        $$.emplace_back(std::make_shared<HavingExpr>($1, $2, $3));
+    }
+    |   having_clause AND select_item op expr
+    {
+        $$.emplace_back(std::make_shared<HavingExpr>($3, $4, $5));
+    }
+    |   /* epsilon */
+    {
+        /* ignore */
+    }
+    ;
+
+having_clauses:
+        HAVING having_clause
+    {
+        $$ = std::move($2);
+    }
+    |   /* epsilon */
+    {
+        /* ignore */
+    }
+    ;
+
 set_knob_type:
     ENABLE_NESTLOOP { $$ = EnableNestLoop; }
     |   ENABLE_SORTMERGE { $$ = EnableSortMerge; }
@@ -390,4 +490,6 @@ set_knob_type:
 tbName: IDENTIFIER;
 
 colName: IDENTIFIER;
+
+alias: IDENTIFIER;
 %%

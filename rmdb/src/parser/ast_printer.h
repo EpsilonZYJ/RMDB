@@ -62,6 +62,17 @@ private:
         return m.at(op);
     }
 
+    static std::string aggType2str(AggType type) {
+        static std::map<AggType, std::string> m{
+            {AGG_COUNT, "AGG_COUNT"},
+            {AGG_MAX, "AGG_MAX"},
+            {AGG_MIN, "AGG_MIN"},
+            {AGG_SUM, "AGG_SUM"},
+            {NO_AGG, "NO_AGG"},
+        };
+        return m.at(type);
+    }
+
     template<typename T>
     static void print_node_list(std::vector<T> nodes, int offset) {
         std::cout << offset2string(offset);
@@ -101,6 +112,9 @@ private:
             // print_val(x->col_name, offset);
             for(auto col_name: x->col_names)
                 print_val(col_name, offset);
+        } else if (auto x = std::dynamic_pointer_cast<ShowIndex>(node)) {
+                std::cout << "SHOW_INDEX\n";
+                print_val(x->tab_name, offset);
         } else if (auto x = std::dynamic_pointer_cast<ColDef>(node)) {
             std::cout << "COL_DEF\n";
             print_val(x->col_name, offset);
@@ -109,6 +123,11 @@ private:
             std::cout << "COL\n";
             print_val(x->tab_name, offset);
             print_val(x->col_name, offset);
+        } else if (auto x = std::dynamic_pointer_cast<ColExtraInfo>(node)) {
+            std::cout << "BOUND_EXPR\n";
+            print_val(aggType2str(x->type), offset);
+            print_node(x->col, offset);
+            print_val(x->alias, offset);
         } else if (auto x = std::dynamic_pointer_cast<TypeLen>(node)) {
             std::cout << "TYPE_LEN\n";
             print_val(type2str(x->type), offset);

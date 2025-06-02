@@ -268,14 +268,15 @@ void SmManager::create_index(const std::string& tab_name, const std::vector<std:
         // 获取构建key所需的数据
         Rid rid = scan.rid();
         std::unique_ptr<char> key(new char[col_tot_len]);
-        RmRecord *record = fh->get_record(rid, context).get();
+        auto record = fh->get_record(rid, context);
         // 将记录中的索引字段数据拷贝到key中
         int offset = 0;
         for(const ColMeta &col : cols) {
             memcpy(key.get() + offset, record->data + col.offset, col.len);
             offset += col.len;
         } 
-        if(ih->has_key(key.get(), context->txn_)) continue; // 注意判断唯一性
+        if(ih->has_key(key.get(), context->txn_)) // 注意判断唯一性
+            throw IndexNotUniqueError(ix_manager_->get_index_name(tab_name, col_names)); 
         ih->insert_entry(key.get(), rid, context->txn_);
     }
 
@@ -295,9 +296,9 @@ void SmManager::drop_index(const std::string& tab_name, const std::vector<std::s
     // 删除索引元数据
     std::string index_name = ix_manager_->get_index_name(tab_name, col_names);
     auto index_meta = db_.get_table(tab_name).get_index_meta(col_names);
-    db_.get_table(tab_name).indexes.erase(index_meta);
     ix_manager_->close_index(ihs_.at(index_name).get());
     ix_manager_->destroy_index(tab_name, index_meta->cols);
+    db_.get_table(tab_name).indexes.erase(index_meta);
     ihs_.erase(index_name);
 
     flush_meta();
@@ -315,4 +316,28 @@ void SmManager::drop_index(const std::string& tab_name, const std::vector<ColMet
     for(int i=0;i<cols.size();i++)
         col_names.push_back(cols[i].name);
     drop_index(tab_name, col_names, context);
+}
+
+void SmManager::show_index(std::string &table_name, Context *context) {
+    TabMeta &tab = db_.get_table(table_name);
+    if(tab.indexes.empty()) return;
+
+    std::fstream outfile;
+    outfile.open("output.txt", std::ios::out | std::ios::app);
+    RecordPrinter printer(3);
+    printer.print_separator(context);
+
+    for(IndexMeta &index: tab.indexes) {
+        std::string rep = "(";
+        for(auto &col: index.cols) 
+            rep += col.name + ",";
+        rep.pop_back();
+        rep += ")";
+
+        printer.print_record({table_name, "unique", rep}, context);
+        outfile << "| " << tab.name << " | unique | " << rep << " |\n";
+        printer.print_separator(context);
+    }
+
+    outfile.close();
 }

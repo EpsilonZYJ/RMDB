@@ -35,8 +35,8 @@
    especially those whose name start with YY_ or yy_.  They are
    private implementation details that can be changed or removed.  */
 
-#ifndef YY_YY_MNT_D_PHD1_DATABASE_COMPETITION_DB2024_RMDB_SRC_PARSER_YACC_TAB_H_INCLUDED
-# define YY_YY_MNT_D_PHD1_DATABASE_COMPETITION_DB2024_RMDB_SRC_PARSER_YACC_TAB_H_INCLUDED
+#ifndef YY_YY_HOME_WANGYIRAN_RMDB_DB2025_YOURSQL_RMDB_SRC_PARSER_YACC_TAB_H_INCLUDED
+# define YY_YY_HOME_WANGYIRAN_RMDB_DB2025_YOURSQL_RMDB_SRC_PARSER_YACC_TAB_H_INCLUDED
 /* Debug traces.  */
 #ifndef YYDEBUG
 # define YYDEBUG 0
@@ -87,15 +87,23 @@ extern int yydebug;
     ORDER_BY = 288,                /* ORDER_BY  */
     ENABLE_NESTLOOP = 289,         /* ENABLE_NESTLOOP  */
     ENABLE_SORTMERGE = 290,        /* ENABLE_SORTMERGE  */
-    LEQ = 291,                     /* LEQ  */
-    NEQ = 292,                     /* NEQ  */
-    GEQ = 293,                     /* GEQ  */
-    T_EOF = 294,                   /* T_EOF  */
-    IDENTIFIER = 295,              /* IDENTIFIER  */
-    VALUE_STRING = 296,            /* VALUE_STRING  */
-    VALUE_INT = 297,               /* VALUE_INT  */
-    VALUE_FLOAT = 298,             /* VALUE_FLOAT  */
-    VALUE_BOOL = 299               /* VALUE_BOOL  */
+    COUNT = 291,                   /* COUNT  */
+    MAX = 292,                     /* MAX  */
+    MIN = 293,                     /* MIN  */
+    SUM = 294,                     /* SUM  */
+    AVG = 295,                     /* AVG  */
+    AS = 296,                      /* AS  */
+    GROUP = 297,                   /* GROUP  */
+    HAVING = 298,                  /* HAVING  */
+    LEQ = 299,                     /* LEQ  */
+    NEQ = 300,                     /* NEQ  */
+    GEQ = 301,                     /* GEQ  */
+    T_EOF = 302,                   /* T_EOF  */
+    IDENTIFIER = 303,              /* IDENTIFIER  */
+    VALUE_STRING = 304,            /* VALUE_STRING  */
+    VALUE_INT = 305,               /* VALUE_INT  */
+    VALUE_FLOAT = 306,             /* VALUE_FLOAT  */
+    VALUE_BOOL = 307               /* VALUE_BOOL  */
   };
   typedef enum yytokentype yytoken_kind_t;
 #endif
@@ -122,4 +130,4 @@ struct YYLTYPE
 int yyparse (void);
 
 
-#endif /* !YY_YY_MNT_D_PHD1_DATABASE_COMPETITION_DB2024_RMDB_SRC_PARSER_YACC_TAB_H_INCLUDED  */
+#endif /* !YY_YY_HOME_WANGYIRAN_RMDB_DB2025_YOURSQL_RMDB_SRC_PARSER_YACC_TAB_H_INCLUDED  */

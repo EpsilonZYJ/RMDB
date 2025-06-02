@@ -16,6 +16,16 @@ See the Mulan PSL v2 for more details. */
 enum JoinType {
     INNER_JOIN, LEFT_JOIN, RIGHT_JOIN, FULL_JOIN
 };
+
+enum AggType {
+    AGG_COUNT,
+    AGG_MAX,
+    AGG_MIN,
+    AGG_SUM,
+    AGG_AVG,  
+    NO_AGG  // 没有聚合函数
+};
+
 namespace ast {
 
 enum SvType {
@@ -113,6 +123,13 @@ struct DropIndex : public TreeNode {
             tab_name(std::move(tab_name_)), col_names(std::move(col_names_)) {}
 };
 
+struct ShowIndex : public TreeNode {
+        std::string tab_name;
+
+        explicit ShowIndex(std::string &tab_name_) : tab_name(std::move(tab_name_)) {
+        }
+    };
+
 struct Expr : public TreeNode {
 };
 
@@ -159,6 +176,7 @@ struct SetClause : public TreeNode {
             col_name(std::move(col_name_)), val(std::move(val_)) {}
 };
 
+/* WHERE条件语句的二元比较 */
 struct BinaryExpr : public TreeNode {
     std::shared_ptr<Col> lhs;
     SvCompOp op;
@@ -166,6 +184,17 @@ struct BinaryExpr : public TreeNode {
 
     BinaryExpr(std::shared_ptr<Col> lhs_, SvCompOp op_, std::shared_ptr<Expr> rhs_) :
             lhs(std::move(lhs_)), op(op_), rhs(std::move(rhs_)) {}
+};
+
+// ColExtraInfo存储包括别名以及聚合函数在内的更丰富的列信息
+struct ColExtraInfo : public TreeNode {
+    std::shared_ptr<Col> col;
+    std::string alias; // 别名
+    AggType type;
+
+    ColExtraInfo(std::shared_ptr<Col> &&col_, AggType &&type_, std::string &&alias_ = "") : col(std::move(col_)),
+        type(type_), alias(std::move(alias_)) {
+    }
 };
 
 struct OrderBy : public TreeNode
@@ -214,22 +243,39 @@ struct JoinExpr : public TreeNode {
             left(std::move(left_)), right(std::move(right_)), conds(std::move(conds_)), type(type_) {}
 };
 
-struct SelectStmt : public TreeNode {
-    std::vector<std::shared_ptr<Col>> cols;
+struct HavingExpr : public TreeNode {
+    std::shared_ptr<ColExtraInfo> lhs;
+    SvCompOp op;
+    std::shared_ptr<Expr> rhs;
+    HavingExpr(std::shared_ptr<ColExtraInfo> &lhs_, SvCompOp &op_, std::shared_ptr<Expr> &rhs_) : lhs(std::move(lhs_)),
+        op(op_),
+        rhs(std::move(rhs_)) {
+    }
+};
+
+struct SelectStmt : public TreeNode, public Expr {
+    std::vector<std::shared_ptr<ColExtraInfo>> cols;
     std::vector<std::string> tabs;
     std::vector<std::shared_ptr<BinaryExpr>> conds;
     std::vector<std::shared_ptr<JoinExpr>> jointree;
-
+    std::vector<std::shared_ptr<Col> > group_bys;
+    std::vector<std::shared_ptr<HavingExpr> > havings;
     
     bool has_sort;
     std::shared_ptr<OrderBy> order;
 
 
-    SelectStmt(std::vector<std::shared_ptr<Col>> cols_,
+    SelectStmt(std::vector<std::shared_ptr<ColExtraInfo>> cols_,
                std::vector<std::string> tabs_,
                std::vector<std::shared_ptr<BinaryExpr>> conds_,
+               std::vector<std::shared_ptr<Col> > &group_bys_, // 允许包含多个列
+               std::vector<std::shared_ptr<HavingExpr> > &havings_,
                std::shared_ptr<OrderBy> order_) :
-            cols(std::move(cols_)), tabs(std::move(tabs_)), conds(std::move(conds_)), 
+            cols(std::move(cols_)), 
+            tabs(std::move(tabs_)), 
+            conds(std::move(conds_)), 
+            group_bys(std::move(group_bys_)),
+            havings(std::move(havings_)),
             order(std::move(order_)) {
                 has_sort = (bool)order;
             }
@@ -269,6 +315,12 @@ struct SemValue {
 
     std::shared_ptr<Col> sv_col;
     std::vector<std::shared_ptr<Col>> sv_cols;
+
+    std::shared_ptr<ColExtraInfo> sv_col_extra_info;
+    std::vector<std::shared_ptr<ColExtraInfo> > sv_col_extra_infos;
+
+    std::shared_ptr<HavingExpr> sv_having;
+    std::vector<std::shared_ptr<HavingExpr> > sv_havings;
 
     std::shared_ptr<SetClause> sv_set_clause;
     std::vector<std::shared_ptr<SetClause>> sv_set_clauses;

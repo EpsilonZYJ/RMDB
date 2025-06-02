@@ -82,6 +82,13 @@ single_op ";"|"("|")"|","|"*"|"="|">"|"<"|"."
 "JOIN" {return JOIN;}
 "EXIT" { return EXIT; }
 "HELP" { return HELP; }
+"COUNT" { return COUNT; }
+"MAX" { return MAX; }
+"MIN" { return MIN; }
+"SUM" { return SUM; }
+"AVG" { return AVG; }
+"AS" { return AS; }
+"GROUP" { return GROUP; }
 "ORDER" { return ORDER; }
 "BY" {  return BY;  }
 "ASC" { return ASC; }

@@ -28,6 +28,7 @@ typedef enum PlanTag{
     T_DropTable,
     T_CreateIndex,
     T_DropIndex,
+    T_ShowIndex,
     T_SetKnob,
     T_Insert,
     T_Update,
@@ -42,7 +43,8 @@ typedef enum PlanTag{
     T_NestLoop,
     T_SortMerge,    // sort merge join
     T_Sort,
-    T_Projection
+    T_Projection,
+    T_Aggregation
 } PlanTag;
 
 // 查询执行计划
@@ -104,16 +106,20 @@ class JoinPlan : public Plan
 class ProjectionPlan : public Plan
 {
     public:
-        ProjectionPlan(PlanTag tag, std::shared_ptr<Plan> subplan, std::vector<TabCol> sel_cols)
+        ProjectionPlan(PlanTag tag, 
+                    std::shared_ptr<Plan> subplan, 
+                    std::vector<TabCol> sel_cols,
+                    std::vector<std::string> alias) // TODO limits
         {
             Plan::tag = tag;
             subplan_ = std::move(subplan);
             sel_cols_ = std::move(sel_cols);
+            alias_ = std::move(alias);
         }
         ~ProjectionPlan(){}
         std::shared_ptr<Plan> subplan_;
         std::vector<TabCol> sel_cols_;
-        
+        std::vector<std::string> alias_; // 别名        
 };
 
 class SortPlan : public Plan
@@ -131,6 +137,29 @@ class SortPlan : public Plan
         TabCol sel_col_;
         bool is_desc_;
         
+};
+
+class AggregatePlan : public Plan {
+public:
+    AggregatePlan(PlanTag tag, 
+                  std::shared_ptr<Plan> subplan, 
+                  std::vector<TabCol> sel_cols,
+                  std::vector<AggType> agg_types,
+                  std::vector<TabCol> group_bys, 
+                  std::vector<Condition> havings) : 
+                    subplan_(std::move(subplan)),
+                    sel_cols_(std::move(sel_cols)), agg_types_(std::move(agg_types)),
+                    group_bys_(std::move(group_bys)), havings_(std::move(havings)) {
+                  Plan::tag = tag;
+    }
+
+    ~AggregatePlan() {}
+
+    std::shared_ptr<Plan> subplan_;
+    std::vector<TabCol> sel_cols_;
+    std::vector<AggType> agg_types_;
+    std::vector<TabCol> group_bys_;
+    std::vector<Condition> havings_;
 };
 
 // dml语句，包括insert; delete; update; select语句　
