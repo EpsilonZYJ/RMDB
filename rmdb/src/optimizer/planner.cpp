@@ -411,10 +411,10 @@ std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query)
         if (!index_exist) {
             index_col_names.clear();
             scan_plan = std::make_shared<ScanPlan>(T_SeqScan, sm_manager_, tables[i], 
-                                                std::vector<Condition>(), index_col_names);
+                                                curr_conds, index_col_names);
         } else {
             scan_plan = std::make_shared<ScanPlan>(T_IndexScan, sm_manager_, tables[i], 
-                                                std::vector<Condition>(), index_col_names);
+                curr_conds, index_col_names);
         }
         std::cout <<"DEBUG: 创建基本扫描计划完成"<< std::endl;
         
