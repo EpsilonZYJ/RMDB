@@ -717,48 +717,11 @@ void Planner::explain_plan(std::shared_ptr<Plan> plan, std::ostream& os, int ind
             if (auto proj_plan = std::dynamic_pointer_cast<ProjectionPlan>(plan)) {
                 os << indent_str << "Project(columns=[";
                 
-                // 检查是否选择所有列
-                bool is_select_all = false;
-
-        // 检查是否是SELECT *的更准确方法
-        if (proj_plan->sel_cols_.empty()) {
-            is_select_all = true;
-        } else {
-            // 获取所有涉及的表
-            std::set<std::string> tables;
-            for (const auto& col : proj_plan->sel_cols_) {
-                if (!col.tab_name.empty()) {
-                    tables.insert(col.tab_name);
-                }
-            }
-            
-            // 检查是否包含了每个表的所有列
-            bool all_columns_selected = true;
-            for (const auto& tab : tables) {
-                // 获取表的列数
-                size_t table_column_count = sm_manager_->db_.get_table(tab).cols.size();
-                
-                // 计算选择的该表列数
-                size_t selected_column_count = 0;
-                for (const auto& col : proj_plan->sel_cols_) {
-                    if (col.tab_name == tab) {
-                        selected_column_count++;
-                    }
-                }
-                
-                if (selected_column_count < table_column_count) {
-                    all_columns_selected = false;
-                    break;
-                }
-            }
-            
-            is_select_all = all_columns_selected;
-        }
-                
-                if (is_select_all) {
+                // 直接使用is_select_star_ 字段来判断
+                if (proj_plan->is_select_star_) {
                     os << "*";
                 } else {
-                    // 排序和显示特定列的原有代码
+                    // 排序和显示特定列
                     std::vector<std::string> columns;
                     for (const auto& col : proj_plan->sel_cols_) {
                         std::string col_name;
@@ -854,8 +817,17 @@ std::shared_ptr<Plan> Planner::generate_select_plan(std::shared_ptr<Query> query
     auto sel_cols = query->cols;
     std::shared_ptr<Plan> plannerRoot = physical_optimization(query, context);
     std::cout << "DEBUG: 创建投影计划" << std::endl;
+    //检查是否为SELECT *
+    bool is_select_star = false;
+    if (auto select_stmt = std::dynamic_pointer_cast<ast::SelectStmt>(query->parse)) {
+        // 如果原始cols为空或只有一个列且为"*"，则标记为SELECT*
+        if (select_stmt->cols.empty() || 
+            (select_stmt->cols.size() == 1 && select_stmt->cols[0]->col_name == "*")) {
+            is_select_star = true;
+        }
+    }
     plannerRoot = std::make_shared<ProjectionPlan>(T_Projection, std::move(plannerRoot), 
-                                                        std::move(sel_cols));
+                                                        std::move(sel_cols),is_select_star);
     std::cout << "DEBUG: 创建投影计划完成" << std::endl;
     return plannerRoot;
 }

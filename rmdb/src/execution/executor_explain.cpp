@@ -52,27 +52,102 @@ void print_plan_tree(std::shared_ptr<Plan> plan, std::stringstream& ss, int inde
     
     if (!plan) return;
 
-    switch (plan->tag) {
-        case T_select: {
-            // SELECT节点，直接处理子节点
+    // 处理EXPLAIN和SELECT节点
+    if (plan->tag == T_Explain || plan->tag == T_select) {
+        if (plan->tag == T_Explain) {
+            auto explain_plan = std::dynamic_pointer_cast<ExplainPlan>(plan);
+            if (explain_plan && explain_plan->plan_) {
+                print_plan_tree(explain_plan->plan_, ss, indent);
+            }
+        } else {
             auto dml_plan = std::dynamic_pointer_cast<DMLPlan>(plan);
             if (dml_plan && dml_plan->subplan_) {
                 print_plan_tree(dml_plan->subplan_, ss, indent);
             }
-            break;
         }
-        case T_SeqScan:
-        case T_IndexScan: {
-            auto scan_plan = std::dynamic_pointer_cast<ScanPlan>(plan);
+        return;
+    }
+
+     // 处理投影节点
+     if (plan->tag == T_Projection) {
+        auto proj_plan = std::dynamic_pointer_cast<ProjectionPlan>(plan);
+        ss << tabs << "Project(columns=[";
+        
+        // 使用is_select_star_标志
+        if (proj_plan->is_select_star_) {
+            ss << "*";
+        } else {
+            // 收集并排序列名
+            std::vector<std::string> column_names;
+            for (const auto& col : proj_plan->sel_cols_) {
+                column_names.push_back(col.tab_name + "." + col.col_name);
+            }
+            std::sort(column_names.begin(), column_names.end());
             
-            // 检查是否有过滤条件 - 如果有，先输出Filter节点
-            if (!scan_plan->conds_.empty()) {
-                // 收集并排序条件字符串
-                std::vector<std::string> conditions;
-                for (const auto& cond : scan_plan->conds_) {
+            bool first = true;
+            for (const auto& col_name : column_names) {
+                if (!first) ss << ",";
+                ss << col_name;
+                first = false;
+            }
+        }
+        ss << "])" << std::endl;
+        
+        // 打印子计划
+        if (proj_plan->subplan_) {
+            print_plan_tree(proj_plan->subplan_, ss, indent + 1);
+        }
+        return;
+    }
+    
+    // 处理连接节点
+    if (plan->tag == T_NestLoop) {
+        auto join_plan = std::dynamic_pointer_cast<JoinPlan>(plan);
+        
+        // 收集所有表名并排序
+        std::set<std::string> table_names;
+        collect_table_names(join_plan, table_names);
+        
+        // 生成JOIN节点
+        ss << tabs << "Join(tables=[";
+        bool first = true;
+        for (const auto& table : table_names) {
+            if (!first) ss << ",";
+            ss << table;
+            first = false;
+        }
+        ss << "],condition=[";
+        
+        // 排序并打印连接条件
+        std::vector<std::string> join_conditions;
+        for (const auto& cond : join_plan->conds_) {
+            if (cond.is_rhs_val) continue;
+            
+            std::stringstream cond_ss;
+            cond_ss << cond.lhs_col.tab_name << "." << cond.lhs_col.col_name << "=";
+            cond_ss << cond.rhs_col.tab_name << "." << cond.rhs_col.col_name;
+            join_conditions.push_back(cond_ss.str());
+        }
+        
+        std::sort(join_conditions.begin(), join_conditions.end());
+        first = true;
+        for (const auto& cond : join_conditions) {
+            if (!first) ss << ",";
+            ss << cond;
+            first = false;
+        }
+        ss << "])" << std::endl;
+        
+        // 先输出Filter节点，再输出Scan节点
+        // 首先收集所有右子树中的过滤条件
+        if (auto right_scan = std::dynamic_pointer_cast<ScanPlan>(join_plan->right_)) {
+            if (!right_scan->conds_.empty()) {
+                // 输出Filter节点
+                ss << tabs << "\tFilter(condition=[";
+                std::vector<std::string> filter_conds;
+                for (const auto& cond : right_scan->conds_) {
                     std::stringstream cond_ss;
-                    // 确保使用表名前缀
-                    cond_ss << scan_plan->tab_name_ << "." << cond.lhs_col.col_name;
+                    cond_ss << right_scan->tab_name_ << "." << cond.lhs_col.col_name;
                     
                     switch (cond.op) {
                         case OP_EQ: cond_ss << "="; break;
@@ -85,148 +160,147 @@ void print_plan_tree(std::shared_ptr<Plan> plan, std::stringstream& ss, int inde
                     }
                     
                     if (cond.is_rhs_val) {
-                        // 右侧是常量
                         if (cond.rhs_val.type == TYPE_INT) {
                             cond_ss << cond.rhs_val.int_val;
                         } else if (cond.rhs_val.type == TYPE_FLOAT) {
                             cond_ss << cond.rhs_val.float_val;
-                        } else if (cond.rhs_val.type == TYPE_STRING) {
+                        } else {
                             cond_ss << "'" << cond.rhs_val.str_val << "'";
                         }
-                    } else {
-                        // 右侧是列
-                        cond_ss << cond.rhs_col.tab_name << "." << cond.rhs_col.col_name;
                     }
-                    
-                    conditions.push_back(cond_ss.str());
+                    filter_conds.push_back(cond_ss.str());
                 }
                 
-                // 按字典序排序条件
-                std::sort(conditions.begin(), conditions.end());
-                
-                // 输出Filter节点
-                ss << tabs << "Filter(condition=[";
-                for (size_t i = 0; i < conditions.size(); ++i) {
-                    if (i > 0) ss << ",";
-                    ss << conditions[i];
+                std::sort(filter_conds.begin(), filter_conds.end());
+                first = true;
+                for (const auto& cond : filter_conds) {
+                    if (!first) ss << ",";
+                    ss << cond;
+                    first = false;
                 }
                 ss << "])" << std::endl;
                 
-                // Filter下嵌套Scan节点
-                ss << tabs << "\t" << "Scan(table=" << scan_plan->tab_name_ << ")" << std::endl;
+                // 输出Scan节点
+                ss << tabs << "\t\tScan(table=" << right_scan->tab_name_ << ")" << std::endl;
             } else {
-                // 无条件的Scan节点
-                ss << tabs << "Scan(table=" << scan_plan->tab_name_ << ")" << std::endl;
+                // 没有过滤条件，直接输出Scan
+                ss << tabs << "\tScan(table=" << right_scan->tab_name_ << ")" << std::endl;
             }
-            break;
+        } else {
+            // 不是简单的扫描节点，递归处理
+            print_plan_tree(join_plan->right_, ss, indent + 1);
         }
-        case T_NestLoop: {
-            auto join_plan = std::dynamic_pointer_cast<JoinPlan>(plan);
-            
-            // 收集所有表名并排序
-            std::set<std::string> table_names;
-            
-            // 辅助函数：从计划中收集表名
-            std::function<void(std::shared_ptr<Plan>)> collect_tables = [&](std::shared_ptr<Plan> p) {
-                if (!p) return;
-                
-                if (auto scan = std::dynamic_pointer_cast<ScanPlan>(p)) {
-                    table_names.insert(scan->tab_name_);
-                } else if (auto sub_join = std::dynamic_pointer_cast<JoinPlan>(p)) {
-                    collect_tables(sub_join->left_);
-                    collect_tables(sub_join->right_);
+        
+        // 接着处理左子树
+        if (auto left_scan = std::dynamic_pointer_cast<ScanPlan>(join_plan->left_)) {
+            if (!left_scan->conds_.empty()) {
+                // 输出Filter节点
+                ss << tabs << "\tFilter(condition=[";
+                std::vector<std::string> filter_conds;
+                for (const auto& cond : left_scan->conds_) {
+                    std::stringstream cond_ss;
+                    cond_ss << left_scan->tab_name_ << "." << cond.lhs_col.col_name;
+                    
+                    switch (cond.op) {
+                        case OP_EQ: cond_ss << "="; break;
+                        case OP_NE: cond_ss << "<>"; break;
+                        case OP_LT: cond_ss << "<"; break;
+                        case OP_GT: cond_ss << ">"; break;
+                        case OP_LE: cond_ss << "<="; break;
+                        case OP_GE: cond_ss << ">="; break;
+                        default: cond_ss << "?"; break;
+                    }
+                    
+                    if (cond.is_rhs_val) {
+                        if (cond.rhs_val.type == TYPE_INT) {
+                            cond_ss << cond.rhs_val.int_val;
+                        } else if (cond.rhs_val.type == TYPE_FLOAT) {
+                            cond_ss << cond.rhs_val.float_val;
+                        } else {
+                            cond_ss << "'" << cond.rhs_val.str_val << "'";
+                        }
+                    }
+                    filter_conds.push_back(cond_ss.str());
                 }
-            };
+                
+                std::sort(filter_conds.begin(), filter_conds.end());
+                first = true;
+                for (const auto& cond : filter_conds) {
+                    if (!first) ss << ",";
+                    ss << cond;
+                    first = false;
+                }
+                ss << "])" << std::endl;
+                
+                // 输出Scan节点
+                ss << tabs << "\t\tScan(table=" << left_scan->tab_name_ << ")" << std::endl;
+            } else {
+                // 没有过滤条件，直接输出Scan
+                ss << tabs << "\tScan(table=" << left_scan->tab_name_ << ")" << std::endl;
+            }
+        } else {
+            // 不是简单的扫描节点，递归处理
+            print_plan_tree(join_plan->left_, ss, indent + 1);
+        }
+        
+        return;
+    }
+    
+    // 处理扫描和过滤节点
+    if (plan->tag == T_SeqScan || plan->tag == T_IndexScan) {
+        auto scan_plan = std::dynamic_pointer_cast<ScanPlan>(plan);
+        
+        // 检查是否有过滤条件
+        if (!scan_plan->conds_.empty()) {
+            // 输出Filter节点
+            ss << tabs << "Filter(condition=[";
+            std::vector<std::string> conditions;
+            for (const auto& cond : scan_plan->conds_) {
+                std::stringstream cond_ss;
+                cond_ss << scan_plan->tab_name_ << "." << cond.lhs_col.col_name;
+                
+                switch (cond.op) {
+                    case OP_EQ: cond_ss << "="; break;
+                    case OP_NE: cond_ss << "<>"; break;
+                    case OP_LT: cond_ss << "<"; break;
+                    case OP_GT: cond_ss << ">"; break;
+                    case OP_LE: cond_ss << "<="; break;
+                    case OP_GE: cond_ss << ">="; break;
+                    default: cond_ss << "?"; break;
+                }
+                
+                if (cond.is_rhs_val) {
+                    if (cond.rhs_val.type == TYPE_INT) {
+                        cond_ss << cond.rhs_val.int_val;
+                    } else if (cond.rhs_val.type == TYPE_FLOAT) {
+                        cond_ss << cond.rhs_val.float_val;
+                    } else {
+                        cond_ss << "'" << cond.rhs_val.str_val << "'";
+                    }
+                }
+                conditions.push_back(cond_ss.str());
+            }
             
-            collect_tables(join_plan->left_);
-            collect_tables(join_plan->right_);
-            
-            // 生成JOIN节点
-            ss << tabs << "Join(tables=[";
+            std::sort(conditions.begin(), conditions.end());
             bool first = true;
-            for (const auto& table : table_names) {
+            for (const auto& cond : conditions) {
                 if (!first) ss << ",";
-                ss << table;
+                ss << cond;
                 first = false;
             }
-            ss << "],condition=[";
-            
-            // 排序并打印连接条件 
-            if (!join_plan->conds_.empty()) {
-                std::vector<std::string> join_conditions;
-                for (const auto& cond : join_plan->conds_) {
-                    if (cond.is_rhs_val) continue; // 跳过非连接条件
-                    
-                    std::stringstream cond_ss;
-                    cond_ss << cond.lhs_col.tab_name << "." << cond.lhs_col.col_name << "=";
-                    cond_ss << cond.rhs_col.tab_name << "." << cond.rhs_col.col_name;
-                    join_conditions.push_back(cond_ss.str());
-                }
-                
-                std::sort(join_conditions.begin(), join_conditions.end());
-                
-                first = true;
-                for (const auto& condition : join_conditions) {
-                    if (!first) ss << ",";
-                    ss << condition;
-                    first = false;
-                }
-            }
             ss << "])" << std::endl;
             
-            // 递归打印左右子树 - 按题目要求的顺序
-            print_plan_tree(join_plan->left_, ss, indent + 1);
-            print_plan_tree(join_plan->right_, ss, indent + 1);
-            break;
+            // 输出Scan节点
+            ss << tabs << "\tScan(table=" << scan_plan->tab_name_ << ")" << std::endl;
+        } else {
+            // 没有过滤条件，直接输出Scan
+            ss << tabs << "Scan(table=" << scan_plan->tab_name_ << ")" << std::endl;
         }
-        case T_Projection: {
-            auto proj_plan = std::dynamic_pointer_cast<ProjectionPlan>(plan);
-            ss << tabs << "Project(columns=[";
-            
-            if (proj_plan->sel_cols_.empty()) {
-                ss << "*";
-            } else {
-                // 收集并排序列名
-                std::vector<std::string> column_names;
-                for (const auto& col : proj_plan->sel_cols_) {
-                    column_names.push_back(col.tab_name + "." + col.col_name);
-                }
-                std::sort(column_names.begin(), column_names.end());
-                
-                bool first = true;
-                for (const auto& col_name : column_names) {
-                    if (!first) ss << ",";
-                    ss << col_name;
-                    first = false;
-                }
-            }
-            ss << "])" << std::endl;
-            
-            // 打印子计划
-            if (proj_plan->subplan_) {
-                print_plan_tree(proj_plan->subplan_, ss, indent + 1);
-            }
-            break;
-        }
-        case T_Sort: {
-            // 这里应简化为适当节点
-            auto sort_plan = std::dynamic_pointer_cast<SortPlan>(plan);
-            if (sort_plan->subplan_) {
-                print_plan_tree(sort_plan->subplan_, ss, indent);
-            }
-            break;
-        }
-        case T_Explain: {
-            auto explain_plan = std::dynamic_pointer_cast<ExplainPlan>(plan);
-            if (explain_plan && explain_plan->plan_) {
-                print_plan_tree(explain_plan->plan_, ss, indent);
-            }
-            break;
-        }
-        default:
-            ss << tabs << "Unknown plan type: " << plan->tag << std::endl;
-            break;
+        return;
     }
+    
+    // 其他节点类型的处理
+    ss << tabs << "Unknown plan type: " << plan->tag << std::endl;
 }
 
 std::unique_ptr<RmRecord> ExplainExecutor::Next() {
@@ -240,7 +314,7 @@ std::unique_ptr<RmRecord> ExplainExecutor::Next() {
         // 保存结果
         result_ = ss.str();
         
-        // 直接输出到终端，方便调试查看
+        // 输出到终端
         std::cerr << "\n======= EXPLAIN QUERY PLAN =======\n";
         std::cerr << result_;
         std::cerr << "=================================\n\n";
