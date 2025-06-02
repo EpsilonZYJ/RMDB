@@ -31,17 +31,24 @@ void print_sorted_items(const std::vector<std::string>& items, std::stringstream
 
 // 辅助函数：收集JOIN计划中的所有表名
 void collect_table_names(std::shared_ptr<JoinPlan> join_plan, std::set<std::string>& table_names) {
+    // 使用递归函数收集所有表名
     std::function<void(std::shared_ptr<Plan>)> collect = [&](std::shared_ptr<Plan> p) {
         if (!p) return;
         
         if (auto scan = std::dynamic_pointer_cast<ScanPlan>(p)) {
             table_names.insert(scan->tab_name_);
-        } else if (auto sub_join = std::dynamic_pointer_cast<JoinPlan>(p)) {
+        } 
+        else if (auto sub_join = std::dynamic_pointer_cast<JoinPlan>(p)) {
             collect(sub_join->left_);
             collect(sub_join->right_);
         }
+        else if (auto proj = std::dynamic_pointer_cast<ProjectionPlan>(p)) {
+            // 当遇到投影节点时，继续查找其子计划
+            collect(proj->subplan_);
+        }
     };
     
+    // 从JOIN的左右子树开始收集
     collect(join_plan->left_);
     collect(join_plan->right_);
 }
