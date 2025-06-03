@@ -416,7 +416,17 @@ set_knob_type:
     |   ENABLE_SORTMERGE { $$ = EnableSortMerge; }
     ;
 
-tbName: IDENTIFIER;
+tbName: 
+      IDENTIFIER
+    {
+        $$ = $1;
+    }
+    | IDENTIFIER IDENTIFIER
+    {
+        //格式: "表名 别名"
+        $$ = $1 + " " + $2;
+    }
+    ;
 
 colName: IDENTIFIER;
 %%

@@ -30,13 +30,20 @@ void print_sorted_items(const std::vector<std::string>& items, std::stringstream
 }
 
 // 辅助函数,收集JOIN计划中的所有表名
-void collect_table_names(std::shared_ptr<JoinPlan> join_plan, std::set<std::string>& table_names) {
+void collect_table_names(std::shared_ptr<JoinPlan> join_plan, std::set<std::string>& table_names,
+    const std::map<std::string, std::string>& tab_alias_map = {}) {
     // 使用递归函数收集所有表名
     std::function<void(std::shared_ptr<Plan>)> collect = [&](std::shared_ptr<Plan> p) {
         if (!p) return;
         
         if (auto scan = std::dynamic_pointer_cast<ScanPlan>(p)) {
-            table_names.insert(scan->tab_name_);
+            std::string tab_name = scan->tab_name_;
+            auto it = tab_alias_map.find(tab_name);
+            if (it != tab_alias_map.end()) {
+                table_names.insert(it->second); // 使用别名
+            } else {
+                table_names.insert(tab_name); // 使用原表名
+            }
         } 
         else if (auto sub_join = std::dynamic_pointer_cast<JoinPlan>(p)) {
             collect(sub_join->left_);
@@ -54,7 +61,8 @@ void collect_table_names(std::shared_ptr<JoinPlan> join_plan, std::set<std::stri
 }
 
 
-void print_plan_tree(std::shared_ptr<Plan> plan, std::stringstream& ss, int indent = 0) {
+void print_plan_tree(std::shared_ptr<Plan> plan, std::stringstream& ss, 
+    int indent = 0,const std::map<std::string, std::string>& tab_alias_map = {}) {
     std::string tabs(indent, '\t');
     
     if (!plan) return;
@@ -64,12 +72,12 @@ void print_plan_tree(std::shared_ptr<Plan> plan, std::stringstream& ss, int inde
         if (plan->tag == T_Explain) {
             auto explain_plan = std::dynamic_pointer_cast<ExplainPlan>(plan);
             if (explain_plan && explain_plan->plan_) {
-                print_plan_tree(explain_plan->plan_, ss, indent);
+                print_plan_tree(explain_plan->plan_, ss, indent,tab_alias_map);
             }
         } else {
             auto dml_plan = std::dynamic_pointer_cast<DMLPlan>(plan);
             if (dml_plan && dml_plan->subplan_) {
-                print_plan_tree(dml_plan->subplan_, ss, indent);
+                print_plan_tree(dml_plan->subplan_, ss, indent,tab_alias_map);
             }
         }
         return;
@@ -102,7 +110,7 @@ void print_plan_tree(std::shared_ptr<Plan> plan, std::stringstream& ss, int inde
         
         // 打印子计划
         if (proj_plan->subplan_) {
-            print_plan_tree(proj_plan->subplan_, ss, indent + 1);
+            print_plan_tree(proj_plan->subplan_, ss, indent + 1,tab_alias_map);
         }
         return;
     }
@@ -113,7 +121,7 @@ void print_plan_tree(std::shared_ptr<Plan> plan, std::stringstream& ss, int inde
         
         // 收集所有表名并排序
         std::set<std::string> table_names;
-        collect_table_names(join_plan, table_names);
+        collect_table_names(join_plan, table_names,tab_alias_map);
         
         // 生成JOIN节点
         ss << tabs << "Join(tables=[";
@@ -256,7 +264,7 @@ void print_plan_tree(std::shared_ptr<Plan> plan, std::stringstream& ss, int inde
             }
         } else {
             // 其他类型节点递归处理
-            print_plan_tree(node, ss, indent + 1);
+            print_plan_tree(node, ss, indent + 1,tab_alias_map);
         }
     }
     return;
@@ -323,7 +331,8 @@ std::unique_ptr<RmRecord> ExplainExecutor::Next() {
     if (!executed_) {
         // 创建包含EXPLAIN结果的记录
         std::stringstream ss; 
-        print_plan_tree(plan_->plan_, ss);
+        std::cout << "DEBUG: 开始生成EXPLAIN输出" << std::endl;
+        print_plan_tree(plan_->plan_, ss, 0, tab_alias_map_);
         // 保存结果
         result_ = ss.str();
         // 输出到终端
@@ -364,6 +373,7 @@ void ExplainExecutor::generate_explain_output() {
 
 // 实现 ExplainPlan::get_executor 方法
 std::unique_ptr<AbstractExecutor> ExplainPlan::get_executor(Context *context) {
+    std::cout << "DEBUG: 创建ExplainExecutor,别名映射大小: " << tab_alias_map.size() << std::endl;
     return std::make_unique<ExplainExecutor>(this, context);
 }
 

@@ -18,6 +18,7 @@ See the Mulan PSL v2 for more details. */
 
 #include "parser/parser.h"
 #include "execution/executor_explain.h"
+#include <map>
 typedef enum PlanTag{
     T_Invalid = 1,
     T_Help,
@@ -216,11 +217,11 @@ class plannerInfo{
 class ExplainPlan : public Plan {
     public:
         std::shared_ptr<Plan> plan_;
-        
+        std::map<std::string, std::string> tab_alias_map;
         ExplainPlan(PlanTag tag, std::shared_ptr<Plan> plan)
             : Plan(), plan_(plan) {
             Plan::tag = tag;  
-        }
+            }
         ~ExplainPlan() = default;
         std::unique_ptr<AbstractExecutor> get_executor(Context *context);
 };

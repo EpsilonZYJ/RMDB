@@ -20,10 +20,14 @@ private:
     ExplainPlan *plan_;
     bool executed_;
     std::string result_; // 存储EXPLAIN的结果
+    std::map<std::string, std::string> tab_alias_map_; // 添加别名映射
     
 public: 
     ExplainExecutor(ExplainPlan *plan, Context *context)
     : AbstractExecutor(), plan_(plan), executed_(false){
+        if (plan_) {
+            tab_alias_map_ = plan_->tab_alias_map;
+        }
     } 
     
     void beginTuple() override;

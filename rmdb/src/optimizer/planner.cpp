@@ -983,6 +983,7 @@ std::shared_ptr<Plan> Planner::do_planner(std::shared_ptr<Query> query, Context 
 
         std::shared_ptr<plannerInfo> root = std::make_shared<plannerInfo>(x);
         // 生成select语句的查询执行计划
+        std::cout << "DEBUG: 生成select语句的查询执行计划" << std::endl;
         std::shared_ptr<Plan> projection = generate_select_plan(std::move(query), context);
         plannerRoot = std::make_shared<DMLPlan>(T_select, projection, std::string(), std::vector<Value>(),
                                                     std::vector<Condition>(), std::vector<SetClause>());
@@ -990,7 +991,26 @@ std::shared_ptr<Plan> Planner::do_planner(std::shared_ptr<Query> query, Context 
         throw InternalError("Unexpected AST root");
     }
     if (is_explain) {
-        return std::make_shared<ExplainPlan>(T_Explain, plannerRoot);
+        std::cout << "DEBUG: 生成ExplainPlan" << std::endl;
+        auto explain_plan = std::make_shared<ExplainPlan>(T_Explain, plannerRoot);
+        if (query) {
+            size_t alias_size = 0;      
+            if (alias_size > 0) {
+                    std::map<std::string, std::string> safe_copy;
+                    std::vector<std::string> keys;
+                    for (const auto& item : query->tab_alias_map) {
+                        keys.push_back(item.first);
+                    }//复制
+                    for (const auto& key : keys) {
+                        safe_copy[key] = query->tab_alias_map[key];
+                    }
+                    explain_plan->tab_alias_map = safe_copy;
+                    std::cout << "DEBUG: 别名映射复制完成" << std::endl;
+            }
+        } else {
+            std::cerr << "ERROR: query对象无效" << std::endl;
+        }
+        return explain_plan;
     }
     std::cout << "DEBUG: doplanner完成" << std::endl;
     return plannerRoot;

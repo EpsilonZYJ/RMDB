@@ -40,7 +40,7 @@ class Query{
     Query(){}
     bool is_explain = false; // 是否为explain语句
     std::map<std::string, std::set<std::string>> table_required_cols;//储存每个表需要的列
-
+    std::map<std::string, std::string> tab_alias_map; // 表名到别名的映射
 };
 
 class Analyze
@@ -54,12 +54,13 @@ public:
     std::shared_ptr<Query> do_analyze(std::shared_ptr<ast::TreeNode> root);
 
 private:
-    TabCol check_column(const std::vector<ColMeta> &all_cols, TabCol target);
+    TabCol check_column(const std::vector<ColMeta> &all_cols, TabCol target,const std::map<std::string, std::string> &tab_alias_map);
     void get_all_cols(const std::vector<std::string> &tab_names, std::vector<ColMeta> &all_cols);
     void get_clause(const std::vector<std::shared_ptr<ast::BinaryExpr>> &sv_conds, std::vector<Condition> &conds);
-    void check_clause(const std::vector<std::string> &tab_names, std::vector<Condition> &conds);
+    void check_clause(const std::vector<std::string> &tab_names, std::vector<Condition> &conds,const std::map<std::string, std::string> &tab_alias_map);
     Value convert_sv_value(const std::shared_ptr<ast::Value> &sv_val);
     CompOp convert_sv_comp_op(ast::SvCompOp op);
     bool value_type_match(ColType type1, ColType type2);
+    void analyze_table_refs(const std::vector<std::string> &tab_refs, std::shared_ptr<Query> query);
 };
 
