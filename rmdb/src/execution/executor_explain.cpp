@@ -133,20 +133,37 @@ void print_plan_tree(std::shared_ptr<Plan> plan, std::stringstream& ss,
         
         // 收集所有表名并排序
         std::set<std::string> table_names;
-        collect_table_names(join_plan, table_names,tab_alias_map);
+        collect_table_names(join_plan, table_names, tab_alias_map);
+
+        // 创建一个原始表名数组，用于按字母序输出
+        std::vector<std::string> original_tables;
+
+        // 从别名映射回原始表名
+        for (const auto& table : table_names) {
+            bool found = false;
+            for (const auto& [original_table, alias] : tab_alias_map) {
+                if (alias == table) {
+                    original_tables.push_back(original_table);
+                    found = true;
+                    break;
+                }
+            }
+            // 如果没有找到别名映射，表示该表没有别名，直接使用表名
+            if (!found) {
+                original_tables.push_back(table);
+            }
+        }
+
+        // 对原始表名进行排序
+        std::sort(original_tables.begin(), original_tables.end());
         
         // 生成JOIN节点
         ss << tabs << "Join(tables=[";
         bool first = true;
-        for (const auto& table : table_names) {
-            for (const auto& [original_table, alias] : tab_alias_map) {
-                if (alias == table) {
-                    if (!first) ss << ",";
-                    ss << original_table;
-                    first = false;
-                    break;
-                }
-            }
+        for (const auto& table : original_tables) {
+            if (!first) ss << ",";
+            ss << table;
+            first = false;
         }
         ss << "],condition=[";
         

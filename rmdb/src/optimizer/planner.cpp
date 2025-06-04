@@ -593,35 +593,90 @@ std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query)
         for (auto it = query->conds.begin(); it != query->conds.end();) {
             // 优先处理标记为JOIN条件的条件
             if (it->is_join_cond) {
-                join_conds.push_back(*it);
-                it = query->conds.erase(it);
+                // 检查该JOIN条件是否属于当前JOIN级别
+                std::string lhs_real_table = it->lhs_col.tab_name;
+                std::string rhs_real_table = it->rhs_col.tab_name; 
+                
+                // 转换别名到表名
+                for (const auto& [table, alias] : query->tab_alias_map) {
+                    if (alias == lhs_real_table) lhs_real_table = table;
+                    if (alias == rhs_real_table) rhs_real_table = table;
+                }
+                
+                // 精确匹配：当前JOIN条件必须恰好连接当前表和之前某个表
+                bool is_current_join = false;
+                
+                // 检查是否连接当前表
+                bool connects_current = (lhs_real_table == tables[join_order[i]] ||
+                                        rhs_real_table == tables[join_order[i]]);
+                
+                // 检查是否恰好连接之前的一个表（而不是多个表）
+                bool connects_one_prev = false;
+                if (connects_current) {
+                    std::string other_table;
+                    if (lhs_real_table == tables[join_order[i]]) {
+                        other_table = rhs_real_table;
+                    } else {
+                        other_table = lhs_real_table;
+                    }
+                    
+                    // 检查另一个表是否在已连接的表中
+                    for (size_t j = 0; j < i; j++) {
+                        if (other_table == tables[join_order[j]]) {
+                            connects_one_prev = true;
+                            break;
+                        }
+                    }
+                }
+                
+                // 只有同时满足这些条件，才将JOIN条件分配给当前JOIN节点
+                if (connects_current && connects_one_prev) {
+                    join_conds.push_back(*it);
+                    it = query->conds.erase(it);
+                } else {
+                    ++it;
+                }
                 continue;
             }
+            
+            // 处理普通条件
             if (it->is_rhs_val) {
                 ++it;
                 continue;
             }
-            // 使用原表名比较
+            
+            // 下面的逻辑与JOIN条件类似，进行精确匹配
             std::string lhs_real_table = it->lhs_col.tab_name;
             std::string rhs_real_table = it->rhs_col.tab_name; 
-            // 如果存在别名映射，转换为原始表名
+            
             for (const auto& [table, alias] : query->tab_alias_map) {
                 if (alias == lhs_real_table) lhs_real_table = table;
                 if (alias == rhs_real_table) rhs_real_table = table;
-            }      
-            // 检查是否连接当前表和已连接表
+            }
+            
+            // 精确匹配：当前条件必须恰好连接当前表和之前的一个表
             bool connects_current = (lhs_real_table == tables[join_order[i]] ||
-                                    rhs_real_table == tables[join_order[i]]);   
-            bool connects_joined = false;
-            for (size_t j = 0; j < i; j++) {
-                if (lhs_real_table == tables[join_order[j]] ||
-                    rhs_real_table == tables[join_order[j]]) {
-                    connects_joined = true;
-                    break;
+                                    rhs_real_table == tables[join_order[i]]);
+                                    
+            // 检查是否只连接一个之前的表
+            bool connects_one_prev = false;
+            if (connects_current) {
+                std::string other_table;
+                if (lhs_real_table == tables[join_order[i]]) {
+                    other_table = rhs_real_table;
+                } else {
+                    other_table = lhs_real_table;
+                }
+                
+                for (size_t j = 0; j < i; j++) {
+                    if (other_table == tables[join_order[j]]) {
+                        connects_one_prev = true;
+                        break;
+                    }
                 }
             }
             
-            if (connects_current && connects_joined) {
+            if (connects_current && connects_one_prev) {
                 join_conds.push_back(*it);
                 it = query->conds.erase(it);
             } else {
@@ -629,8 +684,7 @@ std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query)
             }
         }
         
-        PlanTag join_type = T_NestLoop; // 使用嵌套循环连接
-        // 创建连接计划
+        PlanTag join_type = T_NestLoop;
         join_plan = std::make_shared<JoinPlan>(
             join_type, 
             join_plan,
