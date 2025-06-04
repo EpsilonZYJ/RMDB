@@ -47,7 +47,6 @@ class DeleteExecutor : public AbstractExecutor {
             // 这里的条件是指update语句中的where条件
             if(!check_condition(old_record, tab_, conds_)) continue;
             
-            bool debug = fh_->is_record(rid);
             fh_->delete_record(rid, context_); // 更新数据文件中的记录
 
             for (size_t i = 0; i < tab_.indexes.size(); i++) {

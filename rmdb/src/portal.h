@@ -23,6 +23,7 @@ See the Mulan PSL v2 for more details. */
 #include "execution/executor_insert.h"
 #include "execution/executor_delete.h"
 #include "execution/execution_sort.h"
+#include "execution/executor_aggregate.h"
 #include "common/common.h"
 
 typedef enum portalTag{
@@ -70,7 +71,7 @@ class Portal
                 case T_select:
                 {
                     std::shared_ptr<ProjectionPlan> p = std::dynamic_pointer_cast<ProjectionPlan>(x->subplan_);
-                    std::unique_ptr<AbstractExecutor> root= convert_plan_executor(p, context);
+                    std::unique_ptr<AbstractExecutor> root= convert_plan_executor(p, context);// TODO !!!
 
                     // 处理别名
                     std::vector<TabCol> cols_to_be_showed = p->sel_cols_;
@@ -167,8 +168,9 @@ class Portal
     std::unique_ptr<AbstractExecutor> convert_plan_executor(std::shared_ptr<Plan> plan, Context *context)
     {
         if(auto x = std::dynamic_pointer_cast<ProjectionPlan>(plan)){
-            return std::make_unique<ProjectionExecutor>(convert_plan_executor(x->subplan_, context), 
-                                                        x->sel_cols_);
+            return std::make_unique<ProjectionExecutor>(
+                convert_plan_executor(x->subplan_, context), 
+                std::move(x->sel_cols_));
         } else if(auto x = std::dynamic_pointer_cast<ScanPlan>(plan)) {
             if(x->tag == T_SeqScan) {
                 return std::make_unique<SeqScanExecutor>(sm_manager_, x->tab_name_, x->conds_, context);
@@ -186,6 +188,13 @@ class Portal
         } else if(auto x = std::dynamic_pointer_cast<SortPlan>(plan)) {
             return std::make_unique<SortExecutor>(convert_plan_executor(x->subplan_, context), 
                                             x->sel_col_, x->is_desc_);
+        } else if (auto x = std::dynamic_pointer_cast<AggregatePlan>(plan)) {
+            return std::make_unique<AggregateExecutor>(
+                convert_plan_executor(x->subplan_, context),
+                std::move(x->sel_cols_),
+                std::move(x->agg_types_),
+                std::move(x->group_bys_), 
+                std::move(x->havings_));
         }
         return nullptr;
     }

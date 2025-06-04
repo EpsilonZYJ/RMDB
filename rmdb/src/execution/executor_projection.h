@@ -21,12 +21,24 @@ class ProjectionExecutor : public AbstractExecutor {
     std::vector<ColMeta> cols_;                     // 需要投影的字段
     size_t len_;                                    // 字段总长度
     std::vector<size_t> sel_idxs_;                  // 需要投影的字段在原始输入列中的位置
+    
+    bool agg_ = false;
 
    public:
     ProjectionExecutor(std::unique_ptr<AbstractExecutor> prev, const std::vector<TabCol> &sel_cols) {
         prev_ = std::move(prev);
-
         size_t curr_offset = 0;
+
+        if(prev_->getType() == "AggregateExecutor") {
+            agg_ = true;
+            for (auto &col_meta: prev_->cols()) {
+                cols_.emplace_back(col_meta);
+                cols_.back().offset = curr_offset;
+                curr_offset += col_meta.len;
+            }
+            return;
+        }
+
         auto &prev_cols = prev_->cols();
         for (auto &sel_col : sel_cols) {
             auto pos = get_col(prev_cols, sel_col);
@@ -44,6 +56,19 @@ class ProjectionExecutor : public AbstractExecutor {
     void nextTuple() override { prev_->nextTuple(); }
 
     std::unique_ptr<RmRecord> Next() override {
+        if(agg_) {
+            // 由于AggregateExecutor的beginTuple()可能会更新cols_，因此需要重新获取cols_
+            // TODO 这只是补救的方法，可能会有其他更好的方法
+            size_t curr_offset = 0;
+            cols_.clear();
+            for (auto &col_meta: prev_->cols()) {
+                cols_.emplace_back(col_meta);
+                cols_.back().offset = curr_offset;
+                curr_offset += col_meta.len;
+            }
+            return std::move(prev_->Next());
+        }
+
         auto rec = prev_->Next();
         auto &prev_cols = prev_->cols();
 

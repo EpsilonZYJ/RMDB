@@ -214,6 +214,51 @@ struct Value {
 
     bool operator>=(const Value &rhs) const { return !(*this < rhs); }
 
+    Value operator+(const Value &rhs) {
+        if (type != rhs.type) 
+            throw IncompatibleTypeError(coltype2str(type), coltype2str(rhs.type));
+
+        if (type == TYPE_INT) {
+            int_val = int_val + rhs.int_val;
+        } else if (type == TYPE_FLOAT) {
+            float_val = float_val + rhs.float_val;
+        } else {
+            throw InternalError("Unexpected value type");
+        }
+
+        if (!raw) return *this;
+
+        int len;
+        switch (type) {
+            case TYPE_INT:    len = sizeof(int);        break;
+            case TYPE_FLOAT:  len = sizeof(float);      break;
+            case TYPE_STRING: len = str_val.size() + 1; break;
+        }
+        set_raw(len);
+        
+        return *this;
+    }
+
+    Value operator/(int devisor) {
+        assert(devisor != 0 && "Division by zero is not allowed");
+
+        if (type == TYPE_INT) int_val /= devisor;
+        else if (type == TYPE_FLOAT) float_val /= devisor;
+        else throw InternalError("Unexpected value type");
+
+        if (!raw) return *this;
+
+        int len;
+        switch (type) {
+            case TYPE_INT:    len = sizeof(int);        break;
+            case TYPE_FLOAT:  len = sizeof(float);      break;
+            case TYPE_STRING: len = str_val.size() + 1; break;
+        }
+        set_raw(len);
+        
+        return *this;
+    }
+
     void value_cast(ColType new_type) {
         if (type == new_type) return;
         if (type == TYPE_INT && new_type == TYPE_FLOAT) float_val = int_val;

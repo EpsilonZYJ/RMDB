@@ -314,7 +314,7 @@ std::shared_ptr<Plan> Planner::generate_select_plan(std::shared_ptr<Query> query
             }
         
 
-    // Generate aggregate plan if needed（在projection之前增加aggregation节点）
+    // Generate aggregate plan if needed（在projection之下增加aggregation节点）
     if (agg) 
         plannerRoot = std::make_shared<AggregatePlan>(
             T_Aggregation,

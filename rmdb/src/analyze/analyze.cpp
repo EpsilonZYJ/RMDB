@@ -297,7 +297,10 @@ void Analyze::check_clause(const std::vector<std::string> &tab_names,
         cond.lhs_col = check_column(all_cols, cond.lhs_col);// Infer table name from column name
         TabMeta &lhs_tab = sm_manager_->db_.get_table(cond.lhs_col.tab_name);
         auto lhs_col = lhs_tab.get_col(cond.lhs_col.col_name);
-        ColType lhs_type = cond.agg_type == AGG_COUNT ? TYPE_INT: lhs_col->type; 
+        ColType lhs_type; 
+        if(cond.agg_type == AGG_COUNT) lhs_type = TYPE_INT; // count(*)的类型是int
+        else if (cond.agg_type == AGG_AVG) lhs_type = TYPE_FLOAT; // avg的类型是float
+        else lhs_type = lhs_col->type; // 获取列的类型
 
         // 处理条件语句右侧列
         ColType rhs_type;

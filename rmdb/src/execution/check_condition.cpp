@@ -112,4 +112,10 @@ bool check_condition(const RmRecord& record,
 
     return true;
 }
+
+bool check_condition(const Value& lhs,
+                     const Value& rhs,
+                     const Condition& cond) {
+    return cond.check(lhs, rhs);
+}
 #endif
