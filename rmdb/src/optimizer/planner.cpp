@@ -267,13 +267,25 @@ void Planner::projection_pushdown(std::shared_ptr<Query> query, Context *context
     for (const auto& join_conds : query->join_conds) {
         for (const auto& cond : join_conds) {
             // 处理左侧列
-            if (!cond.lhs_col.tab_name.empty()) {
-                required_cols_by_table[cond.lhs_col.tab_name].insert(cond.lhs_col.col_name);
+            std::string lhs_tab_name = cond.lhs_col.tab_name;
+            for (const auto& [table, alias] : query->tab_alias_map) {
+                if (alias == lhs_tab_name) {
+                    lhs_tab_name = table; // 转换回原表名
+                    break;
+                }
             }
+            required_cols_by_table[lhs_tab_name].insert(cond.lhs_col.col_name);
             
-            // 如果右侧列不是常量,处理右侧列
-            if (!cond.is_rhs_val && !cond.rhs_col.tab_name.empty()) {
-                required_cols_by_table[cond.rhs_col.tab_name].insert(cond.rhs_col.col_name);
+            // 处理右侧列
+            if (!cond.is_rhs_val) {
+                std::string rhs_tab_name = cond.rhs_col.tab_name;
+                for (const auto& [table, alias] : query->tab_alias_map) {
+                    if (alias == rhs_tab_name) {
+                        rhs_tab_name = table; // 转换回原表名
+                        break;
+                    }
+                }
+            required_cols_by_table[rhs_tab_name].insert(cond.rhs_col.col_name);
             }
         }
     }
@@ -577,20 +589,33 @@ std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query)
     
     for (size_t i = 1; i < join_order.size(); i++) {
         // 找出连接条件
-        std::vector<Condition> join_conds; 
+        std::vector<Condition> join_conds;
         for (auto it = query->conds.begin(); it != query->conds.end();) {
+            // 优先处理标记为JOIN条件的条件
+            if (it->is_join_cond) {
+                join_conds.push_back(*it);
+                it = query->conds.erase(it);
+                continue;
+            }
             if (it->is_rhs_val) {
                 ++it;
                 continue;
             }
+            // 使用原表名比较
+            std::string lhs_real_table = it->lhs_col.tab_name;
+            std::string rhs_real_table = it->rhs_col.tab_name; 
+            // 如果存在别名映射，转换为原始表名
+            for (const auto& [table, alias] : query->tab_alias_map) {
+                if (alias == lhs_real_table) lhs_real_table = table;
+                if (alias == rhs_real_table) rhs_real_table = table;
+            }      
             // 检查是否连接当前表和已连接表
-            bool connects_current = (it->lhs_col.tab_name == tables[join_order[i]] ||
-                                    it->rhs_col.tab_name == tables[join_order[i]]);
-            
+            bool connects_current = (lhs_real_table == tables[join_order[i]] ||
+                                    rhs_real_table == tables[join_order[i]]);   
             bool connects_joined = false;
             for (size_t j = 0; j < i; j++) {
-                if (it->lhs_col.tab_name == tables[join_order[j]] ||
-                    it->rhs_col.tab_name == tables[join_order[j]]) {
+                if (lhs_real_table == tables[join_order[j]] ||
+                    rhs_real_table == tables[join_order[j]]) {
                     connects_joined = true;
                     break;
                 }
@@ -647,7 +672,6 @@ void Planner::explain_plan(std::shared_ptr<Plan> plan, std::ostream& os, int ind
                     // 按字母序排序列
                     std::vector<std::string> columns;
                     // 这里需要获取表的所有列
-                    // 假设从scan_plan中可以获取
                     columns.push_back(scan_plan->tab_name_ + ".*");
                     os << columns[0];
                     for (size_t i = 1; i < columns.size(); ++i) {
@@ -801,7 +825,15 @@ void Planner::explain_plan(std::shared_ptr<Plan> plan, std::ostream& os, int ind
                     for (const auto& col : proj_plan->sel_cols_) {
                         std::string col_name;
                         if (!col.tab_name.empty()) {
-                            col_name = col.tab_name + "." + col.col_name;
+                            //检查是否有别名
+                            std::string tab_name = col.tab_name;
+                            if (auto explain_plan = std::dynamic_pointer_cast<ExplainPlan>(plan)) {
+                                auto it = explain_plan->tab_alias_map.find(tab_name);
+                                if (it != explain_plan->tab_alias_map.end()) {
+                                    tab_name = it->second; // 使用别名
+                                }
+                            }                      
+                            col_name = tab_name + "." + col.col_name;
                         } else {
                             col_name = col.col_name;
                         }
@@ -879,10 +911,13 @@ std::shared_ptr<Plan> Planner::generate_select_plan(std::shared_ptr<Query> query
     if (!query->join_conds.empty()) {
         std::cout << "DEBUG: 处理 JOIN ON 条件，数量: " << query->join_conds.size() << std::endl;
         for (const auto& join_cond_set : query->join_conds) {
-            // 将JOIN条件添加到WHERE条件列表中
-            query->conds.insert(query->conds.end(), join_cond_set.begin(), join_cond_set.end());
+            for (const auto& cond : join_cond_set) {
+                // 创建带有特殊标记的条件
+                Condition marked_cond = cond;
+                marked_cond.is_join_cond = true; // 标记为JOIN条件
+                query->conds.push_back(marked_cond);
+            }
         }
-        
         // 清空join_conds，防止重复处理
         query->join_conds.clear();
     }
@@ -984,9 +1019,21 @@ std::shared_ptr<Plan> Planner::do_planner(std::shared_ptr<Query> query, Context 
         std::shared_ptr<plannerInfo> root = std::make_shared<plannerInfo>(x);
         // 生成select语句的查询执行计划
         std::cout << "DEBUG: 生成select语句的查询执行计划" << std::endl;
+        std::map<std::string, std::string> saved_alias_map;
+        if (is_explain) {
+            saved_alias_map = query->tab_alias_map;  // 保存副本
+        }
         std::shared_ptr<Plan> projection = generate_select_plan(std::move(query), context);
         plannerRoot = std::make_shared<DMLPlan>(T_select, projection, std::string(), std::vector<Value>(),
                                                     std::vector<Condition>(), std::vector<SetClause>());
+                                                    // 创建ExplainPlan并设置别名映射
+        if (is_explain) {
+            std::cout << "DEBUG: 生成ExplainPlan" << std::endl;
+            auto explain_plan = std::make_shared<ExplainPlan>(T_Explain, plannerRoot);
+            explain_plan->tab_alias_map = saved_alias_map;  // 使用保存的副本
+            std::cout << "DEBUG: 别名映射设置完成，大小: " << saved_alias_map.size() << std::endl;
+            return explain_plan;
+        }
     } else {
         throw InternalError("Unexpected AST root");
     }
@@ -994,7 +1041,7 @@ std::shared_ptr<Plan> Planner::do_planner(std::shared_ptr<Query> query, Context 
         std::cout << "DEBUG: 生成ExplainPlan" << std::endl;
         auto explain_plan = std::make_shared<ExplainPlan>(T_Explain, plannerRoot);
         if (query) {
-            size_t alias_size = 0;      
+            size_t alias_size = query->tab_alias_map.size();      
             if (alias_size > 0) {
                     std::map<std::string, std::string> safe_copy;
                     std::vector<std::string> keys;

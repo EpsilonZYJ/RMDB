@@ -63,6 +63,10 @@ void collect_table_names(std::shared_ptr<JoinPlan> join_plan, std::set<std::stri
 
 void print_plan_tree(std::shared_ptr<Plan> plan, std::stringstream& ss, 
     int indent = 0,const std::map<std::string, std::string>& tab_alias_map = {}) {
+    if(tab_alias_map.empty()) std::cout<<"tab_alias_map为空"<<std::endl;
+    else{
+        for(auto it : tab_alias_map) std::cout<<it.first<<" "<<it.second<<std::endl;
+    }
     std::string tabs(indent, '\t');
     
     if (!plan) return;
@@ -95,7 +99,15 @@ void print_plan_tree(std::shared_ptr<Plan> plan, std::stringstream& ss,
             // 收集并排序列名
             std::vector<std::string> column_names;
             for (const auto& col : proj_plan->sel_cols_) {
-                column_names.push_back(col.tab_name + "." + col.col_name);
+                std::string tab_name = col.tab_name;
+                std::cout<<"DEBUG:Project原表名为:"<<tab_name<<std::endl;
+                //别名转换
+                auto it = tab_alias_map.find(tab_name);
+                if (it != tab_alias_map.end()) {
+                    tab_name = it->second; // 使用别名
+                }
+                std::cout<<"DEBUG:Project转换后的表名为:"<<tab_name<<std::endl;
+                column_names.push_back(tab_name + "." + col.col_name);
             }
             std::sort(column_names.begin(), column_names.end());
             
@@ -127,9 +139,14 @@ void print_plan_tree(std::shared_ptr<Plan> plan, std::stringstream& ss,
         ss << tabs << "Join(tables=[";
         bool first = true;
         for (const auto& table : table_names) {
-            if (!first) ss << ",";
-            ss << table;
-            first = false;
+            for (const auto& [original_table, alias] : tab_alias_map) {
+                if (alias == table) {
+                    if (!first) ss << ",";
+                    ss << original_table;
+                    first = false;
+                    break;
+                }
+            }
         }
         ss << "],condition=[";
         
@@ -139,8 +156,21 @@ void print_plan_tree(std::shared_ptr<Plan> plan, std::stringstream& ss,
             if (cond.is_rhs_val) continue;
             
             std::stringstream cond_ss;
-            cond_ss << cond.lhs_col.tab_name << "." << cond.lhs_col.col_name << "=";
-            cond_ss << cond.rhs_col.tab_name << "." << cond.rhs_col.col_name;
+            // 获取左侧列表名，使用别名
+            std::string lhs_table = cond.lhs_col.tab_name;
+            auto lhs_it = tab_alias_map.find(lhs_table);
+            if (lhs_it != tab_alias_map.end()) {
+                lhs_table = lhs_it->second; 
+            } 
+            // 获取右侧列表名，使用别名
+            std::string rhs_table = cond.rhs_col.tab_name;
+            auto rhs_it = tab_alias_map.find(rhs_table);
+            if (rhs_it != tab_alias_map.end()) {
+                rhs_table = rhs_it->second; 
+            }
+            
+            cond_ss << lhs_table << "." << cond.lhs_col.col_name << "=";
+            cond_ss << rhs_table << "." << cond.rhs_col.col_name;
             join_conditions.push_back(cond_ss.str());
         }
         
@@ -223,7 +253,15 @@ void print_plan_tree(std::shared_ptr<Plan> plan, std::stringstream& ss,
                 std::vector<std::string> filter_conds;
                 for (const auto& cond : scan->conds_) {
                     std::stringstream cond_ss;
-                    cond_ss << scan->tab_name_ << "." << cond.lhs_col.col_name;
+                    std::string tab_name = scan->tab_name_;
+                    auto it = tab_alias_map.find(tab_name);
+                    for (const auto& [original_table, alias] : tab_alias_map) {
+                        if (original_table == tab_name) {
+                            tab_name = alias; // 使用别名
+                            break;
+                        }
+                    }
+                    cond_ss << tab_name << "." << cond.lhs_col.col_name;
                     
                     switch (cond.op) {
                         case OP_EQ: cond_ss << "="; break;
@@ -243,6 +281,16 @@ void print_plan_tree(std::shared_ptr<Plan> plan, std::stringstream& ss,
                         } else {
                             cond_ss << "'" << cond.rhs_val.str_val << "'";
                         }
+                    }else {
+                        // 如果右侧也是列，也应用别名映射
+                        std::string rhs_tab_name = cond.rhs_col.tab_name;
+                        for (const auto& [original_table, alias] : tab_alias_map) {
+                            if (original_table == rhs_tab_name) {
+                                rhs_tab_name = alias; // 使用别名
+                                break;
+                            }
+                        }
+                        cond_ss << rhs_tab_name << "." << cond.rhs_col.col_name;
                     }
                     filter_conds.push_back(cond_ss.str());
                 }
