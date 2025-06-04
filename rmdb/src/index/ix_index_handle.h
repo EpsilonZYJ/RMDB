@@ -101,6 +101,8 @@ class IxNodeHandle {
 
     bool is_root_page() { return get_parent_page_no() == INVALID_PAGE_ID; }
 
+    inline bool is_internal_page() { return !is_leaf_page(); }
+
     void set_next_leaf(page_id_t page_no) { page_hdr->next_leaf = page_no; }
 
     void set_prev_leaf(page_id_t page_no) { page_hdr->prev_leaf = page_no; }
