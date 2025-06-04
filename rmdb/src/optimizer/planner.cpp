@@ -631,6 +631,11 @@ std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query)
                 
                 // 只有同时满足这些条件，才将JOIN条件分配给当前JOIN节点
                 if (connects_current && connects_one_prev) {
+                    // 更新条件中的表名为真实表名
+                    it->lhs_col.tab_name = lhs_real_table;  
+                    if (!it->is_rhs_val) {
+                        it->rhs_col.tab_name = rhs_real_table; 
+                    }
                     join_conds.push_back(*it);
                     it = query->conds.erase(it);
                 } else {
@@ -677,6 +682,11 @@ std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query)
             }
             
             if (connects_current && connects_one_prev) {
+                // 更新条件中的表名为真实表名
+                it->lhs_col.tab_name = lhs_real_table;  
+                if (!it->is_rhs_val) {
+                    it->rhs_col.tab_name = rhs_real_table; 
+                }
                 join_conds.push_back(*it);
                 it = query->conds.erase(it);
             } else {
