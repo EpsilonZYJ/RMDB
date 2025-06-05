@@ -214,9 +214,11 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse)
             // 如果存在半连接，筛选列，只保留左表的列
             if (has_semi_join) {
                 std::vector<TabCol> filtered_cols;
+                std::vector<std::string> invalid_cols; // 收集无效列名
+                
                 for (const auto& col : query->cols) {
                     TabCol checked_col = check_column(all_cols, col, query->tab_alias_map, 
-                    has_semi_join, left_tables);
+                                                     has_semi_join, left_tables);
                     std::string real_tab_name = checked_col.tab_name;
                     
                     // 处理可能的表别名
@@ -233,16 +235,29 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse)
                         }
                     }
                     
-                    // 只保留左表的列
+                    // 检查列是否属于左表
                     if (left_tables.find(real_tab_name) != left_tables.end()) {
                         filtered_cols.push_back(checked_col);
+                    } else {
+                        // 收集来自右表的列名
+                        invalid_cols.push_back(checked_col.col_name);
                     }
+                }
+                
+                // 如果有任何来自右表的列，抛出错误
+                if (!invalid_cols.empty()) {
+                    std::string invalid_cols_str;
+                    for (size_t i = 0; i < invalid_cols.size(); ++i) {
+                        if (i > 0) invalid_cols_str += ", ";
+                        invalid_cols_str += invalid_cols[i];
+                    }
+                    throw SemiJoinColumnError(invalid_cols_str);
                 }
                 
                 // 更新查询列
                 query->cols = filtered_cols;
                 std::cout << "DEBUG: 半连接后列过滤：保留 " << query->cols.size() << " 列" << std::endl;
-        }
+            }
     }
         //处理where条件
         get_clause(x->conds, query->conds);

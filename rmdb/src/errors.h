@@ -165,3 +165,8 @@ class PageNotExistError : public RMDBError {
     PageNotExistError(const std::string &table_name, int page_no)
         : RMDBError("Page " + std::to_string(page_no) + " in table " + table_name + "not exits") {}
 };
+class SemiJoinColumnError : public RMDBError {
+    public:
+        explicit SemiJoinColumnError(const std::string &column_names) : 
+            RMDBError("SEMI JOIN can only select columns from the left table. Invalid columns: " + column_names) {}
+    };
