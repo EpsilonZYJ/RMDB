@@ -43,8 +43,8 @@ typedef enum PlanTag{
     T_SortMerge,    // sort merge join
     T_Sort,
     T_Projection,
-    T_Explain
-    //T_Filter
+    T_Explain,
+    T_SemiJoin
 } PlanTag;
 
 // 查询执行计划

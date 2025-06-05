@@ -87,6 +87,13 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse)
                 // 处理JOIN条件
                 std::vector<Condition> join_conds;
                 get_clause(join_expr->conds, join_conds);
+                for (auto& cond : join_conds) {
+                    cond.is_join_cond = true;  //标记为JOIN
+                    if (join_expr->type == SEMI_JOIN) {
+                        cond.is_semi_join = true;  //标记为SEMI JOIN
+                        std::cout << "DEBUG: 检测到SEMI JOIN条件" << std::endl;
+                    }
+                }
                 query->join_conds.push_back(join_conds);
                 
                 // 检查JOIN条件
@@ -159,13 +166,70 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse)
                 // 处理JOIN条件
                 std::vector<Condition> join_conds;
                 get_clause(join_expr->conds, join_conds);
+                for (auto& cond : join_conds) {
+                    cond.is_join_cond = true;  //标记为JOIN
+                    if (join_expr->type == SEMI_JOIN) {
+                        cond.is_semi_join = true;  //标记为SEMI JOIN
+                        std::cout << "DEBUG: 检测到SEMI JOIN条件" << std::endl;
+                    }
+                }
                 query->join_conds.push_back(join_conds);
                 
                 // 检查JOIN条件
                 check_clause({left_table, right_table}, join_conds,query->tab_alias_map);
             }
-        }
+            bool has_semi_join = false;
+            std::set<std::string> left_tables; // 保存所有半连接的左表
 
+            for (const auto& join_expr : x->jointree) {
+                if (join_expr->type == SEMI_JOIN) {
+                    has_semi_join = true;
+                    
+                    // 提取左表名（去掉可能的别名）
+                    std::string left_table = join_expr->left;
+                    size_t space_pos = left_table.find(' ');
+                    if (space_pos != std::string::npos) {
+                        left_table = left_table.substr(0, space_pos);
+                    }
+                    
+                    // 将左表添加到集合中
+                    left_tables.insert(left_table);
+                    std::cout << "DEBUG: 半连接左表: " << left_table << std::endl;
+                }
+            }
+
+            // 如果存在半连接，筛选列，只保留左表的列
+            if (has_semi_join) {
+                std::vector<TabCol> filtered_cols;
+                
+                for (const auto& col : query->cols) {
+                    std::string real_tab_name = col.tab_name;
+                    
+                    // 处理可能的表别名
+                    auto it = query->tab_alias_map.find(col.tab_name);
+                    if (it != query->tab_alias_map.end()) {
+                        real_tab_name = it->first; // 获取实际表名
+                    } else {
+                        // 反向查找别名
+                        for (const auto& [table, alias] : query->tab_alias_map) {
+                            if (alias == col.tab_name) {
+                                real_tab_name = table;
+                                break;
+                            }
+                        }
+                    }
+                    
+                    // 只保留左表的列
+                    if (left_tables.find(real_tab_name) != left_tables.end()) {
+                        filtered_cols.push_back(col);
+                    }
+                }
+                
+                // 更新查询列
+                query->cols = filtered_cols;
+                std::cout << "DEBUG: 半连接后列过滤：保留 " << query->cols.size() << " 列" << std::endl;
+        }
+    }
         //处理where条件
         get_clause(x->conds, query->conds);
         check_clause(query->tables, query->conds,query->tab_alias_map);

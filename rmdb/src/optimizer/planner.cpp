@@ -21,7 +21,7 @@ See the Mulan PSL v2 for more details. */
 #include "execution/executor_update.h"
 #include "index/ix.h"
 #include "record_printer.h"
-//#include "execution/executor_filter.h" 
+#include "execution/executor_semi_join.h" 
 #include <set>
 #include <cmath>
 // 目前的索引匹配规则为：完全匹配索引字段，且全部为单点查询，不会自动调整where条件的顺序
@@ -694,7 +694,20 @@ std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query)
             }
         }
         
-        PlanTag join_type = T_NestLoop;
+        PlanTag join_type = T_NestLoop; // 默认为嵌套循环JOIN
+
+        // 检查是否标记为SEMI JOIN
+        bool has_semi_join = false;
+        for (const auto& cond : join_conds) {
+            if (cond.is_semi_join) {
+                has_semi_join = true;
+                std::cout << "DEBUG: 检测到SEMI JOIN条件，设置JOIN类型为T_SemiJoin" << std::endl;
+                break;
+            }
+        }
+        if (has_semi_join) {
+            join_type = T_SemiJoin;
+        }
         join_plan = std::make_shared<JoinPlan>(
             join_type, 
             join_plan,
@@ -1126,3 +1139,13 @@ std::shared_ptr<Plan> Planner::do_planner(std::shared_ptr<Query> query, Context 
     std::cout << "DEBUG: doplanner完成" << std::endl;
     return plannerRoot;
 }
+// std::unique_ptr<AbstractExecutor> JoinPlan::get_executor(Context *context) {
+//     auto left_exec = left_->get_executor(context);
+//     auto right_exec = right_->get_executor(context);
+    
+//     if (tag == T_SemiJoin) {
+//         return std::make_unique<SemiJoinExecutor>(std::move(left_exec), std::move(right_exec), conds_);
+//     } else {
+//         return std::make_unique<NestedLoopJoinExecutor>(std::move(left_exec), std::move(right_exec), conds_);
+//     }
+// }

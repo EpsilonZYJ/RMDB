@@ -22,7 +22,8 @@ std::vector<std::shared_ptr<ast::JoinExpr>> current_joins;
 
 // keywords
 %token SHOW TABLES CREATE TABLE DROP DESC INSERT INTO VALUES DELETE FROM ASC ORDER BY
-WHERE UPDATE SET SELECT INT CHAR FLOAT INDEX AND JOIN ON EXIT HELP TXN_BEGIN TXN_COMMIT TXN_ABORT TXN_ROLLBACK ORDER_BY ENABLE_NESTLOOP ENABLE_SORTMERGE EXPLAIN
+WHERE UPDATE SET SELECT INT CHAR FLOAT INDEX AND JOIN ON EXIT HELP TXN_BEGIN TXN_COMMIT 
+TXN_ABORT TXN_ROLLBACK ORDER_BY ENABLE_NESTLOOP ENABLE_SORTMERGE EXPLAIN SEMI
 // non-keywords
 %token LEQ NEQ GEQ T_EOF
 
@@ -374,7 +375,6 @@ tableList:
         
         // 创建JOIN表达式
         std::string right_tab = $3;
-        // 找到左表，这里简化为使用前一个表名
         std::string left_tab = $1[$1.size() - 1];
         
         // 创建JOIN条件对象
@@ -386,6 +386,22 @@ tableList:
         );
         
         // 存储JOIN表达式，将在创建SelectStmt时使用
+        current_joins.push_back(join_expr);
+    }
+    | tableList SEMI JOIN tbName ON condition
+    {
+        $$ = $1;
+        $$.push_back($4);
+        
+        //创建SEMI JOIN表达式
+        std::string right_tab = $4;
+        std::string left_tab = $1[$1.size() - 1];
+        auto join_expr = std::make_shared<JoinExpr>(
+            left_tab,
+            right_tab,
+            std::vector<std::shared_ptr<ast::BinaryExpr>>{$6},
+            SEMI_JOIN 
+        );
         current_joins.push_back(join_expr);
     }
     ;

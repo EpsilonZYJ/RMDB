@@ -81,6 +81,7 @@ single_op ";"|"("|")"|","|"*"|"="|">"|"<"|"."
 "AND" { return AND; }
 "JOIN" {return JOIN;}
 "ON" {return ON;}
+"SEMI" {return SEMI;}
 "EXIT" { return EXIT; }
 "HELP" { return HELP; }
 "ORDER" { return ORDER; }
