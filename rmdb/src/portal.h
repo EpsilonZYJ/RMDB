@@ -24,6 +24,7 @@ See the Mulan PSL v2 for more details. */
 #include "execution/executor_delete.h"
 #include "execution/execution_sort.h"
 #include "common/common.h"
+#include "execution/executor_semi_join.h"
 
 typedef enum portalTag{
     PORTAL_Invalid_Query = 0,
@@ -190,10 +191,25 @@ class Portal
         } else if(auto x = std::dynamic_pointer_cast<JoinPlan>(plan)) {
             std::unique_ptr<AbstractExecutor> left = convert_plan_executor(x->left_, context);
             std::unique_ptr<AbstractExecutor> right = convert_plan_executor(x->right_, context);
-            std::unique_ptr<AbstractExecutor> join = std::make_unique<NestedLoopJoinExecutor>(
-                                std::move(left), 
-                                std::move(right), std::move(x->conds_));
-            return join;
+            std::cout << "DEBUG: JoinPlan实际类型值 = " << x->type 
+            << ", T_SemiJoin常量值 = " << T_SemiJoin << std::endl;
+            // 根据JOIN类型创建不同的执行器
+            if (x->type == SEMI_JOIN) {
+                std::cout << "DEBUG: 创建半连接执行器SemiJoinExecutor" << std::endl;
+                return std::make_unique<SemiJoinExecutor>(
+                    std::move(left), 
+                    std::move(right), 
+                    std::move(x->conds_)
+                );
+            } else {
+                // 默认使用嵌套循环连接
+                std::cout << "DEBUG: 创建全连接执行器SemiJoinExecutor" << std::endl;
+                return std::make_unique<NestedLoopJoinExecutor>(
+                    std::move(left), 
+                    std::move(right), 
+                    std::move(x->conds_)
+                );
+            }
         } else if(auto x = std::dynamic_pointer_cast<SortPlan>(plan)) {
             return std::make_unique<SortExecutor>(convert_plan_executor(x->subplan_, context), 
                                             x->sel_col_, x->is_desc_);

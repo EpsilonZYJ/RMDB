@@ -90,7 +90,11 @@ class JoinPlan : public Plan
             left_ = std::move(left);
             right_ = std::move(right);
             conds_ = std::move(conds);
-            type = INNER_JOIN;
+            if (tag == T_SemiJoin) {
+                type = SEMI_JOIN;  
+            } else {
+                type = INNER_JOIN;  
+            }
         }
         ~JoinPlan(){}
         // 左节点

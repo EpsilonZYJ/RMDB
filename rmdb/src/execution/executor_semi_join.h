@@ -18,9 +18,12 @@ class SemiJoinExecutor : public AbstractExecutor {
     std::vector<Condition> fed_conds_;          // JOIN条件
     bool isend;                                 // 是否遍历结束
     
-    // 记录已匹配的左表记录，避免重复
-    std::set<uint64_t> matched_left_rids_;
+    bool current_has_match_;  // 当前左表记录是否有匹配
+    std::unique_ptr<RmRecord> current_matching_record_;
+    std::set<uint64_t> processed_left_rids_;
     
+    // 检查当前左表记录在右表中是否有匹配
+    bool checkCurrentLeftMatch();
     // 查找下一个匹配的记录
     void findNextMatch();
 
@@ -50,7 +53,13 @@ class SemiJoinExecutor : public AbstractExecutor {
     void beginTuple() override;
     void nextTuple() override;
     bool is_end() const override { return isend; }
-    std::unique_ptr<RmRecord> Next(){return left_->Next();}
+    std::unique_ptr<RmRecord> Next(){ 
+        if (isend || !current_matching_record_) 
+        return nullptr;
+    
+    // 直接返回已缓存的匹配记录
+    return std::make_unique<RmRecord>(*current_matching_record_);
+        }
     const std::vector<ColMeta> &cols() const override { return cols_; }
     size_t tupleLen() const override { return len_; }
     Rid &rid() override { return _abstract_rid; }
