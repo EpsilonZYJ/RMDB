@@ -50,7 +50,7 @@ Transaction * TransactionManager::begin(Transaction* txn, LogManager* log_manage
             lsn_t lsn = log_manager->add_log_to_buffer(&log_record);
             txn->set_prev_lsn(lsn);
         } catch (const std::exception& e) {
-            // 处理日志错误，但允许事务继续进行
+            // 处理日志错误
             std::cerr << "Warning: Failed to write begin log: " << e.what() << std::endl;
         }
     }
@@ -132,18 +132,27 @@ void TransactionManager::abort(Transaction * txn, LogManager *log_manager) {
     // 如果需要支持MVCC请在上述过程中添加代码
      // 回滚所有写操作
      auto write_set = txn->get_write_set();
+     int i=0;
      while (!write_set->empty()) {
          WriteRecord* record = write_set->back(); // 从后向前回滚
          write_set->pop_back();
          
          std::string& tab_name = record->GetTableName();
+         std::cout << "DEBUG: 回滚操作 #" << ++i
+                  << ", 类型: " << (record->GetWriteType() == WType::INSERT_TUPLE ? "INSERT" : 
+                                    record->GetWriteType() == WType::DELETE_TUPLE ? "DELETE" : "UPDATE")
+                  << ", 表: " << tab_name
+                  << ", RID: (" << record->GetRid().page_no << "," << record->GetRid().slot_no << ")"
+                  << std::endl;
          RmFileHandle* fh = sm_manager_->fhs_.at(tab_name).get();
          
          // 根据写操作类型执行回滚
          switch (record->GetWriteType()) {
              case WType::INSERT_TUPLE:
                  // 回滚插入：删除该记录
+                 std::cout << "DEBUG: 尝试删除已插入记录" << std::endl;
                  fh->delete_record(record->GetRid(), nullptr);
+                 std::cout << "DEBUG: 记录删除成功" << std::endl;
                  break;
                  
              case WType::DELETE_TUPLE:

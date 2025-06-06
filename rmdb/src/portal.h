@@ -126,6 +126,14 @@ class Portal
 
     // 遍历算子树并执行算子生成执行结果
     void run(std::shared_ptr<PortalStmt> portal, QlManager* ql, txn_id_t *txn_id, Context *context){
+        if (context->txn_ != nullptr) {
+            std::cout << "DEBUG: Portal::run - 事务ID: " << context->txn_->get_transaction_id() 
+                      << ", 模式: " << (context->txn_->get_txn_mode() ? "显式" : "隐式") 
+                      << ", 状态: " << static_cast<int>(context->txn_->get_state())
+                      << std::endl;
+        } else {
+            std::cout << "DEBUG: Portal::run - 无活跃事务" << std::endl;
+        }
         switch(portal->tag) {
             case PORTAL_ONE_SELECT:
             {

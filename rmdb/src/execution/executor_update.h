@@ -94,6 +94,22 @@ class UpdateExecutor : public AbstractExecutor {
                     ++i;
             }
 
+            // 在更新前，添加写记录到事务写集合
+            if (context_ && context_->txn_) {
+                // 创建UPDATE类型的写记录，保存原始记录供回滚使用
+                // 注意：需要创建一个old_record的副本，因为这里的old_record是栈变量
+                RmRecord record_copy(old_record.size);
+                memcpy(record_copy.data, old_record.data, old_record.size);
+                
+                WriteRecord* write_record = new WriteRecord(WType::UPDATE_TUPLE, tab_name_, rid, record_copy);
+                context_->txn_->append_write_record(write_record);
+                
+                std::cout << "DEBUG:已将更新写记录添加到事务 " << context_->txn_->get_transaction_id() 
+                        << ", 写集合大小: " << context_->txn_->get_write_set()->size() << std::endl;
+            } else {
+                std::cout << "DEBUG:更新操作没有关联有效事务!" << std::endl;
+            }
+
             fh_->update_record(rid, new_record.data, context_); // 更新数据文件中的记录
 
             for(size_t i = 0; i < tab_.indexes.size(); ++i) {
