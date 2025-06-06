@@ -62,50 +62,16 @@ void SemiJoinExecutor::findNextMatch() {
         while (!right_->is_end() && !found_match) {
             std::unique_ptr<RmRecord> right_record = right_->Next();
             bool match = true;
-            
             // 检查所有连接条件
             for (size_t i = 0; i < fed_conds_.size(); i++) {
                 char* left_value = left_record->data + left_cols_[i].offset;
                 char* right_value = right_record->data + right_cols_[i].offset;
-                bool cond_match = false;
-                // 根据数据类型和操作符比较值
-                switch (fed_conds_[i].op) {
-                    case OP_EQ: {
-                        if (left_cols_[i].type == TYPE_INT) {
-                            cond_match = (*(int*)left_value == *(int*)right_value);
-                            std::cout << "DEBUG: 比较INT: " << *(int*)left_value << " == " 
-                                      << *(int*)right_value << " 结果: " 
-                                      << (cond_match ? "匹配" : "不匹配") << std::endl;
-                        } else if (left_cols_[i].type == TYPE_FLOAT) {
-                            float diff = *(float*)left_value - *(float*)right_value;
-                            cond_match = (std::abs(diff) < 0.000001f);
-                            std::cout << "DEBUG: 比较FLOAT: " << *(float*)left_value << " == " 
-                                      << *(float*)right_value << " 结果: " 
-                                      << (cond_match ? "匹配" : "不匹配") << std::endl;
-                        } else if (left_cols_[i].type == TYPE_STRING) {
-                            int len_left = *(int*)left_value;
-                            int len_right = *(int*)right_value;
-                            char* str_left = left_value + sizeof(int);
-                            char* str_right = right_value + sizeof(int);
-                            cond_match = (len_left == len_right && 
-                                         strncmp(str_left, str_right, len_left) == 0);
-                            std::cout << "DEBUG: 比较STRING: 结果: " 
-                                      << (cond_match ? "匹配" : "不匹配") << std::endl;
-                        }
-                        break;
-                    }
-                    // 其他比较操作符可以添加在这里
-                    default:
-                        std::cout << "DEBUG: 不支持的操作符: " << fed_conds_[i].op << std::endl;
-                        break;
-                }
-                
+                bool cond_match = compareValues(left_value, right_value, left_cols_[i].type, fed_conds_[i].op);
                 if (!cond_match) {
                     match = false;
                     break;
                 }
             }
-            
             if (match) {
                 // 找到匹配
                 found_match = true;

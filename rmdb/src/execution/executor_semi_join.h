@@ -22,10 +22,108 @@ class SemiJoinExecutor : public AbstractExecutor {
     std::unique_ptr<RmRecord> current_matching_record_;
     std::set<uint64_t> processed_left_rids_;
     
-    // 检查当前左表记录在右表中是否有匹配
-    bool checkCurrentLeftMatch();
     // 查找下一个匹配的记录
     void findNextMatch();
+    // 添加到executor_semi_join.h的SemiJoinExecutor类内部
+    // 通用比较函数
+    bool compareValues(const char* left_value, const char* right_value, 
+                    ColType type, CompOp op) {
+        switch (type) {
+            case TYPE_INT:
+                return compareInts(*(int*)left_value, *(int*)right_value, op);
+            case TYPE_FLOAT:
+                return compareFloats(*(float*)left_value, *(float*)right_value, op);
+            case TYPE_STRING:
+                return compareStrings(left_value, right_value, op);
+            default:
+                std::cout << "DEBUG: 不支持的数据类型: " << type << std::endl;
+                return false;
+        }
+    }
+    // 整型
+    bool compareInts(int left, int right, CompOp op) {
+        bool result = false;
+        switch (op) {
+            case OP_EQ: result = (left == right); break;
+            case OP_NE: result = (left != right); break;
+            case OP_LT: result = (left < right); break;
+            case OP_GT: result = (left > right); break;
+            case OP_LE: result = (left <= right); break;
+            case OP_GE: result = (left >= right); break;
+            default: 
+                std::cout << "DEBUG: 不支持的操作符: " << op << std::endl;
+                return false;
+        }
+        
+        std::cout << "DEBUG: 比较INT: " << left << " " << opToString(op) << " " 
+                << right << " 结果: " << (result ? "匹配" : "不匹配") << std::endl;
+        return result;
+    }
+    // 浮点数
+    bool compareFloats(float left, float right, CompOp op) {
+        bool result = false;
+        switch (op) {
+            case OP_EQ: result = (std::abs(left - right) < 0.000001f); break;
+            case OP_NE: result = (std::abs(left - right) >= 0.000001f); break;
+            case OP_LT: result = (left < right); break;
+            case OP_GT: result = (left > right); break;
+            case OP_LE: result = (left <= right); break;
+            case OP_GE: result = (left >= right); break;
+            default: 
+                std::cout << "DEBUG: 不支持的操作符: " << op << std::endl;
+                return false;
+        }
+        
+        std::cout << "DEBUG: 比较FLOAT: " << left << " " << opToString(op) << " " 
+                << right << " 结果: " << (result ? "匹配" : "不匹配") << std::endl;
+        return result;
+    }
+
+    // 字符串比较
+    bool compareStrings(const char* left_ptr, const char* right_ptr, CompOp op) {
+        int len_left = *(int*)left_ptr;
+        int len_right = *(int*)right_ptr;
+        const char* str_left = left_ptr + sizeof(int);
+        const char* str_right = right_ptr + sizeof(int);
+        
+        int cmp_result = strncmp(str_left, str_right, std::min(len_left, len_right));
+        bool result = false;
+        
+        switch (op) {
+            case OP_EQ: 
+                result = (len_left == len_right && cmp_result == 0); break;
+            case OP_NE: 
+                result = (len_left != len_right || cmp_result != 0); break;
+            case OP_LT: 
+                result = (cmp_result < 0 || (cmp_result == 0 && len_left < len_right)); break;
+            case OP_GT: 
+                result = (cmp_result > 0 || (cmp_result == 0 && len_left > len_right)); break;
+            case OP_LE: 
+            result = (cmp_result < 0 || (cmp_result == 0 && len_left <= len_right));  break;
+            case OP_GE: 
+                result = (cmp_result > 0 || (cmp_result == 0 && len_left >= len_right));  break;
+            default: 
+                std::cout << "DEBUG: 不支持的操作符: " << op << std::endl;
+                return false;
+        }
+        
+        std::cout << "DEBUG: 比较STRING: 结果: " << (result ? "匹配" : "不匹配") << std::endl;
+        return result;
+    }
+
+    // 操作符转字符串，用于调试输出
+    std::string opToString(CompOp op) {
+        switch (op) {
+            case OP_EQ: return "==";
+            case OP_NE: return "<>";
+            case OP_LT: return "<";
+            case OP_GT: return ">";
+            case OP_LE: return "<=";
+            case OP_GE: return ">=";
+            default: return "?";
+        }
+    }
+
 
    public:
     SemiJoinExecutor(std::unique_ptr<AbstractExecutor> left, std::unique_ptr<AbstractExecutor> right, 
