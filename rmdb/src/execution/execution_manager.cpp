@@ -214,11 +214,9 @@ void QlManager::run_dml(std::unique_ptr<AbstractExecutor> exec){
 void QlManager::run_explain(std::shared_ptr<Plan> plan, Context *context) {
     if (auto x = std::dynamic_pointer_cast<ExplainPlan>(plan)) {
         // 创建ExplainExecutor
-        auto executor = x->get_executor(context);
-        
+        auto executor = x->get_executor(context);    
         // 使用一个列定义显示计划
         std::vector<TabCol> explain_cols = {TabCol{"", "EXPLAIN"}};
-        
         // 使用select_from方法显示结果
         select_from(std::move(executor), explain_cols, context);
     }

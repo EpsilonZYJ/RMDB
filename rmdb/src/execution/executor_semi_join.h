@@ -10,8 +10,8 @@ class SemiJoinExecutor : public AbstractExecutor {
    private:
     std::unique_ptr<AbstractExecutor> left_;    // 左表执行器
     std::unique_ptr<AbstractExecutor> right_;   // 右表执行器
-    size_t len_;                                // 结果记录长度(只包含左表长度)
-    std::vector<ColMeta> cols_;                 // 结果记录的字段(只包含左表字段)
+    size_t len_;                                // 结果记录长度(只包含左表)
+    std::vector<ColMeta> cols_;                 // 结果记录的字段(只包含左表)
     std::vector<ColMeta> left_cols_;            // JOIN条件中左表字段
     std::vector<ColMeta> right_cols_;           // JOIN条件中右表字段
 

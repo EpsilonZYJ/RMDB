@@ -54,7 +54,6 @@ void collect_table_names(std::shared_ptr<JoinPlan> join_plan, std::set<std::stri
             collect(proj->subplan_);
         }
     };
-    
     // 从JOIN的左右子树开始收集
     collect(join_plan->left_);
     collect(join_plan->right_);
@@ -92,7 +91,7 @@ void print_plan_tree(std::shared_ptr<Plan> plan, std::stringstream& ss,
         auto proj_plan = std::dynamic_pointer_cast<ProjectionPlan>(plan);
         ss << tabs << "Project(columns=[";
         
-        // select * 直接输出*
+        // select *直接输出*
         if (proj_plan->is_select_star_) {
             ss << "*";
         } else {
@@ -220,7 +219,7 @@ void print_plan_tree(std::shared_ptr<Plan> plan, std::stringstream& ss,
             // 添加表名信息
             table_info = "_" + scan->tab_name_;
         }
-        // 处理Project节点 - 提取其底层表名
+        // 处理Project节点,提取其底层表名
         else if (auto proj = std::dynamic_pointer_cast<ProjectionPlan>(node)) {
             prefix = "C_Project";
             
@@ -436,7 +435,6 @@ void ExplainExecutor::generate_explain_output() {
     //beginTuple() 中调用,实际代码已在 Next() 中实现
 }
 
-// 实现 ExplainPlan::get_executor 方法
 std::unique_ptr<AbstractExecutor> ExplainPlan::get_executor(Context *context) {
     std::cout << "DEBUG: 创建ExplainExecutor,别名映射大小: " << tab_alias_map.size() << std::endl;
     return std::make_unique<ExplainExecutor>(this, context);

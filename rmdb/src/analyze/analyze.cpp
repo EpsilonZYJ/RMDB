@@ -22,11 +22,9 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse)
         // 复用 SelectStmt 的处理逻辑
         query->parse = explain_stmt->select;
         // 标记这是 EXPLAIN 查询
-        query->is_explain = true;
-        
-        // 处理选择语句内容（与 SelectStmt 相同的逻辑）
+        query->is_explain = true; 
+        // 处理选择语句内容
         auto x = explain_stmt->select;
-        
         // 处理表名
         //query->tables = std::move(x->tabs);
         analyze_table_refs(x->tabs, query);
@@ -64,13 +62,11 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse)
                 // 解析表名，去掉别名部分
                 std::string left_table = join_expr->left;
                 std::string right_table = join_expr->right;
-                
                 // 处理左表可能的别名
                 size_t left_space = left_table.find(' ');
                 if (left_space != std::string::npos) {
                     left_table = left_table.substr(0, left_space);
-                }
-                
+                }    
                 // 处理右表可能的别名
                 size_t right_space = right_table.find(' ');
                 if (right_space != std::string::npos) {
@@ -95,7 +91,6 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse)
                     }
                 }
                 query->join_conds.push_back(join_conds);
-                
                 // 检查JOIN条件
                 check_clause({left_table, right_table}, join_conds,query->tab_alias_map);
             }
@@ -280,7 +275,7 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse)
             set_clause.lhs.col_name = sv_set_clause->col_name;
             set_clause.rhs = convert_sv_value(sv_set_clause->val);
             
-            // 添加初始化raw字段的代码
+            // 初始化raw字段
             auto col = tab.get_col(set_clause.lhs.col_name);
             set_clause.rhs.init_raw(col->len);
             
@@ -335,7 +330,7 @@ TabCol Analyze::check_column(const std::vector<ColMeta> &all_cols, TabCol target
         std::string tab_name;
         std::vector<std::string> matched_tables;
         
-        // 首先收集所有匹配的表
+        // 收集所有匹配的表
         for (auto &col : all_cols) {
             if (col.name == target.col_name) {
                 matched_tables.push_back(col.tab_name);
@@ -347,7 +342,6 @@ TabCol Analyze::check_column(const std::vector<ColMeta> &all_cols, TabCol target
         
         // 如果有多个匹配，检查是否是半连接情况
         if (matched_tables.size() > 1) {
-            // 现在使用参数而非conds_
             if (is_semi_join && !left_tables.empty()) {
                 for (const auto& tab : matched_tables) {
                     if (left_tables.find(tab) != left_tables.end()) {
@@ -360,7 +354,7 @@ TabCol Analyze::check_column(const std::vector<ColMeta> &all_cols, TabCol target
                 }
             }
             
-            // 如果不是半连接或找不到匹配的左表列，报告歧义错误
+            // 如果不是半连接或找不到匹配的左表列，抛出歧义错误
             throw AmbiguousColumnError(target.col_name);
         }
         

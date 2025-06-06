@@ -390,8 +390,7 @@ size_t Planner::estimate_join_size(
 double Planner::calculate_join_selectivity(
     const std::string& lhs_tab, const std::string& lhs_col,
     const std::string& rhs_tab, const std::string& rhs_col,
-    CompOp op) 
-{
+    CompOp op) {
     // 获取两个表的大小
     size_t lhs_size = get_table_cardinality(lhs_tab);
     size_t rhs_size = get_table_cardinality(rhs_tab);
@@ -492,13 +491,11 @@ std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query)
                     
                     // 获取该表所需的列
                     const auto& required_cols = query->table_required_cols[tables[i]];
-                    
                     // 创建投影列表
                     std::vector<TabCol> proj_cols;
                     for (const auto& col_name : required_cols) {
                         proj_cols.push_back({.tab_name = tables[i], .col_name = col_name});
                     }
-                    
                     // 创建投影计划并替换原来的扫描计划
                     if (!proj_cols.empty()) {
                         // 检查是否已经是ProjectionPlan，避免创建重复的投影
@@ -601,16 +598,13 @@ std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query)
                 for (const auto& [table, alias] : query->tab_alias_map) {
                     if (alias == lhs_real_table) lhs_real_table = table;
                     if (alias == rhs_real_table) rhs_real_table = table;
-                }
-                
-                // 精确匹配：当前JOIN条件必须恰好连接当前表和之前某个表
-                bool is_current_join = false;
-                
+                }           
+                // 当前JOIN条件必须恰好连接当前表和之前某个表
+                bool is_current_join = false;       
                 // 检查是否连接当前表
                 bool connects_current = (lhs_real_table == tables[join_order[i]] ||
-                                        rhs_real_table == tables[join_order[i]]);
-                
-                // 检查是否恰好连接之前的一个表（而不是多个表）
+                                        rhs_real_table == tables[join_order[i]]);    
+                // 检查是否恰好连接之前的一个表
                 bool connects_one_prev = false;
                 if (connects_current) {
                     std::string other_table;
@@ -643,14 +637,11 @@ std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query)
                 }
                 continue;
             }
-            
-            // 处理普通条件
+            // 普通条件
             if (it->is_rhs_val) {
                 ++it;
                 continue;
-            }
-            
-            // 下面的逻辑与JOIN条件类似，进行精确匹配
+            } 
             std::string lhs_real_table = it->lhs_col.tab_name;
             std::string rhs_real_table = it->rhs_col.tab_name; 
             
@@ -659,7 +650,7 @@ std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query)
                 if (alias == rhs_real_table) rhs_real_table = table;
             }
             
-            // 精确匹配：当前条件必须恰好连接当前表和之前的一个表
+            // 当前条件必须恰好连接当前表和之前的一个表
             bool connects_current = (lhs_real_table == tables[join_order[i]] ||
                                     rhs_real_table == tables[join_order[i]]);
                                     
@@ -748,7 +739,7 @@ void Planner::explain_plan(std::shared_ptr<Plan> plan, std::ostream& os, int ind
                     os << indent_str << "Project(columns=[";
                     // 按字母序排序列
                     std::vector<std::string> columns;
-                    // 这里需要获取表的所有列
+                    // 获取表的所有列
                     columns.push_back(scan_plan->tab_name_ + ".*");
                     os << columns[0];
                     for (size_t i = 1; i < columns.size(); ++i) {
@@ -893,7 +884,7 @@ void Planner::explain_plan(std::shared_ptr<Plan> plan, std::ostream& os, int ind
             if (auto proj_plan = std::dynamic_pointer_cast<ProjectionPlan>(plan)) {
                 os << indent_str << "Project(columns=[";
                 
-                // 直接使用is_select_star_ 字段来判断
+                // select *直接输出*
                 if (proj_plan->is_select_star_) {
                     os << "*";
                 } else {
@@ -1139,13 +1130,3 @@ std::shared_ptr<Plan> Planner::do_planner(std::shared_ptr<Query> query, Context 
     std::cout << "DEBUG: doplanner完成" << std::endl;
     return plannerRoot;
 }
-// std::unique_ptr<AbstractExecutor> JoinPlan::get_executor(Context *context) {
-//     auto left_exec = left_->get_executor(context);
-//     auto right_exec = right_->get_executor(context);
-    
-//     if (tag == T_SemiJoin) {
-//         return std::make_unique<SemiJoinExecutor>(std::move(left_exec), std::move(right_exec), conds_);
-//     } else {
-//         return std::make_unique<NestedLoopJoinExecutor>(std::move(left_exec), std::move(right_exec), conds_);
-//     }
-// }
