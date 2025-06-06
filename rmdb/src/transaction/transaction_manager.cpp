@@ -72,7 +72,8 @@ void TransactionManager::commit(Transaction* txn, LogManager* log_manager) {
     // 4. 把事务日志刷入磁盘中
     // 5. 更新事务状态
     // 如果需要支持MVCC请在上述过程中添加代码
-    // 如果存在未提交的写操作，提交所有的写操作
+    
+    //事务结束，清理所有写记录
     auto write_set = txn->get_write_set();
     while (!write_set->empty()) {
         WriteRecord* record = write_set->front();
@@ -104,7 +105,7 @@ void TransactionManager::commit(Transaction* txn, LogManager* log_manager) {
         }
     }
     
-    // 更新事务状态
+    // 更新事务状态为已提交
     txn->set_state(TransactionState::COMMITTED);
     
     // 从事务表中移除
@@ -150,9 +151,7 @@ void TransactionManager::abort(Transaction * txn, LogManager *log_manager) {
          switch (record->GetWriteType()) {
              case WType::INSERT_TUPLE:
                  // 回滚插入：删除该记录
-                 std::cout << "DEBUG: 尝试删除已插入记录" << std::endl;
                  fh->delete_record(record->GetRid(), nullptr);
-                 std::cout << "DEBUG: 记录删除成功" << std::endl;
                  break;
                  
              case WType::DELETE_TUPLE:
@@ -175,7 +174,7 @@ void TransactionManager::abort(Transaction * txn, LogManager *log_manager) {
          lock_manager_->unlock(txn, lock_id);
      }
      
-     // 清空事务相关资源
+     // 清空锁集合
      lock_set->clear();
      
      // 把事务日志刷入磁盘中
@@ -193,10 +192,10 @@ void TransactionManager::abort(Transaction * txn, LogManager *log_manager) {
          }
      }
      
-     // 更新事务状态
+     // 更新事务状态为已回滚
      txn->set_state(TransactionState::ABORTED);
      
-     // 从事务表中移除
+     // 从事务表中移除事务
      if (log_success) {
          std::unique_lock<std::mutex> lock(latch_);
          txn_map.erase(txn->get_transaction_id());

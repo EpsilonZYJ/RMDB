@@ -29,9 +29,9 @@ lsn_t LogManager::add_log_to_buffer(LogRecord* log_record) {
         }
         
         // 序列化日志记录到缓冲区
-        char* buffer_content = log_buffer_.buffer_ + log_buffer_.offset_;
+        char* buffer_content = log_buffer_.buffer_ + log_buffer_.offset_;//定位起始位置
         log_record->serialize(buffer_content);
-        log_buffer_.offset_ += log_record->log_tot_len_;
+        log_buffer_.offset_ += log_record->log_tot_len_;//更新偏移量
         
         return lsn;
 }
@@ -40,7 +40,7 @@ lsn_t LogManager::add_log_to_buffer(LogRecord* log_record) {
  * @description: 把日志缓冲区的内容刷到磁盘中，由于目前只设置了一个缓冲区，因此需要阻塞其他日志操作
  */
 void LogManager::flush_log_to_disk() {
-        std::unique_lock<std::mutex> latch(latch_);
+        std::unique_lock<std::mutex> latch(latch_);//上锁
 
         // 仅当缓冲区有内容时才写入
         if (log_buffer_.offset_ > 0) {
@@ -50,7 +50,7 @@ void LogManager::flush_log_to_disk() {
                         disk_manager_->create_file(LOG_FILE_NAME);
                         std::cout << "Created log file: " << LOG_FILE_NAME << std::endl;
                 }
-                
+                //写入磁盘
                 disk_manager_->write_log(log_buffer_.buffer_, log_buffer_.offset_);
                 persist_lsn_ = *reinterpret_cast<lsn_t*>(log_buffer_.buffer_ + OFFSET_LSN);
                 
