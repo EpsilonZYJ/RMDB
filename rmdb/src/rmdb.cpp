@@ -116,7 +116,7 @@ void *client_handler(void *sock_fd) {
 
         // 开启事务，初始化系统所需的上下文信息（包括事务对象指针、锁管理器指针、日志管理器指针、存放结果的buffer、记录结果长度的变量）
         Context *context = new Context(lock_manager.get(), log_manager.get(), nullptr, data_send, &offset);
-        // SetTransaction(&txn_id, context); //TODO： 第二关暂时将这里注释掉
+        SetTransaction(&txn_id, context); //TODO： 第二关暂时将这里注释掉
 
         // 用于判断是否已经调用了yy_delete_buffer来删除buf
         bool finish_analyze = false;
@@ -178,12 +178,32 @@ void *client_handler(void *sock_fd) {
             break;
         }
 
+
+        if (strcmp(data_recv, "begin;") == 0) {
+            // 已经在portal::run中创建了事务，这里设置为显式事务模式
+            if (context->txn_ != nullptr) {
+                context->txn_->set_txn_mode(true);
+            }
+        } 
+        else if (strcmp(data_recv, "abort;") == 0 || strcmp(data_recv, "commit;") == 0) {
+            // 事务已经在相应的函数中被终止或提交，重置事务ID
+            txn_id = INVALID_TXN_ID;
+        }
+
         // TODO 第二关暂时将这里注释掉
+        if(context->txn_->get_txn_mode() == false)
+        {
+            txn_manager->commit(context->txn_, context->log_mgr_);
+        }
         // 如果是单挑语句，需要按照一个完整的事务来执行，所以执行完当前语句后，自动提交事务
-        // if(context->txn_->get_txn_mode() == false)
-        // {
-        //     txn_manager->commit(context->txn_, context->log_mgr_);
-        // }
+        if (context->txn_ != nullptr && context->txn_->get_txn_mode() == false)
+        {
+            txn_manager->commit(context->txn_, context->log_mgr_);
+            // 重置事务ID，确保下次使用新事务
+            txn_id = INVALID_TXN_ID;
+        }
+        
+        delete context; // 确保每次循环结束释放context
     }
 
     // Clear
