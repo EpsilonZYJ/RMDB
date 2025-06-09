@@ -44,7 +44,8 @@ typedef enum PlanTag{
     T_SortMerge,    // sort merge join
     T_Sort,
     T_Projection,
-    T_Aggregation
+    T_Aggregation,
+    T_Limit,
 } PlanTag;
 
 // 查询执行计划
@@ -160,6 +161,19 @@ public:
     std::vector<AggType> agg_types_;
     std::vector<TabCol> group_bys_;
     std::vector<Condition> havings_;
+};
+
+class LimitPlan : public Plan {
+public:
+    LimitPlan(PlanTag tag, std::shared_ptr<Plan> subplan, int limit_num) {
+        Plan::tag = tag;
+        subplan_ = std::move(subplan);
+        limit_num_ = limit_num;
+    }
+    ~LimitPlan() {}
+
+    std::shared_ptr<Plan> subplan_;
+    int limit_num_;
 };
 
 // dml语句，包括insert; delete; update; select语句　

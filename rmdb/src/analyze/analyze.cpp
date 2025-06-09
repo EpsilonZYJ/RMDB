@@ -130,6 +130,17 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse)
         get_having_clause(x->havings, query->havings);
         check_clause(query->tables, query->havings, true);
         check_clause(query->tables, query->conds);
+
+        // 处理limit子句
+        if(x->limit) {
+            if (x->limit->limit_num < 0) {
+                throw InternalError("LIMIT clause must be a non-negative integer.");
+            }
+            query->limit = x->limit->limit_num; // 处理limit
+        } else {
+            query->limit = -1; // 没有限制
+        }
+        
     } else if (auto x = std::dynamic_pointer_cast<ast::UpdateStmt>(parse)) {
         // 处理表名
         query->tables.push_back(x->tab_name);
@@ -294,6 +305,10 @@ void Analyze::check_clause(const std::vector<std::string> &tab_names,
         // 处理条件语句左侧列
         if(!check_having && cond.agg_type != NO_AGG) 
                 throw InternalError("Where clause left side mustn't be an aggregation function.");
+        if (cond.agg_type == AGG_COUNT && cond.lhs_col.tab_name.empty() && cond.lhs_col.col_name.empty()) {
+            cond.rhs_val.init_raw(sizeof(int));
+            continue;
+        } 
         cond.lhs_col = check_column(all_cols, cond.lhs_col);// Infer table name from column name
         TabMeta &lhs_tab = sm_manager_->db_.get_table(cond.lhs_col.tab_name);
         auto lhs_col = lhs_tab.get_col(cond.lhs_col.col_name);
@@ -305,7 +320,9 @@ void Analyze::check_clause(const std::vector<std::string> &tab_names,
         // 处理条件语句右侧列
         ColType rhs_type;
         if (cond.is_rhs_val) {
-            cond.rhs_val.init_raw(lhs_col->len);
+            if(cond.agg_type == AGG_COUNT)     cond.rhs_val.init_raw(sizeof(int));
+            else if (cond.agg_type == AGG_AVG) cond.rhs_val.init_raw(sizeof(float));
+            else cond.rhs_val.init_raw(lhs_col->len);
             rhs_type = cond.rhs_val.type;
         } else {
             cond.rhs_col = check_column(all_cols, cond.rhs_col);

@@ -24,6 +24,7 @@ See the Mulan PSL v2 for more details. */
 #include "execution/executor_delete.h"
 #include "execution/execution_sort.h"
 #include "execution/executor_aggregate.h"
+#include "execution/executor_limit.h"
 #include "common/common.h"
 
 typedef enum portalTag{
@@ -195,6 +196,9 @@ class Portal
                 std::move(x->agg_types_),
                 std::move(x->group_bys_), 
                 std::move(x->havings_));
+        } else if (auto x = std::dynamic_pointer_cast<LimitPlan>(plan)) {
+            return std::make_unique<LimitExecutor>(
+                convert_plan_executor(x->subplan_, context), x->limit_num_);
         }
         return nullptr;
     }

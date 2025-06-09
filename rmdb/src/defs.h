@@ -44,6 +44,13 @@ enum ColType {
     TYPE_INT, TYPE_FLOAT, TYPE_STRING
 };
 
+inline bool value_type_match(ColType type1, ColType type2) {
+    if (type1 == type2) return true;
+    if (type1 == ColType::TYPE_INT && type2 == ColType::TYPE_FLOAT) return true;
+    if (type1 == ColType::TYPE_FLOAT && type2 == ColType::TYPE_INT) return true;
+    return false;
+}
+
 inline std::string coltype2str(ColType type) {
     std::map<ColType, std::string> m = {
             {TYPE_INT,    "INT"},

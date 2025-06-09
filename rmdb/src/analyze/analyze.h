@@ -44,7 +44,9 @@ class Query{
     std::vector<Condition> havings;
     // order by
     TabCol order_bys;
-
+    // limit n
+    int limit = -1; // -1表示没有限制
+    
     Query(){}
 
 };

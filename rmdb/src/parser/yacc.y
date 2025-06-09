@@ -23,7 +23,7 @@ using namespace ast;
 // keywords
 %token SHOW TABLES CREATE TABLE DROP DESC INSERT INTO VALUES DELETE FROM ASC ORDER BY
 WHERE UPDATE SET SELECT INT CHAR FLOAT INDEX AND JOIN EXIT HELP TXN_BEGIN TXN_COMMIT TXN_ABORT TXN_ROLLBACK ORDER_BY ENABLE_NESTLOOP ENABLE_SORTMERGE
-COUNT MAX MIN SUM AVG AS GROUP HAVING 
+COUNT MAX MIN SUM AVG AS GROUP HAVING LIMIT
 // non-keywords
 %token LEQ NEQ GEQ T_EOF
 
@@ -56,6 +56,8 @@ COUNT MAX MIN SUM AVG AS GROUP HAVING
 %type <sv_orderby_dir> opt_asc_desc
 %type <sv_setKnobType> set_knob_type
 %type <sv_col_extra_info> select_item
+%type <sv_agg_expr> agg_expr
+%type <sv_limit> opt_limit_clause
 %%
 start:
         stmt ';'
@@ -161,9 +163,9 @@ dml:
     {
         $$ = std::make_shared<UpdateStmt>($2, $4, $5);
     }
-    |   SELECT select_list FROM tableList optWhereClause group_by_clause having_clauses opt_order_clause
+    |   SELECT select_list FROM tableList optWhereClause group_by_clause having_clauses opt_order_clause opt_limit_clause
     {
-        $$ = std::static_pointer_cast<Expr>(std::make_shared<SelectStmt>($2, $4, $5, $6, $7, $8));
+        $$ = std::static_pointer_cast<Expr>(std::make_shared<SelectStmt>($2, $4, $5, $6, $7, $8, $9));
     }
     ;
 
@@ -456,18 +458,41 @@ group_by_clause:
     }
     ;
 
+agg_expr:
+        COUNT '(' '*' ')'
+    {
+        $$ = std::make_shared<AggExpr>(std::make_shared<Col>("", ""), AGG_COUNT);
+    }
+    |   COUNT '(' col ')'
+    {
+        $$ = std::make_shared<AggExpr>(std::move($3), AGG_COUNT);
+    }
+    |   MAX '(' col ')'
+    {
+        $$ = std::make_shared<AggExpr>(std::move($3), AGG_MAX);
+    }
+    |   MIN '(' col ')'
+    {
+        $$ = std::make_shared<AggExpr>(std::move($3), AGG_MIN);
+    }
+    |   SUM '(' col ')'
+    {
+        $$ = std::make_shared<AggExpr>(std::move($3), AGG_SUM);
+    }
+    |   AVG '(' col ')'
+    {
+        $$ = std::make_shared<AggExpr>(std::move($3), AGG_AVG);
+    }
+    ;
+
 having_clause:
-        select_item op expr
+        agg_expr op expr
     {
         $$.emplace_back(std::make_shared<HavingExpr>($1, $2, $3));
     }
-    |   having_clause AND select_item op expr
+    |   having_clause AND agg_expr op expr
     {
         $$.emplace_back(std::make_shared<HavingExpr>($3, $4, $5));
-    }
-    |   /* epsilon */
-    {
-        /* ignore */
     }
     ;
 
@@ -475,6 +500,17 @@ having_clauses:
         HAVING having_clause
     {
         $$ = std::move($2);
+    }
+    |   /* epsilon */
+    {
+        /* ignore */
+    }
+    ;
+
+opt_limit_clause:
+        LIMIT VALUE_INT
+    {
+        $$ = std::make_shared<LimitExpr>(std::move($2));
     }
     |   /* epsilon */
     {

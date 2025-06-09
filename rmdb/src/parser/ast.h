@@ -197,6 +197,14 @@ struct ColExtraInfo : public TreeNode {
     }
 };
 
+struct AggExpr : public TreeNode {
+    std::shared_ptr<Col> col;
+    AggType type;
+
+    AggExpr(std::shared_ptr<Col> col_, AggType type_, std::string alias_ = "") :
+            col(std::move(col_)), type(type_){}
+};
+
 struct OrderBy : public TreeNode
 {
     std::shared_ptr<Col> cols;
@@ -244,13 +252,18 @@ struct JoinExpr : public TreeNode {
 };
 
 struct HavingExpr : public TreeNode {
-    std::shared_ptr<ColExtraInfo> lhs;
+    std::shared_ptr<AggExpr> lhs;
     SvCompOp op;
     std::shared_ptr<Expr> rhs;
-    HavingExpr(std::shared_ptr<ColExtraInfo> &lhs_, SvCompOp &op_, std::shared_ptr<Expr> &rhs_) : lhs(std::move(lhs_)),
+    HavingExpr(std::shared_ptr<AggExpr> &lhs_, SvCompOp &op_, std::shared_ptr<Expr> &rhs_) : 
+        lhs(std::move(lhs_)),
         op(op_),
-        rhs(std::move(rhs_)) {
-    }
+        rhs(std::move(rhs_)) {}
+};
+
+struct LimitExpr : public TreeNode {
+    int limit_num;
+    explicit LimitExpr(int limit_num_) : limit_num(limit_num_) {}
 };
 
 struct SelectStmt : public TreeNode, public Expr {
@@ -263,6 +276,8 @@ struct SelectStmt : public TreeNode, public Expr {
     
     bool has_sort;
     std::shared_ptr<OrderBy> order;
+    
+    std::shared_ptr<LimitExpr> limit;
 
 
     SelectStmt(std::vector<std::shared_ptr<ColExtraInfo>> cols_,
@@ -270,13 +285,15 @@ struct SelectStmt : public TreeNode, public Expr {
                std::vector<std::shared_ptr<BinaryExpr>> conds_,
                std::vector<std::shared_ptr<Col> > &group_bys_, // 允许包含多个列
                std::vector<std::shared_ptr<HavingExpr> > &havings_,
-               std::shared_ptr<OrderBy> order_) :
+               std::shared_ptr<OrderBy> order_,
+               std::shared_ptr<LimitExpr> limit_) :
             cols(std::move(cols_)), 
             tabs(std::move(tabs_)), 
             conds(std::move(conds_)), 
             group_bys(std::move(group_bys_)),
             havings(std::move(havings_)),
-            order(std::move(order_)) {
+            order(std::move(order_)),
+            limit(std::move(limit_)) {
                 has_sort = (bool)order;
             }
 };
@@ -309,6 +326,7 @@ struct SemValue {
     std::vector<std::shared_ptr<Field>> sv_fields;
 
     std::shared_ptr<Expr> sv_expr;
+    std::shared_ptr<AggExpr> sv_agg_expr;
 
     std::shared_ptr<Value> sv_val;
     std::vector<std::shared_ptr<Value>> sv_vals;
@@ -329,6 +347,8 @@ struct SemValue {
     std::vector<std::shared_ptr<BinaryExpr>> sv_conds;
 
     std::shared_ptr<OrderBy> sv_orderby;
+
+    std::shared_ptr<LimitExpr> sv_limit;
 
     SetKnobType sv_setKnobType;
 };

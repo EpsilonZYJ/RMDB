@@ -51,8 +51,11 @@ class InsertExecutor : public AbstractExecutor {
         for (size_t i = 0; i < values_.size(); i++) { // 依次遍历每个待插入的值
             auto &col = tab_.cols[i]; // 类型为ColMeta
             auto &val = values_[i];  //（父）类型为Value
-            if (col.type != val.type) { // 判断类型是否符合
+            if (!value_type_match(col.type, val.type)) { // 判断类型是否符合
                 throw IncompatibleTypeError(coltype2str(col.type), coltype2str(val.type));
+            }
+            if(col.type != val.type) {
+                val.value_cast(col.type); // 确保新值与字段类型匹配
             }
             val.init_raw(col.len); // 用特定的值初始化
             memcpy(rec.data + col.offset, val.raw->data, col.len);

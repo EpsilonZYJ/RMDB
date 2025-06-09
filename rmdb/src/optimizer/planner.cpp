@@ -132,7 +132,7 @@ std::shared_ptr<Plan> Planner::physical_optimization(std::shared_ptr<Query> quer
     // 其他物理优化
 
     // 处理orderby
-    plan = generate_sort_plan(query, std::move(plan)); 
+    // plan = generate_sort_plan(query, std::move(plan)); 
 
     return plan;
 }
@@ -278,12 +278,12 @@ std::shared_ptr<Plan> Planner::generate_sort_plan(std::shared_ptr<Query> query, 
         const auto &sel_tab_cols = sm_manager_->db_.get_table(sel_tab_name).cols;
         all_cols.insert(all_cols.end(), sel_tab_cols.begin(), sel_tab_cols.end());
     }
-    TabCol sel_col;
-    for (auto &col : all_cols) {
-        if(col.name.compare(x->order->cols->col_name) == 0 )
-        sel_col = {.tab_name = col.tab_name, .col_name = col.name};
-    }
-    return std::make_shared<SortPlan>(T_Sort, std::move(plan), sel_col, 
+    // TabCol sel_col;
+    // for (auto &col : all_cols) {
+    //     if(col.name.compare(x->order->cols->col_name) == 0 )
+    //     sel_col = {.tab_name = col.tab_name, .col_name = col.name};
+    // }
+    return std::make_shared<SortPlan>(T_Sort, std::move(plan), query->order_bys, 
                                     x->order->orderby_dir == ast::OrderBy_DESC);
 }
 
@@ -325,6 +325,15 @@ std::shared_ptr<Plan> Planner::generate_select_plan(std::shared_ptr<Query> query
             std::move(query->havings)
         );
     // 查询执行树中表示聚合函数的节点为
+
+    plannerRoot = generate_sort_plan(query, std::move(plannerRoot)); // TODO 此处修改是关联着physical_optimization的
+
+    // 添加limit节点
+    if(query->limit >= 0) {
+        plannerRoot = std::make_shared<LimitPlan>(T_Limit, std::move(plannerRoot), query->limit);
+    }
+
+    // TODO order by在前面physical_optimization已经处理过。难道排序是在聚合函数前面吗？
 
     plannerRoot = std::make_shared<ProjectionPlan>(
             T_Projection, 

@@ -88,8 +88,10 @@ single_op ";"|"("|")"|","|"*"|"="|">"|"<"|"."
 "SUM" { return SUM; }
 "AVG" { return AVG; }
 "AS" { return AS; }
+"HAVING" { return HAVING; }
 "GROUP" { return GROUP; }
 "ORDER" { return ORDER; }
+"LIMIT" { return LIMIT; }
 "BY" {  return BY;  }
 "ASC" { return ASC; }
 "ENABLE_NESTLOOP" { return ENABLE_NESTLOOP; }

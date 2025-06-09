@@ -456,6 +456,8 @@ public:
               
         cols_ = prev_->cols();
         
+        // 不能直接在这里先设置AVG列的类型为float
+
         // 设置列元数据
         setupColumns(sel_cols, group_bys, having_conds_);
     }
