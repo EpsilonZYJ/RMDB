@@ -47,6 +47,23 @@ class DeleteExecutor : public AbstractExecutor {
             // 这里的条件是指update语句中的where条件
             if(!check_condition(old_record, tab_, conds_)) continue;
             
+            // 在删除前，添加写记录到事务写集合
+            if (context_ && context_->txn_) {
+                // 创建DELETE类型的写记录，保存原始记录供回滚使用
+                // 创建一个old_record的副本
+                RmRecord record_copy(old_record.size);
+                memcpy(record_copy.data, old_record.data, old_record.size);
+                
+                WriteRecord* write_record = new WriteRecord(WType::DELETE_TUPLE, tab_name_, rid, record_copy);
+                context_->txn_->append_write_record(write_record);
+                
+                std::cout << "DEBUG:已将删除写记录添加到事务 " << context_->txn_->get_transaction_id() 
+                        << ", 写集合大小: " << context_->txn_->get_write_set()->size() << std::endl;
+            } else {
+                std::cout << "DEBUG:删除操作没有关联有效事务!" << std::endl;
+            }
+
+
             bool debug = fh_->is_record(rid);
             fh_->delete_record(rid, context_); // 更新数据文件中的记录
 

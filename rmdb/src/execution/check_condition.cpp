@@ -1,6 +1,3 @@
-#ifndef CHECK_CONDITION_H
-#define CHECK_CONDITION_H
-
 #include "check_condition.h"
 
 bool check_condition(const RmRecord& record, TabMeta& tab_, const Condition& cond) {
@@ -112,4 +109,3 @@ bool check_condition(const RmRecord& record,
 
     return true;
 }
-#endif

@@ -15,3 +15,5 @@ bool check_condition(const RmRecord& record,
                      const std::vector<ColMeta>& left_cols,
                      const std::vector<ColMeta>& right_cols,
                      const std::vector<Condition>& conds);
+                     #pragma once
+

@@ -19,7 +19,8 @@ See the Mulan PSL v2 for more details. */
 #include "executor_update.h"
 #include "index/ix.h"
 #include "record_printer.h"
-
+#include "execution/executor_explain.h"
+#include "executor_semi_join.h"
 const char *help_info = "Supported SQL syntax:\n"
                    "  command ;\n"
                    "command:\n"
@@ -146,6 +147,7 @@ void QlManager::run_cmd_utility(std::shared_ptr<Plan> plan, txn_id_t *txn_id, Co
 // 执行select语句，select语句的输出除了需要返回客户端外，还需要写入output.txt文件中
 void QlManager::select_from(std::unique_ptr<AbstractExecutor> executorTreeRoot, std::vector<TabCol> sel_cols, 
                             Context *context) {
+    std::cout<<"DEBUG: select_from 开始" << std::endl;
     std::vector<std::string> captions;
     captions.reserve(sel_cols.size());
     for (auto &sel_col : sel_cols) {
@@ -200,9 +202,22 @@ void QlManager::select_from(std::unique_ptr<AbstractExecutor> executorTreeRoot, 
     rec_printer.print_separator(context);
     // Print record count into buffer
     RecordPrinter::print_record_count(num_rec, context);
+    std::cout<<"DEBUG: select_from 结束" << std::endl;
 }
 
 // 执行DML语句
 void QlManager::run_dml(std::unique_ptr<AbstractExecutor> exec){
     exec->Next();
+}
+
+// 执行EXPLAIN语句
+void QlManager::run_explain(std::shared_ptr<Plan> plan, Context *context) {
+    if (auto x = std::dynamic_pointer_cast<ExplainPlan>(plan)) {
+        // 创建ExplainExecutor
+        auto executor = x->get_executor(context);    
+        // 使用一个列定义显示计划
+        std::vector<TabCol> explain_cols = {TabCol{"", "EXPLAIN"}};
+        // 使用select_from方法显示结果
+        select_from(std::move(executor), explain_cols, context);
+    }
 }

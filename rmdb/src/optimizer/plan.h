@@ -9,7 +9,6 @@ MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 See the Mulan PSL v2 for more details. */
 
 #pragma once
-
 #include <cassert>
 #include <cstring>
 #include <memory>
@@ -18,7 +17,8 @@ See the Mulan PSL v2 for more details. */
 #include "parser/ast.h"
 
 #include "parser/parser.h"
-
+#include "execution/executor_explain.h"
+#include <map>
 typedef enum PlanTag{
     T_Invalid = 1,
     T_Help,
@@ -42,7 +42,9 @@ typedef enum PlanTag{
     T_NestLoop,
     T_SortMerge,    // sort merge join
     T_Sort,
-    T_Projection
+    T_Projection,
+    T_Explain,
+    T_SemiJoin
 } PlanTag;
 
 // 查询执行计划
@@ -88,7 +90,11 @@ class JoinPlan : public Plan
             left_ = std::move(left);
             right_ = std::move(right);
             conds_ = std::move(conds);
-            type = INNER_JOIN;
+            if (tag == T_SemiJoin) {
+                type = SEMI_JOIN;  
+            } else {
+                type = INNER_JOIN;  
+            }
         }
         ~JoinPlan(){}
         // 左节点
@@ -104,16 +110,17 @@ class JoinPlan : public Plan
 class ProjectionPlan : public Plan
 {
     public:
-        ProjectionPlan(PlanTag tag, std::shared_ptr<Plan> subplan, std::vector<TabCol> sel_cols)
+        ProjectionPlan(PlanTag tag, std::shared_ptr<Plan> subplan, std::vector<TabCol> sel_cols,bool is_select_star = false)
         {
             Plan::tag = tag;
             subplan_ = std::move(subplan);
             sel_cols_ = std::move(sel_cols);
+            is_select_star_ = is_select_star;
         }
         ~ProjectionPlan(){}
         std::shared_ptr<Plan> subplan_;
         std::vector<TabCol> sel_cols_;
-        
+        bool is_select_star_ = false;//是否select *
 };
 
 class SortPlan : public Plan
@@ -209,4 +216,16 @@ class plannerInfo{
     std::vector<SetClause> set_clauses;
     plannerInfo(std::shared_ptr<ast::SelectStmt> parse_):parse(std::move(parse_)){}
 
+};
+
+class ExplainPlan : public Plan {
+    public:
+        std::shared_ptr<Plan> plan_;
+        std::map<std::string, std::string> tab_alias_map;
+        ExplainPlan(PlanTag tag, std::shared_ptr<Plan> plan)
+            : Plan(), plan_(plan) {
+            Plan::tag = tag;  
+            }
+        ~ExplainPlan() = default;
+        std::unique_ptr<AbstractExecutor> get_executor(Context *context);
 };

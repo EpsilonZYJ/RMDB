@@ -101,14 +101,66 @@ public:
  * TODO: commit操作的日志记录
 */
 class CommitLogRecord: public LogRecord {
-
+    public:
+    CommitLogRecord() {
+        log_type_ = LogType::commit;
+        lsn_ = INVALID_LSN;
+        log_tot_len_ = LOG_HEADER_SIZE;
+        log_tid_ = INVALID_TXN_ID;
+        prev_lsn_ = INVALID_LSN;
+    }
+    
+    CommitLogRecord(txn_id_t txn_id) : CommitLogRecord() {
+        log_tid_ = txn_id;
+    }
+    
+    // 序列化Commit日志记录到dest中
+    void serialize(char* dest) const override {
+        LogRecord::serialize(dest);
+    }
+    
+    // 从src中反序列化出一条Commit日志记录
+    void deserialize(const char* src) override {
+        LogRecord::deserialize(src);   
+    }
+    
+    void format_print() override {
+        printf("commit record\n");
+        LogRecord::format_print();
+    }
 };
 
 /**
  * TODO: abort操作的日志记录
 */
 class AbortLogRecord: public LogRecord {
-
+    public:
+    AbortLogRecord() {
+        log_type_ = LogType::ABORT;
+        lsn_ = INVALID_LSN;
+        log_tot_len_ = LOG_HEADER_SIZE;
+        log_tid_ = INVALID_TXN_ID;
+        prev_lsn_ = INVALID_LSN;
+    }
+    
+    AbortLogRecord(txn_id_t txn_id) : AbortLogRecord() {
+        log_tid_ = txn_id;
+    }
+    
+    // 序列化Abort日志记录到dest中
+    void serialize(char* dest) const override {
+        LogRecord::serialize(dest);
+    }
+    
+    // 从src中反序列化出一条Abort日志记录
+    void deserialize(const char* src) override {
+        LogRecord::deserialize(src);   
+    }
+    
+    void format_print() override {
+        printf("abort record\n");
+        LogRecord::format_print();
+    }
 };
 
 class InsertLogRecord: public LogRecord {

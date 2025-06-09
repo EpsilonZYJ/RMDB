@@ -18,10 +18,92 @@ See the Mulan PSL v2 for more details. */
 std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse)
 {
     std::shared_ptr<Query> query = std::make_shared<Query>();//初始化空query
-    if (auto x = std::dynamic_pointer_cast<ast::SelectStmt>(parse))//select语句
+    if (auto explain_stmt = std::dynamic_pointer_cast<ast::ExplainStmt>(parse)) {
+        // 复用 SelectStmt 的处理逻辑
+        query->parse = explain_stmt->select;
+        // 标记这是 EXPLAIN 查询
+        query->is_explain = true; 
+        // 处理选择语句内容
+        auto x = explain_stmt->select;
+        // 处理表名
+        //query->tables = std::move(x->tabs);
+        analyze_table_refs(x->tabs, query);
+        /** 检查表是否存在 */
+        for (auto &tab_name : query->tables) {
+            if (!sm_manager_->db_.is_table(tab_name)) {
+                throw TableNotFoundError(tab_name);
+            }
+        }
+        // 处理target list
+        for (auto &sv_sel_col : x->cols) {
+            TabCol sel_col = {.tab_name = sv_sel_col->tab_name, .col_name = sv_sel_col->col_name};
+            query->cols.push_back(sel_col);
+        }
+        
+        std::vector<ColMeta> all_cols;
+        get_all_cols(query->tables, all_cols);
+        if (query->cols.empty()) {
+            // select all columns
+            for (auto &col : all_cols) {
+                TabCol sel_col = {.tab_name = col.tab_name, .col_name = col.name};
+                query->cols.push_back(sel_col);
+            }
+        } else {
+            // infer table name from column name
+            for (auto &sel_col : query->cols) {
+                sel_col = check_column(all_cols, sel_col, query->tab_alias_map);  // 列元数据校验
+            }
+        }
+
+        //JOIN处理代码
+        if (!x->jointree.empty()) {
+            // 处理JOIN条件
+            for (const auto& join_expr : x->jointree) {
+                // 解析表名，去掉别名部分
+                std::string left_table = join_expr->left;
+                std::string right_table = join_expr->right;
+                // 处理左表可能的别名
+                size_t left_space = left_table.find(' ');
+                if (left_space != std::string::npos) {
+                    left_table = left_table.substr(0, left_space);
+                }    
+                // 处理右表可能的别名
+                size_t right_space = right_table.find(' ');
+                if (right_space != std::string::npos) {
+                    right_table = right_table.substr(0, right_space);
+                }
+                // 确保表存在
+                if (!sm_manager_->db_.is_table(left_table)) {
+                    throw TableNotFoundError(left_table);
+                }
+                if (!sm_manager_->db_.is_table(right_table)) {
+                    throw TableNotFoundError(right_table);
+                }
+                
+                // 处理JOIN条件
+                std::vector<Condition> join_conds;
+                get_clause(join_expr->conds, join_conds);
+                for (auto& cond : join_conds) {
+                    cond.is_join_cond = true;  //标记为JOIN
+                    if (join_expr->type == SEMI_JOIN) {
+                        cond.is_semi_join = true;  //标记为SEMI JOIN
+                        std::cout << "DEBUG: 检测到SEMI JOIN条件" << std::endl;
+                    }
+                }
+                query->join_conds.push_back(join_conds);
+                // 检查JOIN条件
+                check_clause({left_table, right_table}, join_conds,query->tab_alias_map);
+            }
+        }
+
+        //处理where条件
+        get_clause(x->conds, query->conds);
+        check_clause(query->tables, query->conds,query->tab_alias_map);
+    }
+    else if (auto x = std::dynamic_pointer_cast<ast::SelectStmt>(parse))//select语句
     {
         // 处理表名
-        query->tables = std::move(x->tabs);
+        analyze_table_refs(x->tabs, query);
         /** TODO: 检查表是否存在 */
         for (auto &tab_name : query->tables) {
             if (!sm_manager_->db_.is_table(tab_name)) {
@@ -44,13 +126,138 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse)
             }//slelect *
         } else {
             // infer table name from column name
-            for (auto &sel_col : query->cols) {
-                sel_col = check_column(all_cols, sel_col);  // 列元数据校验
+            bool might_have_semi_join = false;
+            for (const auto& join_ref : x->jointree) {
+                if (join_ref->type == SEMI_JOIN) {
+                    might_have_semi_join = true;
+                    break;
+                }
+            }
+            // 如果不是半连接，执行正常的列检查
+            // 如果可能是半连接，则推迟到JOIN处理后进行
+            if (!might_have_semi_join) {
+                // infer table name from column name
+                for (auto &sel_col : query->cols) {
+                    sel_col = check_column(all_cols, sel_col, query->tab_alias_map);  // 列元数据校验
+                }
+            } else {
+                std::cout << "DEBUG: 检测到半连接，推迟列检查" << std::endl;
             }
         }
+        //JOIN处理代码
+        if (!x->jointree.empty()) {
+            // 处理JOIN条件
+            for (const auto& join_expr : x->jointree) {
+                // 解析表名，去掉别名部分
+                std::string left_table = join_expr->left;
+                std::string right_table = join_expr->right;
+                
+                // 处理左表可能的别名
+                size_t left_space = left_table.find(' ');
+                if (left_space != std::string::npos) {
+                    left_table = left_table.substr(0, left_space);
+                }
+                
+                // 处理右表可能的别名
+                size_t right_space = right_table.find(' ');
+                if (right_space != std::string::npos) {
+                    right_table = right_table.substr(0, right_space);
+                }
+                // 确保表存在
+                if (!sm_manager_->db_.is_table(left_table)) {
+                    throw TableNotFoundError(left_table);
+                }
+                if (!sm_manager_->db_.is_table(right_table)) {
+                    throw TableNotFoundError(right_table);
+                }
+                
+                // 处理JOIN条件
+                std::vector<Condition> join_conds;
+                get_clause(join_expr->conds, join_conds);
+                for (auto& cond : join_conds) {
+                    cond.is_join_cond = true;  //标记为JOIN
+                    if (join_expr->type == SEMI_JOIN) {
+                        cond.is_semi_join = true;  //标记为SEMI JOIN
+                        std::cout << "DEBUG: 检测到SEMI JOIN条件" << std::endl;
+                    }
+                }
+                query->join_conds.push_back(join_conds);
+                
+                // 检查JOIN条件
+                check_clause({left_table, right_table}, join_conds,query->tab_alias_map);
+            }
+            bool has_semi_join = false;
+            std::set<std::string> left_tables; // 保存所有半连接的左表
+
+            for (const auto& join_expr : x->jointree) {
+                if (join_expr->type == SEMI_JOIN) {
+                    has_semi_join = true;
+                    
+                    // 提取左表名（去掉可能的别名）
+                    std::string left_table = join_expr->left;
+                    size_t space_pos = left_table.find(' ');
+                    if (space_pos != std::string::npos) {
+                        left_table = left_table.substr(0, space_pos);
+                    }
+                    
+                    // 将左表添加到集合中
+                    left_tables.insert(left_table);
+                    std::cout << "DEBUG: 半连接左表: " << left_table << std::endl;
+                }
+            }
+
+            // 如果存在半连接，筛选列，只保留左表的列
+            if (has_semi_join) {
+                std::vector<TabCol> filtered_cols;
+                std::vector<std::string> invalid_cols; // 收集无效列名
+                
+                for (const auto& col : query->cols) {
+                    TabCol checked_col = check_column(all_cols, col, query->tab_alias_map, 
+                                                     has_semi_join, left_tables);
+                    std::string real_tab_name = checked_col.tab_name;
+                    
+                    // 处理可能的表别名
+                    auto it = query->tab_alias_map.find(real_tab_name);
+                    if (it != query->tab_alias_map.end()) {
+                        real_tab_name = it->first;
+                    } else {
+                        // 反向查找别名
+                        for (const auto& [table, alias] : query->tab_alias_map) {
+                            if (alias == real_tab_name) {
+                                real_tab_name = table;
+                                break;
+                            }
+                        }
+                    }
+                    
+                    // 检查列是否属于左表
+                    if (left_tables.find(real_tab_name) != left_tables.end()) {
+                        filtered_cols.push_back(checked_col);
+                    } else {
+                        // 收集来自右表的列名
+                        invalid_cols.push_back(checked_col.col_name);
+                    }
+                }
+                
+                // 如果有任何来自右表的列，抛出错误
+                if (!invalid_cols.empty()) {
+                    std::string invalid_cols_str;
+                    for (size_t i = 0; i < invalid_cols.size(); ++i) {
+                        if (i > 0) invalid_cols_str += ", ";
+                        invalid_cols_str += invalid_cols[i];
+                    }
+                    throw SemiJoinColumnError(invalid_cols_str);
+                }
+                
+                // 更新查询列
+                query->cols = filtered_cols;
+                std::cout << "DEBUG: 半连接后列过滤：保留 " << query->cols.size() << " 列" << std::endl;
+            }
+    }
         //处理where条件
         get_clause(x->conds, query->conds);
-        check_clause(query->tables, query->conds);
+        check_clause(query->tables, query->conds,query->tab_alias_map);
+        query->is_explain = x->explain;
     } else if (auto x = std::dynamic_pointer_cast<ast::UpdateStmt>(parse)) {
         // 处理表名
         query->tables.push_back(x->tab_name);
@@ -68,7 +275,7 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse)
             set_clause.lhs.col_name = sv_set_clause->col_name;
             set_clause.rhs = convert_sv_value(sv_set_clause->val);
             
-            // 添加初始化raw字段的代码
+            // 初始化raw字段
             auto col = tab.get_col(set_clause.lhs.col_name);
             set_clause.rhs.init_raw(col->len);
             
@@ -77,14 +284,14 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse)
         
         // 处理where条件
         get_clause(x->conds, query->conds);
-        check_clause({x->tab_name}, query->conds);
+        check_clause({x->tab_name}, query->conds,query->tab_alias_map);
     } else if (auto x = std::dynamic_pointer_cast<ast::DeleteStmt>(parse)) {
         query->tables.push_back(x->tab_name);
         if (!sm_manager_->db_.is_table(x->tab_name)) {
             throw TableNotFoundError(x->tab_name);
         }
         get_clause(x->conds, query->conds);
-        check_clause({x->tab_name}, query->conds);        
+        check_clause({x->tab_name}, query->conds,query->tab_alias_map);        
     } else if (auto x = std::dynamic_pointer_cast<ast::InsertStmt>(parse)) {
         // 处理insert 的values值
             query->tables.push_back(x->tab_name);
@@ -103,21 +310,57 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse)
 }
 
 
-TabCol Analyze::check_column(const std::vector<ColMeta> &all_cols, TabCol target) {
+TabCol Analyze::check_column(const std::vector<ColMeta> &all_cols, TabCol target,
+    const std::map<std::string, std::string> &tab_alias_map,
+    bool is_semi_join, const std::set<std::string> &left_tables) {
+    // 检查是否是别名，如果是则转换为原表名
+    std::string real_tab_name = target.tab_name;
+    //反向查找别名对应的真实表名
+    for (const auto& [table, alias] : tab_alias_map) {
+        if (alias == target.tab_name) {
+            real_tab_name = table;
+            std::cout << "DEBUG: 将别名 '" << target.tab_name << "' 转换为表名 '" << real_tab_name << "'" << std::endl;
+            break;
+        }
+    }
+    // 更新target中的表名为真实表名
+    target.tab_name = real_tab_name;
     if (target.tab_name.empty()) {
         // Table name not specified, infer table name from column name
         std::string tab_name;
+        std::vector<std::string> matched_tables;
+        
+        // 收集所有匹配的表
         for (auto &col : all_cols) {
             if (col.name == target.col_name) {
-                if (!tab_name.empty()) {
-                    throw AmbiguousColumnError(target.col_name);
-                }//列名歧义，已经找到了匹配的表，又出现了另一个，比如Stu.id和Course.id同时出现
-                tab_name = col.tab_name;
+                matched_tables.push_back(col.tab_name);
+                if (tab_name.empty()) {
+                    tab_name = col.tab_name;
+                }
             }
         }
+        
+        // 如果有多个匹配，检查是否是半连接情况
+        if (matched_tables.size() > 1) {
+            if (is_semi_join && !left_tables.empty()) {
+                for (const auto& tab : matched_tables) {
+                    if (left_tables.find(tab) != left_tables.end()) {
+                        tab_name = tab;
+                        std::cout << "DEBUG: 半连接中消除列歧义，选择左表 " << tab_name 
+                                  << " 的列 " << target.col_name << std::endl;
+                        target.tab_name = tab_name;
+                        return target;
+                    }
+                }
+            }
+            
+            // 如果不是半连接或找不到匹配的左表列，抛出歧义错误
+            throw AmbiguousColumnError(target.col_name);
+        }
+        
         if (tab_name.empty()) {
             throw ColumnNotFoundError(target.col_name);
-        }//没有找到匹配的列名
+        }
         target.tab_name = tab_name;
     } else {
         /** TODO: Make sure target column exists */
@@ -173,16 +416,16 @@ bool Analyze::value_type_match(ColType type1, ColType type2) {
     return false;
 }
 
-void Analyze::check_clause(const std::vector<std::string> &tab_names, std::vector<Condition> &conds) {
+void Analyze::check_clause(const std::vector<std::string> &tab_names, std::vector<Condition> &conds,const std::map<std::string, std::string> &tab_alias_map = {}) {
     // auto all_cols = get_all_cols(tab_names);
     std::vector<ColMeta> all_cols;
     get_all_cols(tab_names, all_cols);
     // Get raw values in where clause
     for (auto &cond : conds) {
         // Infer table name from column name
-        cond.lhs_col = check_column(all_cols, cond.lhs_col);
+        cond.lhs_col = check_column(all_cols, cond.lhs_col, tab_alias_map);
         if (!cond.is_rhs_val) {
-            cond.rhs_col = check_column(all_cols, cond.rhs_col);
+            cond.rhs_col = check_column(all_cols, cond.rhs_col, tab_alias_map);
         }
         TabMeta &lhs_tab = sm_manager_->db_.get_table(cond.lhs_col.tab_name);
         auto lhs_col = lhs_tab.get_col(cond.lhs_col.col_name);
@@ -222,4 +465,28 @@ CompOp Analyze::convert_sv_comp_op(ast::SvCompOp op) {
         {ast::SV_OP_GT, OP_GT}, {ast::SV_OP_LE, OP_LE}, {ast::SV_OP_GE, OP_GE},
     };
     return m.at(op);
+}
+
+// 在Analyze类中添加新函数
+void Analyze::analyze_table_refs(const std::vector<std::string> &tab_refs, std::shared_ptr<Query> query) {
+    std::cout << "DEBUG: 原始表引用: ";
+    for (const auto& ref : tab_refs) {
+        std::cout << "'" << ref << "' ";
+    }
+    std::cout << std::endl;
+    for (auto &tab_ref : tab_refs) {
+        std::string tab_name = tab_ref;
+        std::string alias;
+        // 检查是否包含空格
+        size_t space_pos = tab_name.find(' ');
+        if (space_pos != std::string::npos) {
+            alias = tab_name.substr(space_pos + 1);
+            tab_name = tab_name.substr(0, space_pos);  
+            // 存储别名映射
+            query->tab_alias_map[tab_name] = alias;
+        }  
+        std::cout << "DEBUG: 处理表名 '" << tab_name << "'，别名 '" << alias << "'" << std::endl;
+        // 将表名添加到查询中
+        query->tables.push_back(tab_name);
+    }
 }
