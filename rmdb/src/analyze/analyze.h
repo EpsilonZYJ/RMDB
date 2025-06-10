@@ -19,7 +19,8 @@ See the Mulan PSL v2 for more details. */
 #include "parser/parser.h"
 #include "system/sm.h"
 #include "common/common.h"
-
+#include <map>
+#include <set>
 class Query{
     public:
     std::shared_ptr<ast::TreeNode> parse;//抽象语法树
@@ -47,28 +48,42 @@ class Query{
     // limit n
     int limit = -1; // -1表示没有限制
     
+    //join的连接条件
+    std::vector<std::vector<Condition>> join_conds;
     Query(){}
-
+    bool is_explain = false; // 是否为explain语句
+    std::map<std::string, std::set<std::string> > table_required_cols;//储存每个表需要的列
+    std::map<std::string, std::string> tab_alias_map; // 表名到别名的映射
 };
 
 class Analyze
 {
 private:
     SmManager *sm_manager_;
+    bool current_is_semi_join_ = false;
+    std::set<std::string> current_semi_join_left_tables_;
 public:
     Analyze(SmManager *sm_manager) : sm_manager_(sm_manager){}
     ~Analyze(){}
 
     std::shared_ptr<Query> do_analyze(std::shared_ptr<ast::TreeNode> root);
+    void set_semi_join_info(bool is_semi_join, const std::set<std::string>& left_tables) {
+        current_is_semi_join_ = is_semi_join;
+        current_semi_join_left_tables_ = left_tables;
+    }
 
 private:
-    TabCol check_column(const std::vector<ColMeta> &all_cols, TabCol &target);
+    TabCol check_column(const std::vector<ColMeta> &all_cols, TabCol target, 
+        const std::map<std::string, std::string> &tab_alias_map = {},
+    bool is_semi_join = false, const std::set<std::string> &left_tables = {});
     void get_all_cols(const std::vector<std::string> &tab_names, std::vector<ColMeta> &all_cols);
     void get_clause(const std::vector<std::shared_ptr<ast::BinaryExpr>> &sv_conds, std::vector<Condition> &conds);
     void check_clause(const std::vector<std::string> &tab_names, std::vector<Condition> &conds, bool check_having=false);
+    void check_clause(const std::vector<std::string> &tab_names, std::vector<Condition> &conds,const std::map<std::string, std::string> &tab_alias_map);
     void get_having_clause(const std::vector<std::shared_ptr<ast::HavingExpr> > &having_conds, std::vector<Condition> &conds);
     Value convert_sv_value(const std::shared_ptr<ast::Value> &sv_val);
     CompOp convert_sv_comp_op(ast::SvCompOp op);
     bool value_type_match(ColType type1, ColType type2);
+    void analyze_table_refs(const std::vector<std::string> &tab_refs, std::shared_ptr<Query> query);
 };
 

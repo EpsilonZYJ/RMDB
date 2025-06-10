@@ -70,6 +70,7 @@ class ProjectionExecutor : public AbstractExecutor {
         }
 
         auto rec = prev_->Next();
+        if (!rec) return nullptr;
         auto &prev_cols = prev_->cols();
 
         std::unique_ptr<RmRecord> new_rec = std::make_unique<RmRecord>(len_);

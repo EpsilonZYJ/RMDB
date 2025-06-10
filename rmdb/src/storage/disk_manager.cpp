@@ -262,4 +262,6 @@ void DiskManager::write_log(char *log_data, int size) {
     if (bytes_write != size) {
         throw UnixError();
     }
+    // 添加fsync确保数据写入磁盘
+    fsync(log_fd_);
 }

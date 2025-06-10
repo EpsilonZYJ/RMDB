@@ -26,13 +26,15 @@ See the Mulan PSL v2 for more details. */
 #include "execution/executor_aggregate.h"
 #include "execution/executor_limit.h"
 #include "common/common.h"
+#include "execution/executor_semi_join.h"
 
 typedef enum portalTag{
     PORTAL_Invalid_Query = 0,
     PORTAL_ONE_SELECT,
     PORTAL_DML_WITHOUT_SELECT,
     PORTAL_MULTI_QUERY,
-    PORTAL_CMD_UTILITY
+    PORTAL_CMD_UTILITY,
+    PORTAL_EXPLAIN
 } portalTag;
 
 
@@ -60,8 +62,12 @@ class Portal
     // 将查询执行计划转换成对应的算子树
     std::shared_ptr<PortalStmt> start(std::shared_ptr<Plan> plan, Context *context)
     {
+        if (auto x = std::dynamic_pointer_cast<ExplainPlan>(plan)) {
+            // 创建一个特殊的 PortalStmt 来处理 EXPLAIN 命令
+            return std::make_shared<PortalStmt>(PORTAL_EXPLAIN, std::vector<TabCol>(), std::unique_ptr<AbstractExecutor>(), plan);
+        }
         // 这里可以将select进行拆分，例如：一个select，带有return的select等
-        if (auto x = std::dynamic_pointer_cast<OtherPlan>(plan)) {
+        else if (auto x = std::dynamic_pointer_cast<OtherPlan>(plan)) {
             return std::make_shared<PortalStmt>(PORTAL_CMD_UTILITY, std::vector<TabCol>(), std::unique_ptr<AbstractExecutor>(),plan);
         } else if(auto x = std::dynamic_pointer_cast<SetKnobPlan>(plan)) {
             return std::make_shared<PortalStmt>(PORTAL_CMD_UTILITY, std::vector<TabCol>(), std::unique_ptr<AbstractExecutor>(), plan); 
@@ -133,6 +139,14 @@ class Portal
 
     // 遍历算子树并执行算子生成执行结果
     void run(std::shared_ptr<PortalStmt> portal, QlManager* ql, txn_id_t *txn_id, Context *context){
+        if (context->txn_ != nullptr) {
+            std::cout << "DEBUG: Portal::run - 事务ID: " << context->txn_->get_transaction_id() 
+                      << ", 模式: " << (context->txn_->get_txn_mode() ? "显式" : "隐式") 
+                      << ", 状态: " << static_cast<int>(context->txn_->get_state())
+                      << std::endl;
+        } else {
+            std::cout << "DEBUG: Portal::run - 无活跃事务" << std::endl;
+        }
         switch(portal->tag) {
             case PORTAL_ONE_SELECT:
             {
@@ -155,6 +169,18 @@ class Portal
                 ql->run_cmd_utility(portal->plan, txn_id, context);
                 break;
             }
+            case PORTAL_EXPLAIN:
+            {
+            if (auto explain_plan = std::dynamic_pointer_cast<ExplainPlan>(portal->plan)) {
+                // 创建 ExplainExecutor
+                auto executor = explain_plan->get_executor(context);   
+                // 定义输出列
+                std::vector<TabCol> explain_cols = {TabCol{"", "EXPLAIN"}}; 
+                // 使用 select_from 显示结果
+                ql->select_from(std::move(executor), std::move(explain_cols), context);
+            }
+            break;
+            }
             default:
             {
                 throw InternalError("Unexpected field type");
@@ -168,10 +194,13 @@ class Portal
 
     std::unique_ptr<AbstractExecutor> convert_plan_executor(std::shared_ptr<Plan> plan, Context *context)
     {
-        if(auto x = std::dynamic_pointer_cast<ProjectionPlan>(plan)){
-            return std::make_unique<ProjectionExecutor>(
-                convert_plan_executor(x->subplan_, context), 
-                std::move(x->sel_cols_));
+        if (auto x = std::dynamic_pointer_cast<ExplainPlan>(plan)) {
+            return x->get_executor(context);
+        } else if(auto x = std::dynamic_pointer_cast<ProjectionPlan>(plan)){
+            std::cout<<"DEBUG: convert_plan_executor ProjectionPlan" << std::endl;
+            return std::make_unique<ProjectionExecutor>(convert_plan_executor(x->subplan_, context), 
+                                                        x->sel_cols_);
+            std::cout<<"DEBUG: convert_plan_executor ProjectionPlan 结束" << std::endl;
         } else if(auto x = std::dynamic_pointer_cast<ScanPlan>(plan)) {
             if(x->tag == T_SeqScan) {
                 return std::make_unique<SeqScanExecutor>(sm_manager_, x->tab_name_, x->conds_, context);
@@ -182,10 +211,25 @@ class Portal
         } else if(auto x = std::dynamic_pointer_cast<JoinPlan>(plan)) {
             std::unique_ptr<AbstractExecutor> left = convert_plan_executor(x->left_, context);
             std::unique_ptr<AbstractExecutor> right = convert_plan_executor(x->right_, context);
-            std::unique_ptr<AbstractExecutor> join = std::make_unique<NestedLoopJoinExecutor>(
-                                std::move(left), 
-                                std::move(right), std::move(x->conds_));
-            return join;
+            std::cout << "DEBUG: JoinPlan实际类型值 = " << x->type 
+            << ", T_SemiJoin常量值 = " << T_SemiJoin << std::endl;
+            // 根据JOIN类型创建不同的执行器
+            if (x->type == SEMI_JOIN) {
+                std::cout << "DEBUG: 创建半连接执行器SemiJoinExecutor" << std::endl;
+                return std::make_unique<SemiJoinExecutor>(
+                    std::move(left), 
+                    std::move(right), 
+                    std::move(x->conds_)
+                );
+            } else {
+                // 默认使用嵌套循环连接
+                std::cout << "DEBUG: 创建全连接执行器SemiJoinExecutor" << std::endl;
+                return std::make_unique<NestedLoopJoinExecutor>(
+                    std::move(left), 
+                    std::move(right), 
+                    std::move(x->conds_)
+                );
+            }
         } else if(auto x = std::dynamic_pointer_cast<SortPlan>(plan)) {
             return std::make_unique<SortExecutor>(convert_plan_executor(x->subplan_, context), 
                                             x->sel_col_, x->is_desc_);

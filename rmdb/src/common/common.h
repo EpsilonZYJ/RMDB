@@ -290,6 +290,8 @@ struct Condition {
     bool is_rhs_val;  // true if right-hand side is a value (not a column)
     TabCol rhs_col;   // right-hand side column
     Value rhs_val;    // right-hand side value
+    bool is_join_cond = false; // 是否为JOIN条件
+    bool is_semi_join = false;
 
     /* 新增 */
     AggType agg_type = NO_AGG; // aggregation type, default is NO_AGG

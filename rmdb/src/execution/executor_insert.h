@@ -93,6 +93,18 @@ class InsertExecutor : public AbstractExecutor {
 
         // Insert into record file
         rid_ = fh_->insert_record(rec.data, context_); 
+        // 添加写记录到事务写集合
+        if (context_ && context_->txn_) {
+            // 创建写记录 - 修正data变量为rec并使用正确的rid_
+            WriteRecord* write_record = new WriteRecord(WType::INSERT_TUPLE, tab_name_,rid_, rec);
+            // 添加到事务写集合
+            context_->txn_->append_write_record(write_record);
+            
+            std::cout << "DEBUG:已将插入写记录添加到事务 " << context_->txn_->get_transaction_id() 
+                    << ", 写集合大小: " << context_->txn_->get_write_set()->size() << std::endl;
+        } else {
+            std::cout << "DEBUG:插入操作没有关联有效事务!" << std::endl;
+        }
         
         for(size_t i = 0; i < tab_.indexes.size(); ++i) { // 依次遍历表的所有索引
             ihs[i]->insert_entry(keys[i], rid_, context_->txn_); // 将当前记录插入到B+树中

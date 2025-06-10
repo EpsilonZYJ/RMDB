@@ -44,4 +44,5 @@ class QlManager {
                         Context *context);
 
     void run_dml(std::unique_ptr<AbstractExecutor> exec);
+    void run_explain(std::shared_ptr<Plan> plan, Context *context);
 };

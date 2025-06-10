@@ -118,4 +118,5 @@ bool check_condition(const Value& lhs,
                      const Condition& cond) {
     return cond.check(lhs, rhs);
 }
+
 #endif

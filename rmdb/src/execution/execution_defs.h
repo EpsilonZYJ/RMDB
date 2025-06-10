@@ -12,3 +12,4 @@ See the Mulan PSL v2 for more details. */
 
 #include "defs.h"
 #include "errors.h"
+#include "execution/executor_explain.h"

@@ -14,7 +14,7 @@ See the Mulan PSL v2 for more details. */
 #include <memory>
 
 enum JoinType {
-    INNER_JOIN, LEFT_JOIN, RIGHT_JOIN, FULL_JOIN
+    INNER_JOIN, LEFT_JOIN, RIGHT_JOIN, FULL_JOIN,SEMI_JOIN
 };
 
 enum AggType {
@@ -247,7 +247,7 @@ struct JoinExpr : public TreeNode {
     JoinType type;
 
     JoinExpr(std::string left_, std::string right_,
-               std::vector<std::shared_ptr<BinaryExpr>> conds_, JoinType type_) :
+               std::vector<std::shared_ptr<BinaryExpr>> conds_, JoinType type_=INNER_JOIN) :
             left(std::move(left_)), right(std::move(right_)), conds(std::move(conds_)), type(type_) {}
 };
 
@@ -266,15 +266,17 @@ struct LimitExpr : public TreeNode {
     explicit LimitExpr(int limit_num_) : limit_num(limit_num_) {}
 };
 
-struct SelectStmt : public TreeNode, public Expr {
+struct SelectStmt : public TreeNode { // TODO extends Expr?
     std::vector<std::shared_ptr<ColExtraInfo>> cols;
     std::vector<std::string> tabs;
     std::vector<std::shared_ptr<BinaryExpr>> conds;
     std::vector<std::shared_ptr<JoinExpr>> jointree;
     std::vector<std::shared_ptr<Col> > group_bys;
     std::vector<std::shared_ptr<HavingExpr> > havings;
+
     
     bool has_sort;
+    bool explain{false};
     std::shared_ptr<OrderBy> order;
     
     std::shared_ptr<LimitExpr> limit;
@@ -283,6 +285,7 @@ struct SelectStmt : public TreeNode, public Expr {
     SelectStmt(std::vector<std::shared_ptr<ColExtraInfo>> cols_,
                std::vector<std::string> tabs_,
                std::vector<std::shared_ptr<BinaryExpr>> conds_,
+               std::vector<std::shared_ptr<JoinExpr>> joins_,
                std::vector<std::shared_ptr<Col> > &group_bys_, // 允许包含多个列
                std::vector<std::shared_ptr<HavingExpr> > &havings_,
                std::shared_ptr<OrderBy> order_,
@@ -290,6 +293,7 @@ struct SelectStmt : public TreeNode, public Expr {
             cols(std::move(cols_)), 
             tabs(std::move(tabs_)), 
             conds(std::move(conds_)), 
+            jointree(std::move(joins_)),
             group_bys(std::move(group_bys_)),
             havings(std::move(havings_)),
             order(std::move(order_)),
@@ -306,6 +310,15 @@ struct SetStmt : public TreeNode {
     SetStmt(SetKnobType &type, bool bool_value) : 
         set_knob_type_(type), bool_val_(bool_value) { }
 };
+
+
+class ExplainStmt: public TreeNode {
+    public:
+        std::shared_ptr<SelectStmt> select;
+        
+        ExplainStmt(std::shared_ptr<SelectStmt> select_) : select(std::move(select_)) {}
+        ~ExplainStmt() override = default;
+    };
 
 // Semantic value
 struct SemValue {
