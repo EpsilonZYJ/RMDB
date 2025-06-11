@@ -82,10 +82,16 @@ class Portal
 
                     // 处理别名
                     std::vector<TabCol> cols_to_be_showed = p->sel_cols_;
-                    for (size_t i = 0; i < p->alias_.size(); i++) 
+                    for(auto &col : cols_to_be_showed) {
+                        std::cout << "DEBUG::处理别名前：select_from sel_col.col_name: " << col.col_name << std::endl;
+                    }
+                    for (size_t i = 0; i < p->alias_.size(); i++){ 
                         if (!p->alias_[i].empty()) 
                             cols_to_be_showed[i].col_name = std::move(p->alias_[i]);
-                        
+                        }
+                    for(auto it:cols_to_be_showed) {
+                        std::cout << "DEBUG:处理别名后： select_from sel_col.col_name: " << it.col_name << std::endl;
+                    }
                     return std::make_shared<PortalStmt>(
                                 PORTAL_ONE_SELECT, 
                                 std::move(cols_to_be_showed), 
@@ -150,6 +156,9 @@ class Portal
         switch(portal->tag) {
             case PORTAL_ONE_SELECT:
             {
+                for(auto &col : portal->sel_cols) {
+                    std::cout << "DEBUG: run::select_from sel_col.col_name: " << col.col_name << std::endl;
+                }
                 ql->select_from(std::move(portal->root), std::move(portal->sel_cols), context);
                 break;
             }
@@ -211,8 +220,6 @@ class Portal
         } else if(auto x = std::dynamic_pointer_cast<JoinPlan>(plan)) {
             std::unique_ptr<AbstractExecutor> left = convert_plan_executor(x->left_, context);
             std::unique_ptr<AbstractExecutor> right = convert_plan_executor(x->right_, context);
-            std::cout << "DEBUG: JoinPlan实际类型值 = " << x->type 
-            << ", T_SemiJoin常量值 = " << T_SemiJoin << std::endl;
             // 根据JOIN类型创建不同的执行器
             if (x->type == SEMI_JOIN) {
                 std::cout << "DEBUG: 创建半连接执行器SemiJoinExecutor" << std::endl;

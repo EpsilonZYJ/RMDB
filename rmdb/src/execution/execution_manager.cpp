@@ -156,6 +156,7 @@ void QlManager::select_from(std::unique_ptr<AbstractExecutor> executorTreeRoot, 
     std::vector<std::string> captions;
     captions.reserve(sel_cols.size());
     for (auto &sel_col : sel_cols) {
+        std::cout << "DEBUG: select_from sel_col.col_name: " << sel_col.col_name << std::endl;
         captions.push_back(sel_col.col_name);
     }
 

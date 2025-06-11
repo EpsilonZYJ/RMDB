@@ -23,7 +23,7 @@ See the Mulan PSL v2 for more details. */
 #include "optimizer/planner.h"
 #include "portal.h"
 #include "analyze/analyze.h"
-
+#include <iostream>
 #define SOCK_PORT 8765
 #define MAX_CONN_LIMIT 8
 
@@ -244,7 +244,7 @@ void start_server() {
         std::cout << "Listen error!" << std::endl;
         exit(1);
     }
-
+    std::cout << "Server is listening on port " << SOCK_PORT << std::endl;
     while (!should_exit) {
         std::cout << "Waiting for new connection..." << std::endl;
         pthread_t thread_id;
@@ -310,7 +310,6 @@ int main(int argc, char **argv) {
         }
         // Open database
         sm_manager->open_db(db_name);
-
         // recovery database
         recovery->analyze();
         recovery->redo();

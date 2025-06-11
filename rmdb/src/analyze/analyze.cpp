@@ -75,11 +75,9 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse)
                 }
                 // 确保表存在
                 if (!sm_manager_->db_.is_table(left_table)) {
-                    std::cerr << "DEBUG: 检测到不存在的左表 " << left_table << std::endl;
                     throw TableNotFoundError(left_table);
                 }
                 if (!sm_manager_->db_.is_table(right_table)) {
-                    std::cerr << "DEBUG: 检测到不存在的右表 " << right_table << std::endl;
                     throw TableNotFoundError(right_table);
                 }
                 
@@ -117,11 +115,7 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse)
                 throw TableNotFoundError(tab_name);
             }
         }
-        // 处理target list，再target list中添加上表名，例如 a.id
-        for (auto &sv_sel_col : x->cols) {
-            TabCol sel_col = {.tab_name = sv_sel_col->col->tab_name, .col_name = sv_sel_col->col->col_name};
-            query->cols.push_back(sel_col);
-        }
+
         for (auto &item: x->cols) {
             query->cols.emplace_back(TabCol{item->col->tab_name, item->col->col_name});
             query->agg_types.emplace_back(item->type);
