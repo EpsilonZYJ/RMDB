@@ -18,6 +18,7 @@ See the Mulan PSL v2 for more details. */
 std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse)
 {
     std::shared_ptr<Query> query = std::make_shared<Query>();//初始化空query
+    query->parse = parse;
     if (auto explain_stmt = std::dynamic_pointer_cast<ast::ExplainStmt>(parse)) {
         // 复用 SelectStmt 的处理逻辑
         query->parse = explain_stmt->select;
@@ -103,7 +104,9 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse)
     else if (auto x = std::dynamic_pointer_cast<ast::SelectStmt>(parse))//select语句
     {
         /* 大致处理顺序： 表名-->聚合函数类型-->where-->group by-->sort/having */
-
+        std::cout << "DEBUG: Processing SelectStmt, explain=" << x->explain << std::endl;
+        // 从SelectStmt中传递explain标志到Query对象
+        query->is_explain = x->explain;
         // 处理表名
         analyze_table_refs(x->tabs, query);
         /** TODO: 检查表是否存在 */

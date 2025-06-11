@@ -126,6 +126,7 @@ void *client_handler(void *sock_fd) {
         YY_BUFFER_STATE buf = yy_scan_string(data_recv);
         if (yyparse() == 0) {
             if (ast::parse_tree != nullptr) {
+                std::cout << "DEBUG: 解析成功，开始分析语法树" << std::endl;
                 try {
                     // analyze and rewrite
                     std::shared_ptr<Query> query = analyze->do_analyze(ast::parse_tree);

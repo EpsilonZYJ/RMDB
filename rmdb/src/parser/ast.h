@@ -276,7 +276,7 @@ struct SelectStmt : public TreeNode { // TODO extends Expr?
 
     
     bool has_sort;
-    bool explain{false};
+    bool explain=false;
     std::shared_ptr<OrderBy> order;
     
     std::shared_ptr<LimitExpr> limit;

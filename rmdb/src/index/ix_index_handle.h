@@ -201,6 +201,9 @@ class IxNodeHandle {
             std::cout << "key: " << key_at(i) << " value: " << value_at(i)   << " " << get_rid(i)->slot_no << std::endl;
         }
     }
+    inline int Compare(const char *a, const char *b) const {
+        return ix_compare(a, b, file_hdr->col_types_, file_hdr->col_lens_);
+    }
 };
 
 /* B+树 */

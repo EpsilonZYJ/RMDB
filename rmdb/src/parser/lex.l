@@ -74,6 +74,7 @@ single_op ";"|"("|")"|","|"*"|"="|">"|"<"|"."
 "UPDATE" { return UPDATE; }
 "SET" { return SET; }
 "SELECT" { return SELECT; }
+"EXPLAIN" { return EXPLAIN; }
 "INT" { return INT; }
 "CHAR" { return CHAR; }
 "FLOAT" { return FLOAT; }
@@ -96,7 +97,6 @@ single_op ";"|"("|")"|","|"*"|"="|">"|"<"|"."
 "LIMIT" { return LIMIT; }
 "BY" {  return BY;  }
 "ASC" { return ASC; }
-"EXPLAIN"       { return EXPLAIN; }
 "ENABLE_NESTLOOP" { return ENABLE_NESTLOOP; }
 "ENABLE_SORTMERGE" { return ENABLE_SORTMERGE; }
 "TRUE" { 
