@@ -80,7 +80,7 @@ class InsertExecutor : public AbstractExecutor {
             if(cnt == 2)
             cnt = cnt ;
 #endif
-            if(!ih->has_key(key, context_->txn_)) {// 检查有没有键的重复
+            if(ih->is_unique(key, context_->txn_)) {// 检查有没有键的重复
                 ihs[i] = ih; 
                 keys[i] = key; // 将key存储到keys数组中
             } else {

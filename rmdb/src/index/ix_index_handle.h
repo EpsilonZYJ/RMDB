@@ -12,14 +12,10 @@ See the Mulan PSL v2 for more details. */
 
 #include "ix_defs.h"
 #include "transaction/transaction.h"
-#include <queue>
 
 enum class Operation { FIND = 0, INSERT, DELETE };  // 三种操作：查找、插入、删除
 
 static const bool binary_search = false;
-
-
-
 
 inline int ix_compare(const char *a, const char *b, ColType type, int col_len) {
     switch (type) {
@@ -50,36 +46,6 @@ inline int ix_compare(const char* a, const char* b, const std::vector<ColType>& 
     return 0;
 }
 
-// 二分查找
-// inline int ix_binary_search(int left, int right, char* keys, const char*target, const IxFileHdr* file_hdr, int col_num, bool find_left = true) {
-//     if(right < left)
-//         return left;
-//     while(left < right){
-//         int mid = (left + right) / 2;
-//         char* curr = keys + mid * file_hdr->col_tot_len_;
-//         int comp = ix_compare(curr, target, file_hdr->col_types_, file_hdr->col_lens_, col_num);
-//         if(comp == 0){
-//             if(find_left) {
-//                 right = mid;
-//             }
-//             else {
-//                 left = mid + 1;
-//             }
-//         }
-//         else if(comp < 0){
-//             left = mid + 1;
-//         }
-//         else{
-//             right = mid;
-//         }
-//     }
-//     int comp = ix_compare(keys + right * file_hdr->col_tot_len_, target, file_hdr->col_types_, file_hdr->col_lens_, col_num);
-//     if(comp < 0)
-//         return right + 1;
-//     else if(comp == 0 && !find_left)
-//         return right + 1;
-//     return right;
-// }
 
 /* 管理B+树中的每个节点 */
 class IxNodeHandle {
@@ -91,6 +57,12 @@ class IxNodeHandle {
     Page *page;                     // 存储节点的页面
     IxPageHdr *page_hdr;            // page->data的第一部分，指针指向首地址，长度为sizeof(IxPageHdr)
     char *keys;                     // page->data的第二部分，指针指向首地址，长度为file_hdr->keys_size，每个key的长度为file_hdr->col_len
+
+    /* 
+    rids: 
+        在叶子节点中：指向实际数据记录的 Rid 数组
+        在内部节点中：指向子节点页面的页号数组
+    */
     Rid *rids;                      // page->data的第三部分，指针指向首地址
 
    public:
@@ -193,14 +165,13 @@ class IxNodeHandle {
         return rid_idx;
     }
 
-    void print_info() {
-        std::cout << "page_no: " << get_page_no() << " is_leaf: " << is_leaf_page() << " parent: " << get_parent_page_no() << std::endl
-                  << " num_key: " << get_size() << " next_leaf: " << get_next_leaf() << " prev_leaf: " << get_prev_leaf()
-                  << std::endl;
-        for (int i = 0; i < get_size(); i++) {
-            std::cout << "key: " << key_at(i) << " value: " << value_at(i)   << " " << get_rid(i)->slot_no << std::endl;
-        }
+    inline int Compare(const char *a, const char *b) const {
+        return ix_compare(a, b, file_hdr->col_types_, file_hdr->col_lens_);
     }
+
+    friend bool is_unique(const char *key);
+
+    friend bool is_unique(const char *key, Transaction *transaction);
 };
 
 /* B+树 */
@@ -225,7 +196,6 @@ class IxIndexHandle {
                                                  bool find_first = false);
 
     // for insert
-    page_id_t insert_entry(const char *key, const Rid &value, Transaction *transaction, bool* success);
     page_id_t insert_entry(const char *key, const Rid &value, Transaction *transaction);
 
     IxNodeHandle *split(IxNodeHandle *node);
@@ -244,7 +214,9 @@ class IxIndexHandle {
     bool coalesce(IxNodeHandle **neighbor_node, IxNodeHandle **node, IxNodeHandle **parent, int index,
                   Transaction *transaction, bool *root_is_latched);
 
-    bool has_key(const char *key, Transaction *transaction);
+    bool is_unique(const char *key);
+
+    bool is_unique(const char *key, Transaction *transaction);
 
     Iid lower_bound(const char *key);
 

@@ -181,7 +181,62 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse)
                 std::cout << "DEBUG: 检测到半连接，推迟列检查" << std::endl;
             }
         }
-        //JOIN处理代码
+
+        // 处理group by条件
+        for (auto &group_by: x->group_bys) 
+            query->group_bys.emplace_back(TabCol{group_by->tab_name, group_by->col_name});
+        for (auto &tab_col: query->group_bys) // 校验group by的列
+            tab_col = check_column(all_cols, tab_col); //! 注意赋值
+        
+        // 检验group by与target list的列的兼容性
+        if(x->group_bys.empty()) { // 没有group by
+            if(!x->havings.empty()) // 有having
+                throw InternalError("HAVING clause cannot be used without GROUP BY.");
+
+            bool has_agg = query->agg_types.size() > 0 && query->agg_types[0] != NO_AGG;
+            for(AggType agg_type: query->agg_types) { // 要么全是聚合函数，要么全不是
+                if((agg_type != NO_AGG) != has_agg) 
+                    throw InternalError("All columns in target list must either be aggregated or not aggregated.");
+            }
+        } else { // 有group by
+            for (size_t i = 0; i < query->cols.size(); i++) {
+                TabCol &col = query->cols[i];
+                if (query->agg_types[i] == NO_AGG) { 
+                    bool found = false;
+                    for (auto &group_by : query->group_bys) 
+                        if (col.tab_name == group_by.tab_name && col.col_name == group_by.col_name) {
+                            found = true; break;
+                        }
+                    if (!found) 
+                        throw InternalError("Column " + col.col_name + " must be in GROUP BY clause.");
+                }
+            }
+        }
+
+        if(x->has_sort) {
+            TabCol tab_col = TabCol{std::move(x->order->cols->tab_name), 
+                                    std::move(x->order->cols->col_name)};
+            tab_col = check_column(all_cols, tab_col);  //! 注意赋值
+            query->order_bys = std::move(tab_col);
+        }
+
+        //处理where条件
+        get_clause(x->conds, query->conds);
+        get_having_clause(x->havings, query->havings);
+        check_clause(query->tables, query->havings, true);
+        check_clause(query->tables, query->conds, false);
+
+        // 处理limit子句
+        if(x->limit) {
+            if (x->limit->limit_num < 0) {
+                throw InternalError("LIMIT clause must be a non-negative integer.");
+            }
+            query->limit = x->limit->limit_num; // 处理limit
+        } else {
+            query->limit = -1; // 没有限制
+        }
+
+        //JOIN处理代码 // TODO放的位置是否正确
         if (!x->jointree.empty()) {
             // 处理JOIN条件
             for (const auto& join_expr : x->jointree) {
@@ -249,7 +304,9 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse)
                 std::vector<std::string> invalid_cols; // 收集无效列名
                 
                 for (const auto& col : query->cols) {
-                    TabCol checked_col = check_column(all_cols, col, query->tab_alias_map, 
+                    TabCol checked_col = check_column(all_cols, 
+                                                     col, 
+                                                     query->tab_alias_map, 
                                                      has_semi_join, left_tables);
                     std::string real_tab_name = checked_col.tab_name;
                     
@@ -292,9 +349,6 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse)
             }
     }
 
-        //处理where条件
-        get_clause(x->conds, query->conds);
-        check_clause(query->tables, query->conds, false);
     } else if (auto x = std::dynamic_pointer_cast<ast::UpdateStmt>(parse)) {
         // 处理表名
         query->tables.push_back(x->tab_name);
@@ -322,7 +376,7 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse)
         // 处理where条件
         get_clause(x->conds, query->conds);
         
-        check_clause({x->tab_name}, query->conds,query->tab_alias_map);
+        check_clause({x->tab_name}, query->conds, query->tab_alias_map);
     } else if (auto x = std::dynamic_pointer_cast<ast::DeleteStmt>(parse)) {
         query->tables.push_back(x->tab_name);
         if (!sm_manager_->db_.is_table(x->tab_name)) {

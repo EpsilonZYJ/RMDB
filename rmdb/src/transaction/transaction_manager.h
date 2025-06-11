@@ -125,6 +125,8 @@ public:
     /** @brief 垃圾回收。仅在所有事务都未访问时调用。 */
     void GarbageCollection();
 
+    timestamp_t GetNextTimestamp();
+
     struct PageVersionInfo {
         std::shared_mutex mutex_;
         /** 存储所有槽的先前版本信息。注意：不要使用 `[x]` 来访问它，因为
@@ -149,4 +151,9 @@ private:
 
     std::atomic<timestamp_t> last_commit_ts_{0};    // 最后提交的时间戳,仅用于MVCC
     Watermark running_txns_{0};             // 存储所有正在运行事务的读取时间戳，以便于垃圾回收，仅用于MVCC
+
+    // [MVCC 新增成员]
+    std::atomic<timestamp_t> current_timestamp_{1};  // 全局时间戳计数器
+    std::unordered_map<Rid, VersionUndoLink, RidHash> version_links_;  // 版本链索引
+    std::shared_mutex version_mutex_;  // 保护版本链访问
 };

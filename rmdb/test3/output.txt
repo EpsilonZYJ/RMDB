@@ -1,0 +1,85 @@
+| Tables |
+| w_id | name |
+| 507 | asdfhjkl |
+| warehouse | unique | (w_id) |
+failure
+| w_id | name |
+| 10 | qweruiop |
+| 534 | asdfhjkl |
+| 500 | lastdanc |
+failure
+failure
+failure
+| Tables |
+| warehouse |
+failure
+| id |
+failure
+| id |
+| 100 |
+| r | unique | (id) |
+failure
+failure
+| id |
+| 100 |
+failure
+| Tables |
+| grade |
+| r |
+| w |
+| warehouse |
+| y |
+| course | id | score |
+| Tables |
+| grade |
+| r |
+| w |
+| warehouse |
+| y |
+| course | id | score |
+| course | id | score |
+| DataStructure | 1 | 95.000000 |
+| DataStructure | 2 | 93.500000 |
+| DataStructure | 4 | 87.000000 |
+| DataStructure | 3 | 85.000000 |
+| DB | 1 | 94.000000 |
+| DB | 2 | 74.500000 |
+| DB | 4 | 83.000000 |
+| max_id |
+| 4 |
+| min_score |
+| 74.500000 |
+| avg_score |
+| 90.125000 |
+| course_num |
+| 7 |
+| course | id | score |
+| DataStructure | 1 | 95.000000 |
+| DataStructure | 2 | 93.500000 |
+| DataStructure | 4 | 87.000000 |
+| DataStructure | 3 | 85.000000 |
+| DB | 1 | 94.000000 |
+| DB | 2 | 74.500000 |
+| DB | 4 | 83.000000 |
+| course_num |
+| 8 |
+| max_id |
+| 4 |
+| row_num |
+| 8 |
+| row_num |
+| 0 |
+| sum_score |
+| 189.000000 |
+failure
+| wew | unique | (w_id) |
+failure
+| w_id | name |
+| 10 | qweruiop |
+| 534 | asdfhjkl |
+| w_id | name |
+| w_id | name |
+failure
+failure
+failure
+failure

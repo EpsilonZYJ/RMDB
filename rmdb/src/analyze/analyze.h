@@ -73,9 +73,9 @@ public:
     }
 
 private:
-    TabCol check_column(const std::vector<ColMeta> &all_cols, TabCol target, 
+    TabCol check_column(const std::vector<ColMeta> &all_cols, TabCol target,
         const std::map<std::string, std::string> &tab_alias_map = {},
-    bool is_semi_join = false, const std::set<std::string> &left_tables = {});
+        bool is_semi_join = false, const std::set<std::string> &left_tables = {});
     void get_all_cols(const std::vector<std::string> &tab_names, std::vector<ColMeta> &all_cols);
     void get_clause(const std::vector<std::shared_ptr<ast::BinaryExpr>> &sv_conds, std::vector<Condition> &conds);
     void check_clause(const std::vector<std::string> &tab_names, std::vector<Condition> &conds, bool check_having=false);

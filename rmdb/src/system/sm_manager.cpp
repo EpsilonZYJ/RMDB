@@ -252,18 +252,14 @@ void SmManager::create_index(const std::string& tab_name, const std::vector<std:
         col_tot_len += col_meta->len;
         cols.push_back(*col_meta);
     }
-    // 更新所有跟索引相关的元数据
+    
     ix_manager_->create_index(tab_name, cols);
-    db_.get_table(tab_name).indexes. \
-        push_back(IndexMeta{tab_name, col_tot_len, (int)cols.size(), cols});
-    ihs_.emplace(ix_manager_->get_index_name(tab_name, cols),
-                 std::move(ix_manager_->open_index(tab_name, cols)));
-    flush_meta();
-
+    auto &&ih = ix_manager_->open_index(tab_name, cols);
+    
     // 遍历表中的所有记录，并将其插入到索引中
     RmFileHandle *fh = fhs_[tab_name].get();
     RmScan scan(fh);
-    IxIndexHandle* ih = ihs_.at(ix_manager_->get_index_name(tab_name, cols)).get();
+
     for(; !scan.is_end(); scan.next()) {
         // 获取构建key所需的数据
         Rid rid = scan.rid();
@@ -275,15 +271,23 @@ void SmManager::create_index(const std::string& tab_name, const std::vector<std:
             memcpy(key.get() + offset, record->data + col.offset, col.len);
             offset += col.len;
         } 
-        if(ih->has_key(key.get(), context->txn_)) { // 注意判断唯一性
+        if(!ih->is_unique(key.get(), context->txn_)) { // 注意判断唯一性
             // 注意将索引删掉
-            ix_manager_->close_index(ih);
+            ix_manager_->close_index(ih.get());
             ix_manager_->destroy_index(tab_name, cols);
             throw IndexNotUniqueError(ix_manager_->get_index_name(tab_name, col_names)); 
         }
-        ih->insert_entry(key.get(), rid, context->txn_);
+
+        // 更新表中的索引元数据，放在最后是为了避免因为索引创建失败但有索引元数据而导致的错误
+   
+        ih->insert_entry(key.get(), rid, context->txn_);   
     }
 
+    db_.get_table(tab_name).indexes. \
+        push_back(IndexMeta{tab_name, col_tot_len, (int)cols.size(), cols});
+    ihs_.emplace(ix_manager_->get_index_name(tab_name, cols), std::move(ih));
+
+    flush_meta();
 }
 
 /**
