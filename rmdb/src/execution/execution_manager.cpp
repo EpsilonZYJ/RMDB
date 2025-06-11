@@ -153,6 +153,25 @@ void QlManager::run_cmd_utility(std::shared_ptr<Plan> plan, txn_id_t *txn_id, Co
 void QlManager::select_from(std::unique_ptr<AbstractExecutor> executorTreeRoot, std::vector<TabCol> sel_cols, 
                             Context *context) {
     std::cout<<"DEBUG: select_from 开始" << std::endl;
+    // 检查是否为EXPLAIN执行器
+    if (dynamic_cast<ExplainExecutor*>(executorTreeRoot.get())) {
+        // 特殊处理EXPLAIN结果
+        executorTreeRoot->beginTuple();
+        auto record = executorTreeRoot->Next();
+        if (record) {
+            // 直接写入文件
+            std::fstream outfile;
+            outfile.open("output.txt", std::ios::out | std::ios::app);
+            outfile << record->data << std::endl;
+            outfile.close();
+            
+            // 设置上下文响应
+            memcpy(context->data_send_ + *(context->offset_), 
+                   record->data, strlen(record->data));
+            *(context->offset_) += strlen(record->data);
+        }
+        return;
+    }
     std::vector<std::string> captions;
     captions.reserve(sel_cols.size());
     for (auto &sel_col : sel_cols) {
@@ -216,14 +235,31 @@ void QlManager::run_dml(std::unique_ptr<AbstractExecutor> exec){
     exec->Next();
 }
 
-// 执行EXPLAIN语句
-void QlManager::run_explain(std::shared_ptr<Plan> plan, Context *context) {
-    if (auto x = std::dynamic_pointer_cast<ExplainPlan>(plan)) {
-        // 创建ExplainExecutor
-        auto executor = x->get_executor(context);    
-        // 使用一个列定义显示计划
-        std::vector<TabCol> explain_cols = {TabCol{"", "EXPLAIN"}};
-        // 使用select_from方法显示结果
-        select_from(std::move(executor), explain_cols, context);
-    }
-}
+// void QlManager::run_explain(std::shared_ptr<Plan> plan, Context *context) {
+//     if (auto x = std::dynamic_pointer_cast<ExplainPlan>(plan)) {
+//         // 创建ExplainExecutor
+//         auto executor = x->get_executor(context);
+        
+//         // 直接获取执行计划文本并输出，不添加表格格式
+//         executor->beginTuple();
+//         std::unique_ptr<RmRecord> record = executor->Next();
+//         if (record) {
+//             // 获取执行计划文本
+//             std::string explain_text(record->data);
+            
+//             // 将结果写入上下文缓冲区
+//             memcpy(context->data_send_ + *(context->offset_), 
+//                    explain_text.c_str(), explain_text.length());
+//             *(context->offset_) += explain_text.length();
+            
+//             // 写入输出文件但不添加边框
+//             std::fstream outfile;
+//             outfile.open("output.txt", std::ios::out | std::ios::app);
+//             outfile << explain_text << std::endl;
+//             outfile.close();
+            
+//             // 可选：打印调试信息
+//             std::cout << "DEBUG: EXPLAIN输出完成" << std::endl;
+//         }
+//     }
+// }

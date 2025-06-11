@@ -42,7 +42,7 @@ class Planner {
     void set_enable_nestedloop_join(bool set_val) { enable_nestedloop_join = set_val; }
     
     void set_enable_sortmerge_join(bool set_val) { enable_sortmerge_join = set_val; }
-    void explain_plan(std::shared_ptr<Plan> plan, std::ostream& os, int indent = 0);
+    //void explain_plan(std::shared_ptr<Plan> plan, std::ostream& os, int indent = 0);
    private:
     std::shared_ptr<Query> logical_optimization(std::shared_ptr<Query> query, Context *context);
     std::shared_ptr<Plan> physical_optimization(std::shared_ptr<Query> query, Context *context);

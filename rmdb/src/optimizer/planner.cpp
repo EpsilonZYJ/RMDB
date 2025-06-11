@@ -754,229 +754,229 @@ std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query)
     return join_plan;
 }
 
-void Planner::explain_plan(std::shared_ptr<Plan> plan, std::ostream& os, int indent) {
-    std::string indent_str(indent, '\t');
+// void Planner::explain_plan(std::shared_ptr<Plan> plan, std::ostream& os, int indent) {
+//     std::string indent_str(indent, '\t');
     
-    if (!plan) {
-        os << indent_str << "NULL plan" << std::endl;
-        return;
-    }
+//     if (!plan) {
+//         os << indent_str << "NULL plan" << std::endl;
+//         return;
+//     }
 
-    switch (plan->tag) {
-        case T_select: {
-            if (auto dml_plan = std::dynamic_pointer_cast<DMLPlan>(plan)) {
-                // 跳过SELECT关键字，直接显示下层节点
-                this->explain_plan(dml_plan->subplan_, os, indent);
-            }
-            break;
-        }
-        case T_SeqScan: {
-            if (auto scan_plan = std::dynamic_pointer_cast<ScanPlan>(plan)) {
-                // 分离条件和扫描
-                if (!scan_plan->conds_.empty()) {
-                    // 先输出Project节点
-                    os << indent_str << "Project(columns=[";
-                    // 按字母序排序列
-                    std::vector<std::string> columns;
-                    // 获取表的所有列
-                    columns.push_back(scan_plan->tab_name_ + ".*");
-                    os << columns[0];
-                    for (size_t i = 1; i < columns.size(); ++i) {
-                        os << "," << columns[i];
-                    }
-                    os << "])" << std::endl;
+//     switch (plan->tag) {
+//         case T_select: {
+//             if (auto dml_plan = std::dynamic_pointer_cast<DMLPlan>(plan)) {
+//                 // 跳过SELECT关键字，直接显示下层节点
+//                 this->explain_plan(dml_plan->subplan_, os, indent);
+//             }
+//             break;
+//         }
+//         case T_SeqScan: {
+//             if (auto scan_plan = std::dynamic_pointer_cast<ScanPlan>(plan)) {
+//                 // 分离条件和扫描
+//                 if (!scan_plan->conds_.empty()) {
+//                     // 先输出Project节点
+//                     os << indent_str << "Project(columns=[";
+//                     // 按字母序排序列
+//                     std::vector<std::string> columns;
+//                     // 获取表的所有列
+//                     columns.push_back(scan_plan->tab_name_ + ".*");
+//                     os << columns[0];
+//                     for (size_t i = 1; i < columns.size(); ++i) {
+//                         os << "," << columns[i];
+//                     }
+//                     os << "])" << std::endl;
                     
-                    // 输出Filter节点
-                    os << indent_str << "\tFilter(condition=[";
-                    // 按字典序排序条件
-                    std::vector<std::string> conditions;
-                    for (const auto& cond : scan_plan->conds_) {
-                        std::stringstream cond_ss;
-                        cond_ss << scan_plan->tab_name_ << "." << cond.lhs_col.col_name;
+//                     // 输出Filter节点
+//                     os << indent_str << "\tFilter(condition=[";
+//                     // 按字典序排序条件
+//                     std::vector<std::string> conditions;
+//                     for (const auto& cond : scan_plan->conds_) {
+//                         std::stringstream cond_ss;
+//                         cond_ss << scan_plan->tab_name_ << "." << cond.lhs_col.col_name;
                         
-                        switch (cond.op) {
-                            case OP_EQ: cond_ss << "="; break;
-                            case OP_NE: cond_ss << "!="; break;
-                            case OP_LT: cond_ss << "<"; break;
-                            case OP_LE: cond_ss << "<="; break;
-                            case OP_GT: cond_ss << ">"; break;
-                            case OP_GE: cond_ss << ">="; break;
-                            default: cond_ss << "?"; break;
-                        }
+//                         switch (cond.op) {
+//                             case OP_EQ: cond_ss << "="; break;
+//                             case OP_NE: cond_ss << "!="; break;
+//                             case OP_LT: cond_ss << "<"; break;
+//                             case OP_LE: cond_ss << "<="; break;
+//                             case OP_GT: cond_ss << ">"; break;
+//                             case OP_GE: cond_ss << ">="; break;
+//                             default: cond_ss << "?"; break;
+//                         }
                         
-                        if (cond.is_rhs_val) {
-                            if (cond.rhs_val.type == TYPE_INT) {
-                                cond_ss << cond.rhs_val.int_val;
-                            } else if (cond.rhs_val.type == TYPE_FLOAT) {
-                                cond_ss << cond.rhs_val.float_val;
-                            } else if (cond.rhs_val.type == TYPE_STRING) {
-                                cond_ss << cond.rhs_val.str_val;
-                            }
-                        } else {
-                            cond_ss << cond.rhs_col.col_name;
-                        }
-                        conditions.push_back(cond_ss.str());
-                    }
+//                         if (cond.is_rhs_val) {
+//                             if (cond.rhs_val.type == TYPE_INT) {
+//                                 cond_ss << cond.rhs_val.int_val;
+//                             } else if (cond.rhs_val.type == TYPE_FLOAT) {
+//                                 cond_ss << cond.rhs_val.float_val;
+//                             } else if (cond.rhs_val.type == TYPE_STRING) {
+//                                 cond_ss << cond.rhs_val.str_val;
+//                             }
+//                         } else {
+//                             cond_ss << cond.rhs_col.col_name;
+//                         }
+//                         conditions.push_back(cond_ss.str());
+//                     }
                     
-                    // 按字典序排序条件
-                    std::sort(conditions.begin(), conditions.end());
+//                     // 按字典序排序条件
+//                     std::sort(conditions.begin(), conditions.end());
                     
-                    os << conditions[0];
-                    for (size_t i = 1; i < conditions.size(); ++i) {
-                        os << "," << conditions[i];
-                    }
-                    os << "])" << std::endl;
+//                     os << conditions[0];
+//                     for (size_t i = 1; i < conditions.size(); ++i) {
+//                         os << "," << conditions[i];
+//                     }
+//                     os << "])" << std::endl;
                     
-                    // 输出Scan节点
-                    os << indent_str << "\t\tScan(table=" << scan_plan->tab_name_ << ")" << std::endl;
-                } else {
-                    // 无条件，直接输出Scan节点
-                    os << indent_str << "Scan(table=" << scan_plan->tab_name_ << ")" << std::endl;
-                }
-            }
-            break;
-        }
-        case T_IndexScan: {
-            if (auto scan_plan = std::dynamic_pointer_cast<ScanPlan>(plan)) {
-                // 使用索引扫描，但格式仍为Scan
-                os << indent_str << "Scan(table=" << scan_plan->tab_name_;
-                os << ", index=" << scan_plan->index_col_names_.front() << ")" << std::endl;
-            }
-            break;
-        }
-        case T_NestLoop: {
-            if (auto join_plan = std::dynamic_pointer_cast<JoinPlan>(plan)) {
-                // 收集所有表名
-                std::vector<std::string> tables;
+//                     // 输出Scan节点
+//                     os << indent_str << "\t\tScan(table=" << scan_plan->tab_name_ << ")" << std::endl;
+//                 } else {
+//                     // 无条件，直接输出Scan节点
+//                     os << indent_str << "Scan(table=" << scan_plan->tab_name_ << ")" << std::endl;
+//                 }
+//             }
+//             break;
+//         }
+//         case T_IndexScan: {
+//             if (auto scan_plan = std::dynamic_pointer_cast<ScanPlan>(plan)) {
+//                 // 使用索引扫描，但格式仍为Scan
+//                 os << indent_str << "Scan(table=" << scan_plan->tab_name_;
+//                 os << ", index=" << scan_plan->index_col_names_.front() << ")" << std::endl;
+//             }
+//             break;
+//         }
+//         case T_NestLoop: {
+//             if (auto join_plan = std::dynamic_pointer_cast<JoinPlan>(plan)) {
+//                 // 收集所有表名
+//                 std::vector<std::string> tables;
                 
-                // 通过递归函数收集所有涉及的表
-                std::function<void(std::shared_ptr<Plan>, std::vector<std::string>&)> collect_tables = 
-                    [&](std::shared_ptr<Plan> subplan, std::vector<std::string>& table_list) {
-                        if (!subplan) return;
+//                 // 通过递归函数收集所有涉及的表
+//                 std::function<void(std::shared_ptr<Plan>, std::vector<std::string>&)> collect_tables = 
+//                     [&](std::shared_ptr<Plan> subplan, std::vector<std::string>& table_list) {
+//                         if (!subplan) return;
                         
-                        if (auto scan = std::dynamic_pointer_cast<ScanPlan>(subplan)) {
-                            // 扫描节点直接添加表名
-                            table_list.push_back(scan->tab_name_);
-                        } else if (auto sub_join = std::dynamic_pointer_cast<JoinPlan>(subplan)) {
-                            // 递归处理连接的左右子树
-                            collect_tables(sub_join->left_, table_list);
-                            collect_tables(sub_join->right_, table_list);
-                        } else if (auto proj = std::dynamic_pointer_cast<ProjectionPlan>(subplan)) {
-                            // 递归处理投影的子树
-                            collect_tables(proj->subplan_, table_list);
-                        } else if (auto sort = std::dynamic_pointer_cast<SortPlan>(subplan)) {
-                            // 递归处理排序的子树
-                            collect_tables(sort->subplan_, table_list);
-                        } else if (auto dml = std::dynamic_pointer_cast<DMLPlan>(subplan)) {
-                            // 递归处理DML的子树
-                            if (dml->subplan_) {
-                                collect_tables(dml->subplan_, table_list);
-                            }
-                        }
-                    };
+//                         if (auto scan = std::dynamic_pointer_cast<ScanPlan>(subplan)) {
+//                             // 扫描节点直接添加表名
+//                             table_list.push_back(scan->tab_name_);
+//                         } else if (auto sub_join = std::dynamic_pointer_cast<JoinPlan>(subplan)) {
+//                             // 递归处理连接的左右子树
+//                             collect_tables(sub_join->left_, table_list);
+//                             collect_tables(sub_join->right_, table_list);
+//                         } else if (auto proj = std::dynamic_pointer_cast<ProjectionPlan>(subplan)) {
+//                             // 递归处理投影的子树
+//                             collect_tables(proj->subplan_, table_list);
+//                         } else if (auto sort = std::dynamic_pointer_cast<SortPlan>(subplan)) {
+//                             // 递归处理排序的子树
+//                             collect_tables(sort->subplan_, table_list);
+//                         } else if (auto dml = std::dynamic_pointer_cast<DMLPlan>(subplan)) {
+//                             // 递归处理DML的子树
+//                             if (dml->subplan_) {
+//                                 collect_tables(dml->subplan_, table_list);
+//                             }
+//                         }
+//                     };
                 
-                // 从左右子树收集表名
-                collect_tables(join_plan->left_, tables);
-                collect_tables(join_plan->right_, tables);
+//                 // 从左右子树收集表名
+//                 collect_tables(join_plan->left_, tables);
+//                 collect_tables(join_plan->right_, tables);
                 
-                // 移除重复表名
-                std::sort(tables.begin(), tables.end());
-                tables.erase(std::unique(tables.begin(), tables.end()), tables.end());
+//                 // 移除重复表名
+//                 std::sort(tables.begin(), tables.end());
+//                 tables.erase(std::unique(tables.begin(), tables.end()), tables.end());
                 
-                // 生成输出
-                os << indent_str << "Join(tables=[";
-                if (!tables.empty()) {
-                    os << tables[0];
-                    for (size_t i = 1; i < tables.size(); ++i) {
-                        os << "," << tables[i];
-                    }
-                }
-                os << "], condition=[";
+//                 // 生成输出
+//                 os << indent_str << "Join(tables=[";
+//                 if (!tables.empty()) {
+//                     os << tables[0];
+//                     for (size_t i = 1; i < tables.size(); ++i) {
+//                         os << "," << tables[i];
+//                     }
+//                 }
+//                 os << "], condition=[";
                 
-                // 收集并排序连接条件
-                std::vector<std::string> join_conditions;
-                for (const auto& cond : join_plan->conds_) {
-                    std::stringstream cond_ss;
-                    cond_ss << cond.lhs_col.tab_name << "." << cond.lhs_col.col_name;
-                    cond_ss << "=";
-                    cond_ss << cond.rhs_col.tab_name << "." << cond.rhs_col.col_name;
-                    join_conditions.push_back(cond_ss.str());
-                }
+//                 // 收集并排序连接条件
+//                 std::vector<std::string> join_conditions;
+//                 for (const auto& cond : join_plan->conds_) {
+//                     std::stringstream cond_ss;
+//                     cond_ss << cond.lhs_col.tab_name << "." << cond.lhs_col.col_name;
+//                     cond_ss << "=";
+//                     cond_ss << cond.rhs_col.tab_name << "." << cond.rhs_col.col_name;
+//                     join_conditions.push_back(cond_ss.str());
+//                 }
                 
-                std::sort(join_conditions.begin(), join_conditions.end());
+//                 std::sort(join_conditions.begin(), join_conditions.end());
                 
-                if (!join_conditions.empty()) {
-                    os << join_conditions[0];
-                    for (size_t i = 1; i < join_conditions.size(); ++i) {
-                        os << "," << join_conditions[i];
-                    }
-                }
-                os << "])" << std::endl;
+//                 if (!join_conditions.empty()) {
+//                     os << join_conditions[0];
+//                     for (size_t i = 1; i < join_conditions.size(); ++i) {
+//                         os << "," << join_conditions[i];
+//                     }
+//                 }
+//                 os << "])" << std::endl;
                 
-                // 继续处理子节点
-                this->explain_plan(join_plan->left_, os, indent + 1);
-                this->explain_plan(join_plan->right_, os, indent + 1);
-            }
-            break;
-        }
-        case T_Projection: {
-            if (auto proj_plan = std::dynamic_pointer_cast<ProjectionPlan>(plan)) {
-                os << indent_str << "Project(columns=[";
+//                 // 继续处理子节点
+//                 this->explain_plan(join_plan->left_, os, indent + 1);
+//                 this->explain_plan(join_plan->right_, os, indent + 1);
+//             }
+//             break;
+//         }
+//         case T_Projection: {
+//             if (auto proj_plan = std::dynamic_pointer_cast<ProjectionPlan>(plan)) {
+//                 os << indent_str << "Project(columns=[";
                 
-                // select *直接输出*
-                if (proj_plan->is_select_star_) {
-                    os << "*";
-                } else {
-                    // 排序和显示特定列
-                    std::vector<std::string> columns;
-                    for (const auto& col : proj_plan->sel_cols_) {
-                        std::string col_name;
-                        if (!col.tab_name.empty()) {
-                            //检查是否有别名
-                            std::string tab_name = col.tab_name;
-                            if (auto explain_plan = std::dynamic_pointer_cast<ExplainPlan>(plan)) {
-                                auto it = explain_plan->tab_alias_map.find(tab_name);
-                                if (it != explain_plan->tab_alias_map.end()) {
-                                    tab_name = it->second; // 使用别名
-                                }
-                            }                      
-                            col_name = tab_name + "." + col.col_name;
-                        } else {
-                            col_name = col.col_name;
-                        }
-                        columns.push_back(col_name);
-                    }
+//                 // select *直接输出*
+//                 if (proj_plan->is_select_star_) {
+//                     os << "*";
+//                 } else {
+//                     // 排序和显示特定列
+//                     std::vector<std::string> columns;
+//                     for (const auto& col : proj_plan->sel_cols_) {
+//                         std::string col_name;
+//                         if (!col.tab_name.empty()) {
+//                             //检查是否有别名
+//                             std::string tab_name = col.tab_name;
+//                             if (auto explain_plan = std::dynamic_pointer_cast<ExplainPlan>(plan)) {
+//                                 auto it = explain_plan->tab_alias_map.find(tab_name);
+//                                 if (it != explain_plan->tab_alias_map.end()) {
+//                                     tab_name = it->second; // 使用别名
+//                                 }
+//                             }                      
+//                             col_name = tab_name + "." + col.col_name;
+//                         } else {
+//                             col_name = col.col_name;
+//                         }
+//                         columns.push_back(col_name);
+//                     }
                     
-                    // 按字母序排序
-                    std::sort(columns.begin(), columns.end());
+//                     // 按字母序排序
+//                     std::sort(columns.begin(), columns.end());
                     
-                    if (!columns.empty()) {
-                        os << columns[0];
-                        for (size_t i = 1; i < columns.size(); ++i) {
-                            os << "," << columns[i];
-                        }
-                    }
-                }
+//                     if (!columns.empty()) {
+//                         os << columns[0];
+//                         for (size_t i = 1; i < columns.size(); ++i) {
+//                             os << "," << columns[i];
+//                         }
+//                     }
+//                 }
                 
-                os << "])" << std::endl;
+//                 os << "])" << std::endl;
                 
-                // 处理子节点
-                this->explain_plan(proj_plan->subplan_, os, indent + 1);
-            }
-            break;
-        }
-        case T_Explain: {
-            if (auto explain_plan = std::dynamic_pointer_cast<ExplainPlan>(plan)) {
-                // 直接处理子节点
-                this->explain_plan(explain_plan->plan_, os, indent);
-            }
-            break;
-        }
-        default:
-            os << indent_str << "Unknown plan type: " << plan->tag << std::endl;
-            break;
-    }
-}
+//                 // 处理子节点
+//                 this->explain_plan(proj_plan->subplan_, os, indent + 1);
+//             }
+//             break;
+//         }
+//         case T_Explain: {
+//             if (auto explain_plan = std::dynamic_pointer_cast<ExplainPlan>(plan)) {
+//                 // 直接处理子节点
+//                 this->explain_plan(explain_plan->plan_, os, indent);
+//             }
+//             break;
+//         }
+//         default:
+//             os << indent_str << "Unknown plan type: " << plan->tag << std::endl;
+//             break;
+//     }
+// }
 
 std::shared_ptr<Plan> Planner::generate_sort_plan(std::shared_ptr<Query> query, std::shared_ptr<Plan> plan)
 {
