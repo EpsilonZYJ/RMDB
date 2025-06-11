@@ -137,9 +137,18 @@ class SemiJoinExecutor : public AbstractExecutor {
         
         isend = false;
         fed_conds_ = std::move(conds);
-        
+        std::cout << "DEBUG: SemiJoinExecutor左表列: ";
+        for (const auto& col : left_->cols()) {
+            std::cout << col.tab_name << "." << col.name << " ";
+        }
+        std::cout << std::endl;
+        std::cout << "DEBUG: SemiJoinExecutor右表列: ";
+        for (const auto& col : right_->cols()) {
+            std::cout << col.tab_name << "." << col.name << " ";
+        }
         // 准备JOIN条件中的列
         for(auto &cond: fed_conds_) {
+            std::cout<< "DEBUG: 处理JOIN条件: " << cond.lhs_col.col_name<<std::endl;
             left_cols_.push_back(*get_col(left_->cols(), cond.lhs_col));
             right_cols_.push_back(*get_col(right_->cols(), cond.rhs_col));
         }

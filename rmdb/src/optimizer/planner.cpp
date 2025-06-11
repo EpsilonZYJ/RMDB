@@ -442,6 +442,31 @@ std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query)
     auto x = std::dynamic_pointer_cast<ast::SelectStmt>(query->parse);
     std::vector<std::string> tables = query->tables;
     std::cout << "DEBUG: 处理的表数量: " << tables.size() << std::endl;
+    
+    // 检查是否存在半连接条件
+    bool has_semi_join = false;
+    // 先检查普通条件
+    for (const auto& cond : query->conds) {
+        if (cond.is_semi_join) {
+            has_semi_join = true;
+            std::cout << "DEBUG: 检测到半连接条件，禁用表顺序优化" << std::endl;
+            break;
+        }
+    }
+    // 再检查JOIN条件
+    if (!has_semi_join) {
+        for (const auto& join_conds : query->join_conds) {
+            for (const auto& cond : join_conds) {
+                if (cond.is_semi_join) {
+                    has_semi_join = true;
+                    std::cout << "DEBUG: 检测到SEMI JOIN ON条件，禁用表顺序优化" << std::endl;
+                    break;
+                }
+            }
+            if (has_semi_join) break;
+        }
+    }
+
     // 为每个表创建扫描执行器
     std::vector<std::shared_ptr<Plan>> table_scan_executors(tables.size());
     std::vector<size_t> table_cardinalities(tables.size());
@@ -532,6 +557,15 @@ std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query)
     std::vector<bool> used(tables.size(), false);
     std::vector<size_t> join_order;
     
+    if (has_semi_join) {
+        // 半连接使用原始表顺序，跳过优化
+        std::cout << "DEBUG: 半连接使用原始表顺序" << std::endl;
+        for (size_t i = 0; i < tables.size(); i++) {
+            join_order.push_back(i);
+            used[i] = true;
+        }
+    }
+    else{
     // 首先选择基数最小的表
     size_t min_idx = 0;
 
@@ -585,7 +619,7 @@ std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query)
         join_order.push_back(best_idx);
         used[best_idx] = true;
     }
-    
+}
     // 根据优化后的顺序构建左深树
     std::shared_ptr<Plan> join_plan = table_scan_executors[join_order[0]];
     
