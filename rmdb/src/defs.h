@@ -41,7 +41,10 @@ struct Rid {
 };
 
 enum ColType {
-    TYPE_INT, TYPE_FLOAT, TYPE_STRING
+    TYPE_INT, 
+    TYPE_FLOAT, 
+    TYPE_STRING,
+    TYPE_DATE
 };
 
 inline bool value_type_match(ColType type1, ColType type2) {
