@@ -226,6 +226,8 @@ class IxIndexHandle {
 
     Iid leaf_begin() const;
 
+    bool clear_pages(){ return buffer_pool_manager_->delete_all_pages(fd_); }
+
    private:
     // 辅助函数
     void update_root_page_no(page_id_t root) { file_hdr_->root_page_ = root; }

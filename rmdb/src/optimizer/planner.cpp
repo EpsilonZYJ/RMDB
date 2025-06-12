@@ -24,17 +24,179 @@ See the Mulan PSL v2 for more details. */
 #include "execution/executor_semi_join.h" 
 #include <set>
 #include <cmath>
-// 目前的索引匹配规则为：完全匹配索引字段，且全部为单点查询，不会自动调整where条件的顺序
-bool Planner::get_index_cols(std::string tab_name, std::vector<Condition> curr_conds, std::vector<std::string>& index_col_names) {
-    index_col_names.clear();
-    for(auto& cond: curr_conds) {
-        if(cond.is_rhs_val && cond.op == OP_EQ && cond.lhs_col.tab_name.compare(tab_name) == 0)
-            index_col_names.push_back(cond.lhs_col.col_name);
+
+/**
+ * @brief 评估单个索引的匹配度
+ * @param index 某一个索引信息
+ * @param condition_mapping 条件映射
+ * @param conditions 原始条件列表
+ * @return 索引选择结果
+ */
+IndexSelectionResult evaluateIndexMatch(const IndexMeta& index, 
+                                       const ConditionMapping& condition_mapping,
+                                       const std::vector<Condition>& conditions) {
+    IndexSelectionResult result;
+    
+    // 计算匹配的前缀长度和等号条件数量
+    for (const auto& col_meta : index.cols) {
+        if (!condition_mapping.hasColumn(col_meta.name)) break; // 前缀匹配中断
+        
+        size_t condition_idx = condition_mapping.column_to_index.at(col_meta.name);
+        if (conditions[condition_idx].op == OP_EQ) {
+            result.equal_count++;
+        }
+        result.matched_length++;
     }
-    TabMeta& tab = sm_manager_->db_.get_table(tab_name);
-    if(tab.is_index(index_col_names)) return true;
+    
+    // 只有匹配长度大于0才认为是有效匹配
+    if (result.matched_length > 0) {
+        result.found = true;
+        // 存储完整的索引列名
+        result.index_col_names.reserve(index.cols.size());
+        for (const auto& col_meta : index.cols) {
+            result.index_col_names.push_back(col_meta.name);
+        }
+    }
+    
+    return result;
+}
+
+/**
+ * @brief 选择最优索引
+ * @param current_best 当前最优结果
+ * @param candidate 候选结果
+ * @param total_conditions 总条件数
+ * @return 是否应该更新为候选结果
+ */
+bool shouldUpdateBestIndex(const IndexSelectionResult& current_best,
+                          const IndexSelectionResult& candidate,
+                          size_t total_conditions) {
+    if (!candidate.found) return false;
+    
+    if (!current_best.found) return true;
+    
+    // 优先级1: 如果候选索引匹配长度更大且小于总条件数，选择它
+    if (candidate.matched_length > current_best.matched_length && 
+        candidate.matched_length < total_conditions) {
+        return true;
+    }
+    
+    // 优先级2: 如果候选索引匹配长度等于总条件数
+    if (candidate.matched_length == total_conditions) {
+        // 如果当前最优不是完全匹配，选择候选
+        if (current_best.matched_length != total_conditions) {
+            return true;
+        }
+        // 如果都是完全匹配，选择等号条件更多的
+        if (candidate.equal_count > current_best.equal_count) {
+            return true;
+        }
+    }
+    
     return false;
 }
+
+/**
+ * @brief 重新排列条件以匹配索引顺序
+ * @param conditions 原始条件列表（会被修改）
+ * @param condition_mapping 条件映射
+ * @param selected_index_cols 选中的索引列名
+ */
+void reorderConditionsForIndex(std::vector<Condition>& conditions,
+                              const ConditionMapping& condition_mapping,
+                              const std::vector<std::string>& selected_index_cols) {
+    std::vector<Condition> reordered_conditions;
+    reordered_conditions.reserve(conditions.size());
+    
+    // 首先添加按索引顺序的条件
+    for (const auto& index_col : selected_index_cols) {
+        if (condition_mapping.hasColumn(index_col)) {
+            size_t condition_idx = condition_mapping.column_to_index.at(index_col);
+            reordered_conditions.push_back(std::move(conditions[condition_idx]));
+        }
+    }
+    
+    // 添加不在索引中的剩余条件
+    for (const auto& col_name : condition_mapping.available_columns) {
+        bool found_in_index = std::find(selected_index_cols.begin(), 
+                                       selected_index_cols.end(), 
+                                       col_name) != selected_index_cols.end();
+        if (!found_in_index) {
+            size_t condition_idx = condition_mapping.column_to_index.at(col_name);
+            reordered_conditions.push_back(std::move(conditions[condition_idx]));
+        }
+    }
+    
+    // 添加重复条件
+    for (const auto& [col_name, condition_idx] : condition_mapping.duplicate_conditions) {
+        std::ignore = col_name;
+        reordered_conditions.push_back(std::move(conditions[condition_idx]));
+    }
+    
+    conditions = std::move(reordered_conditions);
+}
+
+
+// // 目前的索引匹配规则为：完全匹配索引字段，且全部为单点查询，不会自动调整where条件的顺序
+// bool Planner::get_index_cols(std::string tab_name, std::vector<Condition> curr_conds, std::vector<std::string>& index_col_names) {
+//     index_col_names.clear();
+//     for(auto& cond: curr_conds) {
+//         if(cond.is_rhs_val && cond.op == OP_EQ && cond.lhs_col.tab_name.compare(tab_name) == 0)
+//             index_col_names.push_back(cond.lhs_col.col_name);
+//     }
+//     TabMeta& tab = sm_manager_->db_.get_table(tab_name);
+//     if(tab.is_index(index_col_names)) return true;
+//     return false;
+// }
+
+/**
+ * @brief 获取表的最优索引列名（重构版本）
+ * @param tab_name 表名
+ * @param curr_conds 当前条件（会被重新排序）
+ * @param index_col_names 输出参数：选中的索引列名
+ * @return 是否找到可用索引
+ */
+bool Planner::get_index_cols(std::string tab_name, 
+                            std::vector<Condition>& curr_conds,
+                            std::vector<std::string>& index_col_names) {
+    
+    // 获取表元数据
+    TabMeta& tab = sm_manager_->db_.get_table(tab_name);
+    
+    // 前置检查
+    if (curr_conds.empty() || tab.indexes.empty()) {
+        return false;
+    }
+    
+    // 构建条件映射
+    ConditionMapping condition_mapping(curr_conds);
+    
+    // 索引选择
+    IndexSelectionResult best_result;
+    
+    // 遍历所有可用索引，选择最优的
+    for (const auto& index_meta : tab.indexes) {
+        IndexSelectionResult candidate = evaluateIndexMatch(index_meta, condition_mapping, curr_conds);
+        
+        if (shouldUpdateBestIndex(best_result, candidate, curr_conds.size())) {
+            best_result = std::move(candidate);
+        }
+    }
+    
+    // 检查是否找到合适的索引
+    if (!best_result.found) {
+        return false;
+    }
+    
+    // 输出选中的索引列名
+    index_col_names = std::move(best_result.index_col_names);
+    
+    // 重新排列条件以匹配索引顺序
+    reorderConditionsForIndex(curr_conds, condition_mapping, index_col_names);
+    
+    return true;
+}
+
 
 /**
  * @brief 表算子条件谓词生成

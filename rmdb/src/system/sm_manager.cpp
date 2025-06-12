@@ -227,7 +227,7 @@ void SmManager::drop_table(const std::string& tab_name, Context* context) {
 
     // 删除表
     auto &fh = fhs_[tab_name];
-    // fh->clear_pages(); // 似乎不需要
+    fh->clear_pages(); 
     rm_manager_->close_file(fh.get());   // 关闭文件
     rm_manager_->destroy_file(tab_name); // 删除文件
 
@@ -307,6 +307,7 @@ void SmManager::drop_index(const std::string& tab_name, const std::vector<std::s
     ix_manager_->close_index(ihs_.at(index_name).get());
     ix_manager_->destroy_index(tab_name, index_meta->cols);
     db_.get_table(tab_name).indexes.erase(index_meta);
+    ihs_[index_name]->clear_pages(); // 清空索引文件中的所有页面
     ihs_.erase(index_name);
 
     flush_meta();

@@ -126,23 +126,6 @@ class Transaction {
         return undo_logs_.size();
       }
 
-    // [MVCC 新增方法]
-    void CreateUndoLog(const Rid& rid, const RmRecord* old_record, bool is_delete) {
-        UndoLog log;
-        log.is_deleted_ = is_delete;
-        
-        if (old_record != nullptr) {
-            log.tuple_test_ = new RmRecord(*old_record);
-        } else {
-            log.tuple_test_ = nullptr;
-        }
-        
-        log.ts_ = start_ts_;
-        UndoLink link = AppendUndoLog(std::move(log));
-        
-        // 更新版本链
-        txn_mgr_->UpdateUndoLink(rid, link);
-    }
 
 
    private:
