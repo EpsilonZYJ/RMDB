@@ -64,6 +64,9 @@ class Transaction {
         index_deleted_page_set_ = std::make_shared<std::deque<Page*>>();
         prev_lsn_ = INVALID_LSN;
         thread_id_ = std::this_thread::get_id();
+
+         // [MVCC 新增成员]
+        timestamp_t commit_ts_{INVALID_TS};  // 事务提交时间戳
     }
 
     ~Transaction() = default;
@@ -122,6 +125,7 @@ class Transaction {
         std::scoped_lock<std::mutex> lck(latch_);
         return undo_logs_.size();
       }
+
 
 
    private:

@@ -74,9 +74,11 @@ void TransactionManager::commit(Transaction* txn, LogManager* log_manager) {
     // 如果需要支持MVCC请在上述过程中添加代码
     
     //事务结束，清理所有写记录
+
     auto write_set = txn->get_write_set();
     while (!write_set->empty()) {
         WriteRecord* record = write_set->front();
+
         write_set->pop_front();
         delete record;
     }
@@ -204,3 +206,5 @@ void TransactionManager::abort(Transaction * txn, LogManager *log_manager) {
          std::cerr << "Warning: Transaction remains in txn_map due to log failure" << std::endl;
      }
 }
+
+

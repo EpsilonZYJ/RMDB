@@ -12,6 +12,67 @@ See the Mulan PSL v2 for more details. */
 
 #include "ix_scan.h"
 
+// 自定义函数，判断有无索引为key
+/**
+ * @brief 在B+树中查找是否存在键
+ * 
+ * @return 存在则返回true，不存在返回false
+ */
+bool IxIndexHandle::is_unique(const char *key) {
+    // 如果索引为空，直接返回false
+    if (is_empty()) {
+        return true;
+    }
+    Iid pos = lower_bound(key); // 使用lower_bound找到第一个大于等于key的位置
+    
+    // 如果位置超出范围，说明key不存在
+    if (pos.page_no == INVALID_PAGE_ID) {
+        return true;
+    }
+    
+    // 获取该位置所在的节点
+    IxNodeHandle *node = fetch_node(pos.page_no);
+    if (node == nullptr) {
+        return true;
+    }
+    bool unique = true; // 检查位置是否有效以及该位置的key是否等于目标key
+    if (pos.slot_no < node->get_size()) {
+        unique = (node->Compare(node->get_key(pos.slot_no), key) != 0); // 比较该位置的key与目标key是否相等
+    }
+    buffer_pool_manager_->unpin_page(node->get_page_id(), false);
+    return unique;
+}
+
+/**
+ * @brief 在B+树中查找是否存在键
+ * 
+ * @return 存在则返回true，不存在返回false
+ */
+bool IxIndexHandle::is_unique(const char *key, Transaction *transaction) {
+    // 如果索引为空，直接返回false
+    if (is_empty()) {
+        return true;
+    }
+    Iid pos = lower_bound(key); // 使用lower_bound找到第一个大于等于key的位置
+    
+    // 如果位置超出范围，说明key不存在
+    if (pos.page_no == INVALID_PAGE_ID) {
+        return true;
+    }
+    
+    // 获取该位置所在的节点
+    IxNodeHandle *node = fetch_node(pos.page_no);
+    if (node == nullptr) {
+        return true;
+    }
+    bool unique = true; // 检查位置是否有效以及该位置的key是否等于目标key
+    if (pos.slot_no < node->get_size()) {
+        unique = (node->Compare(node->get_key(pos.slot_no), key) != 0); // 比较该位置的key与目标key是否相等
+    }
+    buffer_pool_manager_->unpin_page(node->get_page_id(), false);
+    return unique;
+}
+
 
 /**
  * @brief 在当前node中查找第一个>=target的key_idx
@@ -804,10 +865,6 @@ bool IxIndexHandle::coalesce(IxNodeHandle **neighbor_node, IxNodeHandle **node, 
 }
 
 
-// 自定义函数，判断有无索引为key
-bool IxIndexHandle::has_key(const char *key, Transaction *transaction) {
-    // TODO: 
-}
 
 /**
  * @brief 这里把iid转换成了rid，即iid的slot_no作为node的rid_idx(key_idx)

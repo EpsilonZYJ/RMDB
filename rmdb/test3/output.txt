@@ -1,0 +1,278 @@
+| Tables |
+| w_id | name |
+| 507 | asdfhjkl |
+| warehouse | unique | (w_id) |
+failure
+| w_id | name |
+| 10 | qweruiop |
+| 534 | asdfhjkl |
+| 500 | lastdanc |
+failure
+failure
+failure
+| Tables |
+| warehouse |
+failure
+| id |
+failure
+| id |
+| 100 |
+| r | unique | (id) |
+failure
+failure
+| id |
+| 100 |
+failure
+| Tables |
+| grade |
+| r |
+| w |
+| warehouse |
+| y |
+| course | id | score |
+| Tables |
+| grade |
+| r |
+| w |
+| warehouse |
+| y |
+| course | id | score |
+| course | id | score |
+| DataStructure | 1 | 95.000000 |
+| DataStructure | 2 | 93.500000 |
+| DataStructure | 4 | 87.000000 |
+| DataStructure | 3 | 85.000000 |
+| DB | 1 | 94.000000 |
+| DB | 2 | 74.500000 |
+| DB | 4 | 83.000000 |
+| max_id |
+| 4 |
+| min_score |
+| 74.500000 |
+| avg_score |
+| 90.125000 |
+| course_num |
+| 7 |
+| course | id | score |
+| DataStructure | 1 | 95.000000 |
+| DataStructure | 2 | 93.500000 |
+| DataStructure | 4 | 87.000000 |
+| DataStructure | 3 | 85.000000 |
+| DB | 1 | 94.000000 |
+| DB | 2 | 74.500000 |
+| DB | 4 | 83.000000 |
+| course_num |
+| 8 |
+| max_id |
+| 4 |
+| row_num |
+| 8 |
+| row_num |
+| 0 |
+| sum_score |
+| 189.000000 |
+failure
+| wew | unique | (w_id) |
+failure
+| w_id | name |
+| 10 | qweruiop |
+| 534 | asdfhjkl |
+| w_id | name |
+| w_id | name |
+failure
+failure
+failure
+failure
+| Tables |
+| grade |
+| r |
+| rr |
+| tt |
+| w |
+| warehouse |
+| wew |
+| y |
+| Tables |
+| grade |
+| r |
+| rr |
+| tt |
+| w |
+| wew |
+| y |
+failure
+| w_id | name |
+| 10 | qweruiop |
+| w_id | name |
+| 500 | bgtyhnmj |
+failure
+| w_id | name |
+| 10 | qweruiop |
+| w_id | name |
+| 500 | bgtyhnmj |
+| w_id | name |
+| 10 | qweruiop |
+| w_id | name |
+| 10 | qweruiop |
+| w_id | name |
+| 500 | bgtyhnmj |
+| w_id | name |
+| 500 | bgtyhnmj |
+| w_id | name |
+| 100 | qwerghjk |
+| w_id | name |
+| 10 | qweruiop |
+| 100 | qwerghjk |
+| w_id | name |
+| w_id | name |
+| 10 | qweruiop |
+| w_id | name |
+| 507 | asdfhjkl |
+| 500 | lastdanc |
+| w_id | name |
+| 10 | qweruiop |
+| 507 | asdfhjkl |
+| 500 | lastdanc |
+| warehouse3 | unique | (w_id) |
+failure
+| w_id | name |
+| 10 | qweruiop |
+| 507 | asdfhjkl |
+| 500 | lastdanc |
+| w_id | name |
+| 10 | qweruiop |
+| 534 | asdfhjkl |
+| 500 | lastdanc |
+| w_id | name |
+| 10 | qweruiop |
+failure
+| w_id | name |
+| 10 | qweruiop |
+| 534 | asdfhjkl |
+| 500 | lastdanc |
+| w_id | name |
+| 534 | asdfhjkl |
+| 500 | bgtyhnmj |
+| w_id | name |
+| 10 | qweruiop |
+| 534 | asdfhjkl |
+| 500 | lastdanc |
+| w_id | name |
+| 534 | asdfhjkl |
+| 100 | qwerghjk |
+| 500 | bgtyhnmj |
+| w_id | name |
+| 534 | asdfhjkl |
+| 500 | lastdanc |
+| w_id | name |
+| 534 | asdfhjkl |
+| 500 | lastdanc |
+failure
+| w_id | name |
+| 10 | qweruiop |
+| 534 | asdfhjkl |
+| 500 | lastdanc |
+failure
+failure
+| w_id | name |
+| 10 | qweruiop |
+| w_id | name |
+| w_id | name |
+| 10 | qweruiop |
+| w_id | name |
+| 507 | asdfhjkl |
+| 500 | lastdanc |
+failure
+failure
+| w_id | name |
+| 534 | asdfhjkl |
+| 500 | lastdanc |
+failure
+| w_id | name |
+| 500 | lastdanc |
+| 534 | asdfhjkl |
+| w_id | name |
+| 500 | lastdanc |
+| 534 | asdfhjkl |
+failure
+| w_id | name |
+| 500 | lastdanc |
+| 534 | asdfhjkl |
+failure
+| w_id | name |
+| 534 | asdfhjkl |
+| Tables |
+| grade |
+| r |
+| rr |
+| tt |
+| w |
+| warehouse |
+| warehouse2 |
+| warehouse3 |
+| warehouse4 |
+| warehouse5 |
+| wew |
+| y |
+| w_id | name |
+| 534 | asdfhjkl |
+| w_id | name |
+| 534 | asdfhjkl |
+failure
+failure
+failure
+failure
+failure
+| Tables |
+| grade |
+| r |
+| rr |
+| tt |
+| w |
+| warehouse |
+| warehouse2 |
+| warehouse3 |
+| warehouse4 |
+| warehouse5 |
+| wew |
+| y |
+failure
+| id |
+| 1 |
+failure
+failure
+| id |
+failure
+| id |
+| Tables |
+| grade |
+| r |
+| rr |
+| tt |
+| w |
+| warehouse |
+| warehouse3 |
+| warehouse4 |
+| warehouse5 |
+| wew |
+| y |
+failure
+| id |
+| 1 |
+| 0 |
+| id |
+| 1 |
+| 0 |
+| Tables |
+| grade |
+| r |
+| rr |
+| t |
+| tt |
+| w |
+| warehouse |
+| warehouse3 |
+| warehouse4 |
+| warehouse5 |
+| wew |
+| y |

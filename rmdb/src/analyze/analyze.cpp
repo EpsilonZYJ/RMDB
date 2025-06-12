@@ -99,7 +99,7 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse)
 
         //处理where条件
         get_clause(x->conds, query->conds);
-        check_clause(query->tables, query->conds,query->tab_alias_map);
+        check_clause(query->tables, query->conds, false);
     }
     else if (auto x = std::dynamic_pointer_cast<ast::SelectStmt>(parse))//select语句
     {
@@ -180,7 +180,59 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse)
                 std::cout << "DEBUG: 检测到半连接，推迟列检查" << std::endl;
             }
         }
-        //JOIN处理代码
+
+        // 处理group by条件
+        for (auto &group_by: x->group_bys) 
+            query->group_bys.emplace_back(TabCol{group_by->tab_name, group_by->col_name});
+        for (auto &tab_col: query->group_bys) // 校验group by的列
+            tab_col = check_column(all_cols, tab_col); //! 注意赋值
+        
+        // 检验group by与target list的列的兼容性
+        if(x->group_bys.empty()) { // 没有group by
+            if(!x->havings.empty()) // 有having
+                throw InternalError("HAVING clause cannot be used without GROUP BY.");
+
+            bool has_agg = query->agg_types.size() > 0 && query->agg_types[0] != NO_AGG;
+            for(AggType agg_type: query->agg_types) { // 要么全是聚合函数，要么全不是
+                if((agg_type != NO_AGG) != has_agg) 
+                    throw InternalError("All columns in target list must either be aggregated or not aggregated.");
+            }
+        } else { // 有group by
+            for (size_t i = 0; i < query->cols.size(); i++) {
+                TabCol &col = query->cols[i];
+                if (query->agg_types[i] == NO_AGG) { 
+                    bool found = false;
+                    for (auto &group_by : query->group_bys) 
+                        if (col.tab_name == group_by.tab_name && col.col_name == group_by.col_name) {
+                            found = true; break;
+                        }
+                    if (!found) 
+                        throw InternalError("Column " + col.col_name + " must be in GROUP BY clause.");
+                }
+            }
+        }
+
+        if(x->has_sort) {
+            TabCol tab_col = TabCol{std::move(x->order->cols->tab_name), 
+                                    std::move(x->order->cols->col_name)};
+            tab_col = check_column(all_cols, tab_col);  //! 注意赋值
+            query->order_bys = std::move(tab_col);
+        }
+
+        //处理where条件
+        
+
+        // 处理limit子句
+        if(x->limit) {
+            if (x->limit->limit_num < 0) {
+                throw InternalError("LIMIT clause must be a non-negative integer.");
+            }
+            query->limit = x->limit->limit_num; // 处理limit
+        } else {
+            query->limit = -1; // 没有限制
+        }
+
+        //JOIN处理代码 // TODO放的位置是否正确
         if (!x->jointree.empty()) {
             // 处理JOIN条件
             for (const auto& join_expr : x->jointree) {
@@ -248,7 +300,9 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse)
                 std::vector<std::string> invalid_cols; // 收集无效列名
                 
                 for (const auto& col : query->cols) {
-                    TabCol checked_col = check_column(all_cols, col, query->tab_alias_map, 
+                    TabCol checked_col = check_column(all_cols, 
+                                                     col, 
+                                                     query->tab_alias_map, 
                                                      has_semi_join, left_tables);
                     std::string real_tab_name = checked_col.tab_name;
                     
@@ -292,8 +346,13 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse)
     }
 
         //处理where条件
+        
         get_clause(x->conds, query->conds);
-        check_clause(query->tables, query->conds,query->tab_alias_map);
+        get_having_clause(x->havings, query->havings);
+        // check_clause(query->tables, query->havings, true);
+        // check_clause(query->tables, query->conds, false);
+        check_clause(query->tables, query->conds, query->tab_alias_map, false);
+        check_clause(query->tables, query->havings, query->tab_alias_map, true);
     } else if (auto x = std::dynamic_pointer_cast<ast::UpdateStmt>(parse)) {
         // 处理表名
         query->tables.push_back(x->tab_name);
@@ -521,21 +580,85 @@ void Analyze::check_clause(const std::vector<std::string> &tab_names,
     }
 }
 
-void Analyze::check_clause(const std::vector<std::string> &tab_names, std::vector<Condition> &conds,const std::map<std::string, std::string> &tab_alias_map = {}) {
-    // auto all_cols = get_all_cols(tab_names);
+// void Analyze::check_clause(const std::vector<std::string> &tab_names, 
+//     std::vector<Condition> &conds,
+//     const std::map<std::string, std::string> &tab_alias_map = {},
+//     bool check_having) {
+//     // auto all_cols = get_all_cols(tab_names);
+//     //check_clause(tab_names, conds, check_having);
+//     std::vector<ColMeta> all_cols;
+//     get_all_cols(tab_names, all_cols);
+//     // Get raw values in where clause
+//     for (auto &cond : conds) {
+//         // Infer table name from column name
+//         cond.lhs_col = check_column(all_cols, cond.lhs_col, tab_alias_map);
+//         if (!cond.is_rhs_val) {
+//             cond.rhs_col = check_column(all_cols, cond.rhs_col, tab_alias_map);
+//         }
+//         TabMeta &lhs_tab = sm_manager_->db_.get_table(cond.lhs_col.tab_name);
+//         auto lhs_col = lhs_tab.get_col(cond.lhs_col.col_name);
+//         ColType lhs_type = lhs_col->type;
+//         ColType rhs_type;
+//         if (cond.is_rhs_val) {
+//             cond.rhs_val.init_raw(lhs_col->len);
+//             rhs_type = cond.rhs_val.type;
+//         } else {
+//             TabMeta &rhs_tab = sm_manager_->db_.get_table(cond.rhs_col.tab_name);
+//             auto rhs_col = rhs_tab.get_col(cond.rhs_col.col_name);
+//             rhs_type = rhs_col->type;
+//         }
+//         if (!value_type_match(lhs_type, rhs_type)) 
+//             throw IncompatibleTypeError(coltype2str(lhs_type), coltype2str(rhs_type));
+        
+//     }
+// }
+// 修改第二个check_clause函数
+void Analyze::check_clause(const std::vector<std::string> &tab_names, 
+    std::vector<Condition> &conds,
+    const std::map<std::string, std::string> &tab_alias_map,
+    bool check_having) {
+    
+    // 先创建条件的副本，以便恢复原始表名
+    std::vector<Condition> conds_copy = conds;
+    
+    // 临时替换条件中的别名为实际表名
+    for (auto &cond : conds) {
+        // 处理表别名 
+        for (const auto& [table, alias] : tab_alias_map) {
+            if (cond.lhs_col.tab_name == alias) {
+                std::cout << "DEBUG: 临时将别名 '" << alias << "' 转换为表名 '" << table << "'" << std::endl;
+                cond.lhs_col.tab_name = table;
+            }
+            // 处理右侧列的别名
+            if (!cond.is_rhs_val && cond.rhs_col.tab_name == alias) {
+                cond.rhs_col.tab_name = table;
+            }
+        }
+    }
+    
+    // 调用第一个check_clause进行基本检查和HAVING检查
+    check_clause(tab_names, conds, check_having);
+    
+    // 恢复原始条件，然后用别名映射进行正确的处理
+    conds = conds_copy;
+    
+    // 现在使用别名映射正确处理条件
     std::vector<ColMeta> all_cols;
     get_all_cols(tab_names, all_cols);
-    // Get raw values in where clause
+    
     for (auto &cond : conds) {
-        // Infer table name from column name
+        // 使用带别名参数的check_column
         cond.lhs_col = check_column(all_cols, cond.lhs_col, tab_alias_map);
         if (!cond.is_rhs_val) {
             cond.rhs_col = check_column(all_cols, cond.rhs_col, tab_alias_map);
         }
+        
+        // 处理类型检查 (与第一个函数类似的逻辑)
         TabMeta &lhs_tab = sm_manager_->db_.get_table(cond.lhs_col.tab_name);
         auto lhs_col = lhs_tab.get_col(cond.lhs_col.col_name);
         ColType lhs_type = lhs_col->type;
         ColType rhs_type;
+        
         if (cond.is_rhs_val) {
             cond.rhs_val.init_raw(lhs_col->len);
             rhs_type = cond.rhs_val.type;
@@ -544,11 +667,11 @@ void Analyze::check_clause(const std::vector<std::string> &tab_names, std::vecto
             auto rhs_col = rhs_tab.get_col(cond.rhs_col.col_name);
             rhs_type = rhs_col->type;
         }
+        
         if (!value_type_match(lhs_type, rhs_type)) 
             throw IncompatibleTypeError(coltype2str(lhs_type), coltype2str(rhs_type));
     }
 }
-
 
 // 判断两个类型是否可以比较
 bool Analyze::value_type_match(ColType type1, ColType type2) {

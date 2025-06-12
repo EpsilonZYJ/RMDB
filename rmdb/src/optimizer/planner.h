@@ -55,7 +55,7 @@ class Planner {
     
 
     // int get_indexNo(std::string tab_name, std::vector<Condition> curr_conds);
-    bool get_index_cols(std::string tab_name, std::vector<Condition> curr_conds, std::vector<std::string>& index_col_names);
+    bool get_index_cols(std::string tab_name, std::vector<Condition>& curr_conds, std::vector<std::string>& index_col_names);
 
     ColType interp_sv_type(ast::SvType sv_type) {
         std::map<ast::SvType, ColType> m = {
@@ -77,4 +77,39 @@ class Planner {
 
     size_t estimate_ndv(const std::string& tab_name, const std::string& col_name);
     
+};
+
+// 索引选择结果结构
+struct IndexSelectionResult {
+    std::vector<std::string> index_col_names;
+    bool found = false;
+    size_t matched_length = 0;
+    size_t equal_count = 0;
+};
+
+// 条件映射信息
+struct ConditionMapping {
+    std::unordered_set<std::string> available_columns;        // 可用的列名
+    std::unordered_map<std::string, size_t> column_to_index;  // 列名到条件索引的映射
+    std::unordered_map<std::string, size_t> duplicate_conditions; // 重复条件的映射
+    
+    ConditionMapping(const std::vector<Condition>& conditions) {
+        available_columns.reserve(conditions.size());
+        column_to_index.reserve(conditions.size());
+        duplicate_conditions.reserve(2);
+        
+        for (size_t i = 0; i < conditions.size(); ++i) {
+            const auto& col_name = conditions[i].lhs_col.col_name;
+            if (available_columns.find(col_name) == available_columns.end()) {
+                available_columns.insert(col_name);
+                column_to_index[col_name] = i;
+            } else {
+                duplicate_conditions[col_name] = i;
+            }
+        }
+    }
+    
+    bool hasColumn(const std::string& col_name) const {
+        return available_columns.find(col_name) != available_columns.end();
+    }
 };
