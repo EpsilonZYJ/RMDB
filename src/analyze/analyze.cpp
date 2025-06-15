@@ -116,6 +116,8 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse)
             }
         }
 
+        
+
         for (auto &item: x->cols) {
             query->cols.emplace_back(TabCol{item->col->tab_name, item->col->col_name});
             query->agg_types.emplace_back(item->type);
@@ -218,9 +220,6 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse)
             tab_col = check_column(all_cols, tab_col);  //! 注意赋值
             query->order_bys = std::move(tab_col);
         }
-
-        //处理where条件
-        
 
         // 处理limit子句
         if(x->limit) {
@@ -548,7 +547,7 @@ void Analyze::check_clause(const std::vector<std::string> &tab_names,
     for (auto &cond : conds) {        
         // 处理条件语句左侧列
         if(!check_having && cond.agg_type != NO_AGG) 
-                throw InternalError("Where clause left side mustn't be an aggregation function.");
+            throw InternalError("Where clause left side mustn't be an aggregation function.");
         if (cond.agg_type == AGG_COUNT && cond.lhs_col.tab_name.empty() && cond.lhs_col.col_name.empty()) {
             cond.rhs_val.init_raw(sizeof(int));
             continue;
@@ -647,29 +646,28 @@ void Analyze::check_clause(const std::vector<std::string> &tab_names,
     get_all_cols(tab_names, all_cols);
     
     for (auto &cond : conds) {
+        if (cond.agg_type == AGG_COUNT && cond.lhs_col.tab_name.empty() && cond.lhs_col.col_name.empty())  continue; // count(*)
+
         // 使用带别名参数的check_column
         cond.lhs_col = check_column(all_cols, cond.lhs_col, tab_alias_map);
         if (!cond.is_rhs_val) {
             cond.rhs_col = check_column(all_cols, cond.rhs_col, tab_alias_map);
         }
         
-        // 处理类型检查 (与第一个函数类似的逻辑)
-        TabMeta &lhs_tab = sm_manager_->db_.get_table(cond.lhs_col.tab_name);
-        auto lhs_col = lhs_tab.get_col(cond.lhs_col.col_name);
-        ColType lhs_type = lhs_col->type;
-        ColType rhs_type;
+        //! 冗余
+        // TabMeta &lhs_tab = sm_manager_->db_.get_table(cond.lhs_col.tab_name);
+        // auto lhs_col = lhs_tab.get_col(cond.lhs_col.col_name);
+        // ColType lhs_type = lhs_col->type;
+        // ColType rhs_type;
         
-        if (cond.is_rhs_val) {
-            cond.rhs_val.init_raw(lhs_col->len);
-            rhs_type = cond.rhs_val.type;
-        } else {
-            TabMeta &rhs_tab = sm_manager_->db_.get_table(cond.rhs_col.tab_name);
-            auto rhs_col = rhs_tab.get_col(cond.rhs_col.col_name);
-            rhs_type = rhs_col->type;
-        }
-        
-        if (!value_type_match(lhs_type, rhs_type)) 
-            throw IncompatibleTypeError(coltype2str(lhs_type), coltype2str(rhs_type));
+        // if (cond.is_rhs_val) {
+        //     cond.rhs_val.init_raw(lhs_col->len);
+        //     rhs_type = cond.rhs_val.type;
+        // } else {
+        //     TabMeta &rhs_tab = sm_manager_->db_.get_table(cond.rhs_col.tab_name);
+        //     auto rhs_col = rhs_tab.get_col(cond.rhs_col.col_name);
+        //     rhs_type = rhs_col->type;
+        // }
     }
 }
 
