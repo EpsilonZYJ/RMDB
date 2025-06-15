@@ -38,7 +38,7 @@ class DeleteExecutor : public AbstractExecutor {
     }
 
     std::unique_ptr<RmRecord> Next() override {
-        // 仿照executor_insert的示例
+        int deleted_count = 0;
         for(auto& rid: rids_ ) {
             // 读取当前记录
             RmRecord old_record = *fh_->get_record(rid, context_);
@@ -67,6 +67,9 @@ class DeleteExecutor : public AbstractExecutor {
             bool debug = fh_->is_record(rid);
             fh_->delete_record(rid, context_); // 更新数据文件中的记录
 
+            // 增加删除计数
+            deleted_count++;
+
             for (size_t i = 0; i < tab_.indexes.size(); i++) {
                 auto& index = tab_.indexes[i]; // 获取当前遍历到的索引 类型为IndexMeta
                 auto ih = sm_manager_->ihs_.at(sm_manager_->get_ix_manager()->get_index_name(tab_name_, index.cols)).get(); // 获取对应的B+树，类型为IxNodeHandl
@@ -80,6 +83,13 @@ class DeleteExecutor : public AbstractExecutor {
                 // 删除B+树索引中的记录
                 ih->delete_entry(key, context_->txn_);
                 delete []key;
+            }
+        }
+        // 更新表的元组计数
+        if (deleted_count > 0) {
+            TabMeta &tab = sm_manager_->db_.get_table(tab_name_);
+            for(int i = 0; i < deleted_count; i++) {
+                tab.decrement_tuple_count();
             }
         }
         return nullptr;

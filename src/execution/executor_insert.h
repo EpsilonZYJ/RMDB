@@ -93,6 +93,8 @@ class InsertExecutor : public AbstractExecutor {
 
         // Insert into record file
         rid_ = fh_->insert_record(rec.data, context_); 
+        // 增加表的元组计数
+        sm_manager_->db_.get_table(tab_name_).increment_tuple_count();
         // 添加写记录到事务写集合
         if (context_ && context_->txn_) {
             // 创建写记录 - 修正data变量为rec并使用正确的rid_

@@ -70,9 +70,12 @@ struct TabMeta {
     std::string name;                   // 表名称
     std::vector<ColMeta> cols;          // 表包含的字段
     std::vector<IndexMeta> indexes;     // 表上建立的索引
-
-    TabMeta(){}
-
+    size_t tuple_count;  // 元组计数字段
+    TabMeta():tuple_count(0) {}
+    
+    void increment_tuple_count() { tuple_count++; }
+    void decrement_tuple_count() { tuple_count--; }
+    
     TabMeta(const TabMeta &other) {
         name = other.name;
         for(auto col : other.cols) cols.push_back(col);
