@@ -753,25 +753,22 @@
         join_order.push_back(min_idx);
         used[min_idx] = true;
         std::cout <<"DEBUG: 基数最小的表查找完成"<< std::endl;
-        // 选择基数第二小的表或连接后结果最小的表
-        size_t second_best_idx = SIZE_MAX;
-        size_t min_result_size = SIZE_MAX;
-        
+        // 选择基数第二小的表
+        size_t second_min_idx = SIZE_MAX;
+        size_t second_min_cardinality = SIZE_MAX;
+
         for (size_t i = 0; i < tables.size(); i++) {
             if (used[i]) continue;
             
-            // 估计与第一个表连接后的大小
-            std::vector<size_t> current_joined = {min_idx};
-            size_t result_size = estimate_join_size(current_joined, i, tables, table_cardinalities, query->conds);
-            std::cout <<"DEBUG: 估计连接大小完成"<< std::endl;
-            if (result_size < min_result_size) {
-                min_result_size = result_size;
-                second_best_idx = i;
+            // 直接比较基数，选择基数第二小的表
+            if (table_cardinalities[i] < second_min_cardinality) {
+                second_min_cardinality = table_cardinalities[i];
+                second_min_idx = i;
             }
         }
-        
-        join_order.push_back(second_best_idx);
-        used[second_best_idx] = true;
+
+        join_order.push_back(second_min_idx);
+        used[second_min_idx] = true;
         
         // 根据最小结果集选择后续表
         while (join_order.size() < tables.size()) {
@@ -1083,15 +1080,34 @@
                 is_select_star = true;
             }
         }
+        // 在create ProjectionPlan之前添加检查
+        bool has_matching_projection = false;
+        if (auto proj = std::dynamic_pointer_cast<ProjectionPlan>(plannerRoot)) {
+            // 手动比较两个向量
+            if (proj->sel_cols_.size() == sel_cols.size()) {
+                bool all_equal = true;
+                for (size_t i = 0; i < sel_cols.size(); ++i) {
+                    const TabCol& a = proj->sel_cols_[i];
+                    const TabCol& b = sel_cols[i];
+                    if (a.tab_name != b.tab_name || a.col_name != b.col_name) {
+                        all_equal = false;
+                        break;
+                    }
+                }
+                has_matching_projection = all_equal;
+            }
+        }
 
-        plannerRoot = std::make_shared<ProjectionPlan>(
+        // 只有在没有合适的投影节点时才创建新的
+        if (!has_matching_projection) {
+            plannerRoot = std::make_shared<ProjectionPlan>(
                 T_Projection, 
                 std::move(plannerRoot), 
                 std::move(sel_cols),
                 std::move(query->alias),
                 is_select_star
             );
-
+        }
         return plannerRoot;
     }
 
