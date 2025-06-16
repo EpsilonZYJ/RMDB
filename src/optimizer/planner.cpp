@@ -398,93 +398,142 @@
                 std::cout << "DEBUG: 检测到 SELECT *，跳过投影下推分析" << std::endl;
             }
         }
-        
+        // 为每个表分开跟踪过滤列和输出列
+        std::map<std::string, std::set<std::string>> filter_cols_by_table;
+        std::map<std::string, std::set<std::string>> output_cols_by_table;
+        std::map<std::string, std::set<std::string>> join_cols_by_table;
         // 为每个表初始化需要的列集合
-        std::map<std::string, std::set<std::string>> required_cols_by_table;
+        //std::map<std::string, std::set<std::string>> required_cols_by_table;
         
-        // 如果不是SELECT*，才收集SELECT子句中的列
-        if (!is_select_star) {
-            // 从SELECT子句收集需要的列
-            for (const auto& col : query->cols) {
-                if (!col.tab_name.empty() && !col.col_name.empty()) {
-                    required_cols_by_table[col.tab_name].insert(col.col_name);
+         // 如果不是SELECT*，才收集SELECT子句中的列
+    if (!is_select_star) {
+        // 从SELECT子句收集需要的列 - 这些是输出列
+        for (const auto& col : query->cols) {
+            if (!col.tab_name.empty() && !col.col_name.empty()) {
+                output_cols_by_table[col.tab_name].insert(col.col_name);
+            }
+        }
+    }
+    
+    // 从WHERE条件中收集需要的列 - 这些是过滤列
+    for (const auto& cond : query->conds) {
+        // 处理左侧列
+        if (!cond.lhs_col.tab_name.empty()) {
+            filter_cols_by_table[cond.lhs_col.tab_name].insert(cond.lhs_col.col_name);
+        }
+        
+        // 处理右侧列
+        if (!cond.is_rhs_val && !cond.rhs_col.tab_name.empty()) {
+            filter_cols_by_table[cond.rhs_col.tab_name].insert(cond.rhs_col.col_name);
+        }
+    }
+    
+    // 从JOIN条件中收集需要的列 - 这些是连接列
+    for (const auto& join_conds : query->join_conds) {
+        for (const auto& cond : join_conds) {
+            // 处理左侧列
+            std::string lhs_tab_name = cond.lhs_col.tab_name;
+            for (const auto& [table, alias] : query->tab_alias_map) {
+                if (alias == lhs_tab_name) {
+                    lhs_tab_name = table; // 转换回原表名
+                    break;
                 }
             }
-        }
-        
-        // 从WHERE条件中收集需要的列
-        for (const auto& cond : query->conds) {
-            // 处理左侧列
-            if (!cond.lhs_col.tab_name.empty()) {
-                required_cols_by_table[cond.lhs_col.tab_name].insert(cond.lhs_col.col_name);
-            }
+            join_cols_by_table[lhs_tab_name].insert(cond.lhs_col.col_name);
             
             // 处理右侧列
-            if (!cond.is_rhs_val && !cond.rhs_col.tab_name.empty()) {
-                required_cols_by_table[cond.rhs_col.tab_name].insert(cond.rhs_col.col_name);
-            }
-        }
-        
-        // 从JOIN条件中收集需要的列
-        for (const auto& join_conds : query->join_conds) {
-            for (const auto& cond : join_conds) {
-                // 处理左侧列
-                std::string lhs_tab_name = cond.lhs_col.tab_name;
+            if (!cond.is_rhs_val) {
+                std::string rhs_tab_name = cond.rhs_col.tab_name;
                 for (const auto& [table, alias] : query->tab_alias_map) {
-                    if (alias == lhs_tab_name) {
-                        lhs_tab_name = table; // 转换回原表名
+                    if (alias == rhs_tab_name) {
+                        rhs_tab_name = table; // 转换回原表名
                         break;
                     }
                 }
-                required_cols_by_table[lhs_tab_name].insert(cond.lhs_col.col_name);
+                join_cols_by_table[rhs_tab_name].insert(cond.rhs_col.col_name);
+            }
+        }
+    }
+    
+    // 合并所有需要的列
+    std::map<std::string, std::set<std::string>> required_cols_by_table;
+    
+    // 如果是SELECT*，将所有表标记为需要所有列
+    if (is_select_star) {
+        for (const auto& table : query->tables) {
+            required_cols_by_table[table].clear(); // 需要所有列
+        }
+    } else {
+        // 合并输出列、连接列和过滤列
+        for (const auto& table : query->tables) {
+            // 首先加入输出列
+            if (output_cols_by_table.find(table) != output_cols_by_table.end()) {
+                required_cols_by_table[table].insert(
+                    output_cols_by_table[table].begin(), output_cols_by_table[table].end());
+            }
+            
+            // 加入连接列
+            if (join_cols_by_table.find(table) != join_cols_by_table.end()) {
+                required_cols_by_table[table].insert(
+                    join_cols_by_table[table].begin(), join_cols_by_table[table].end());
+            }
+            
+            // 过滤列单独存储，不合并到required_cols
+            if (filter_cols_by_table.find(table) != filter_cols_by_table.end()) {
+                // 仅添加那些不在输出和连接列中的过滤列
+                for (const auto& col : filter_cols_by_table[table]) {
+                    // 检查此列是否已经是输出列或连接列
+                    bool already_required = required_cols_by_table[table].find(col) != 
+                                        required_cols_by_table[table].end();
+                    if (!already_required) {
+                        // 单独存储而不是合并
+                        query->table_filter_cols[table].insert(col);
+                    }
+                }
+            }
+            
+            // 更准确的判断逻辑
+          if (required_cols_by_table[table].size() > 0) {
+    // 获取表的元数据
+    TabMeta &tab = sm_manager_->db_.get_table(table);
+    
+    // 收集表的所有列名
+    std::set<std::string> all_col_names;
+    for (const auto& col : tab.cols) {
+        all_col_names.insert(col.name);
+    }
                 
-                // 处理右侧列
-                if (!cond.is_rhs_val) {
-                    std::string rhs_tab_name = cond.rhs_col.tab_name;
-                    for (const auto& [table, alias] : query->tab_alias_map) {
-                        if (alias == rhs_tab_name) {
-                            rhs_tab_name = table; // 转换回原表名
+                // 只有当所有列都被需要，且需要的列数与表的列数完全匹配时，才标记为"需要所有列"
+                if (required_cols_by_table[table].size() == all_col_names.size()) {
+                    bool exact_match = true;
+                    for (const auto& col_name : required_cols_by_table[table]) {
+                        if (all_col_names.find(col_name) == all_col_names.end()) {
+                            exact_match = false;
                             break;
                         }
                     }
-                required_cols_by_table[rhs_tab_name].insert(cond.rhs_col.col_name);
-                }
-            }
-        }
-        
-        // 如果是SELECT*，将所有表标记为需要所有列
-        if (is_select_star) {
-            for (const auto& table : query->tables) {
-                required_cols_by_table[table].clear(); // 需要所有列
-            }
-        } else {
-            // 检查每个表是否需要所有列
-            for (const auto& table : query->tables) {
-                if (required_cols_by_table.find(table) != required_cols_by_table.end()) {
-                    TabMeta &tab = sm_manager_->db_.get_table(table);
-                    
-                    // 如果需要的列数等于表的总列数，检查是否真的需要所有列
-                    if (required_cols_by_table[table].size() == tab.cols.size()) {
-                        // 检查是否所有列都被需要
-                        bool all_cols_needed = true;
-                        for (const auto& col : tab.cols) {
-                            if (required_cols_by_table[table].find(col.name) == required_cols_by_table[table].end()) {
-                                all_cols_needed = false;
-                                break;
-                            }
-                        }
-                        
-                        // 需要所有列，清空列集合作为标记
-                        if (all_cols_needed) {
-                            required_cols_by_table[table].clear();
-                            std::cout << "DEBUG: 表 " << table << " 需要所有列，标记为跳过投影" << std::endl;
-                        }
+                    if (exact_match) {
+                        required_cols_by_table[table].clear(); // 标记为需要所有列
+                        std::cout << "DEBUG: 表 " << table << " 确实需要所有列" << std::endl;
                     }
                 }
             }
         }
-        // 保存到Query对象中供后续使用
-        query->table_required_cols = required_cols_by_table;
+    }
+    
+    // 输出调试信息
+    for (const auto& [table, cols] : required_cols_by_table) {
+        std::cout << "DEBUG: 表 " << table << " 最终需要的列: ";
+        if (cols.empty()) {
+            std::cout << "所有列";
+        } else {
+            for (const auto& col : cols) std::cout << col << " ";
+        }
+        std::cout << std::endl;
+    }
+    
+    // 保存到Query对象中供后续使用
+    query->table_required_cols = required_cols_by_table;
 
     }
 
@@ -686,34 +735,27 @@
             // 不需要表的所有列
 
 
-            // 只有当不是SELECT*时才投影下推
+            // 修改扫描节点的投影应用逻辑:
             if (!is_select_star) {
-                for (size_t j = 0; j < tables.size(); j++) { // 改用j作为循环变量
-                    // 检查是否有特定的列需求,空集合表示需要所有列，不应用投影
-                    if (query->table_required_cols.find(tables[j]) != query->table_required_cols.end() && 
+                for (size_t j = 0; j < tables.size(); j++) {
+                    // 检查是否有特定的列需求
+                    if (query->table_required_cols.find(tables[j]) != query->table_required_cols.end() &&
                         !query->table_required_cols[tables[j]].empty()) {
                         
-                        // 获取该表所需的列
-                        const auto& required_cols = query->table_required_cols[tables[j]];
-                        // 创建投影列表
-                        std::vector<TabCol> proj_cols;
-                        for (const auto& col_name : required_cols) {
-                            proj_cols.push_back({.tab_name = tables[j], .col_name = col_name});
-                        }
-                        // 创建投影计划并替换原来的扫描计划
-                        if (!proj_cols.empty()) {
-                            // 检查是否已经是ProjectionPlan，避免创建重复的投影
-                            bool already_projected = false;
-                            if (auto proj = std::dynamic_pointer_cast<ProjectionPlan>(table_scan_executors[j])) {
-                                already_projected = true;
-                                // 更新现有ProjectionPlan而不创建新的
-                                proj->sel_cols_ = proj_cols;
+                        auto scan = std::dynamic_pointer_cast<ScanPlan>(table_scan_executors[j]);
+                        if (scan) {
+                            // 先应用过滤节点
+                            // 然后添加投影，只包含永久需要的列
+                            std::vector<TabCol> proj_cols;
+                            for (const auto& col_name : query->table_required_cols[tables[j]]) {
+                                proj_cols.push_back({.tab_name = tables[j], .col_name = col_name});
                             }
                             
-                            if (!already_projected) {
-                                auto proj_plan = std::make_shared<ProjectionPlan>(
-                                    T_Projection, table_scan_executors[j], proj_cols, query->alias, false);
-                                table_scan_executors[j] = proj_plan;
+                            if (!proj_cols.empty()) {
+                                // 创建只有永久列的投影计划
+                                table_scan_executors[j] = std::make_shared<ProjectionPlan>(
+                                    T_Projection, table_scan_executors[j], proj_cols, 
+                                    query->alias, false);
                             }
                         }
                     }

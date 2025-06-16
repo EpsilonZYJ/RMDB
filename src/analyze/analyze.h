@@ -47,6 +47,8 @@ class Query{
     TabCol order_bys;
     // limit n
     int limit = -1; // -1表示没有限制
+
+    std::map<std::string, std::set<std::string>> table_filter_cols; // 仅用于过滤的列
     
     //join的连接条件
     std::vector<std::vector<Condition>> join_conds;
