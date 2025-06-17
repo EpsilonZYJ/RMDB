@@ -111,7 +111,27 @@ class UpdateExecutor : public AbstractExecutor {
             }
 
             fh_->update_record(rid, new_record.data, context_); // 更新数据文件中的记录
-
+           
+            // 日志记录代码
+            if (context_ && context_->txn_ && context_->log_mgr_) {
+                // 创建UPDATE日志记录
+                UpdateLogRecord* log_record = new UpdateLogRecord(
+                    context_->txn_->get_transaction_id(),
+                    old_record,  // 更新前的记录
+                    new_record,  // 更新后的记录
+                    rid,
+                    tab_name_
+                );
+                
+                // 追加日志记录
+                context_->log_mgr_->add_log_to_buffer(log_record);
+                
+                // 释放日志记录内存
+                delete log_record;
+                
+                std::cout << "DEBUG: 已生成UPDATE日志记录，表名: " << tab_name_ 
+                        << ", RID: (" << rid.page_no << "," << rid.slot_no << ")" << std::endl;
+            }
             for(size_t i = 0; i < tab_.indexes.size(); ++i) {
                 ihs[i]->delete_entry(old_keys[i], context_->txn_); 
                 ihs[i]->insert_entry(new_keys[i], rid, context_->txn_);

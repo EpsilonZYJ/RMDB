@@ -130,6 +130,9 @@ struct ShowIndex : public TreeNode {
         }
     };
 
+struct CreateCheckpoint : public TreeNode {
+};
+
 struct Expr : public TreeNode {
 };
 

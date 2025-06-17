@@ -37,6 +37,10 @@ private:
     IxManager* ix_manager_;
 
 public:
+
+    std::unique_ptr<RmFileHandle> open_table_file(const std::string& table_name);
+    void get_all_tables(std::vector<std::string>& tables) const;
+
     SmManager(DiskManager* disk_manager, BufferPoolManager* buffer_pool_manager, RmManager* rm_manager,
               IxManager* ix_manager)
             : disk_manager_(disk_manager),

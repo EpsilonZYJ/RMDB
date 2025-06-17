@@ -18,11 +18,13 @@ See the Mulan PSL v2 for more details. */
 
 #include "transaction.h"
 #include "watermark.h"
-#include "recovery/log_manager.h"
+//#include "recovery/log_manager.h"
 #include "concurrency/lock_manager.h"
-#include "system/sm_manager.h"
+//#include "system/sm_manager.h"
 #include "common/exception.h"
-
+// 前向声明
+class LogManager;
+class SmManager;
 /* 系统采用的并发控制算法，当前题目中要求两阶段封锁并发控制算法 */
 enum class ConcurrencyMode { TWO_PHASE_LOCKING = 0, BASIC_TO, MVCC };
 
@@ -86,6 +88,32 @@ public:
 
         return res;
     }
+    
+    // 暂停所有事务处理（用于检查点创建）
+    void pause_transactions() {
+        std::unique_lock<std::mutex> lock(latch_);
+        transactions_paused_ = true;
+    }
+    
+    // 恢复事务处理
+    void resume_transactions() {
+        std::unique_lock<std::mutex> lock(latch_);
+        transactions_paused_ = false;
+    }
+    
+    // 获取当前所有活跃事务的ID
+    std::vector<txn_id_t> get_active_transactions() {
+        std::unique_lock<std::mutex> lock(latch_);
+        std::vector<txn_id_t> active_txns;
+        
+        for (const auto& [txn_id, txn] : txn_map) {
+            if (txn->get_state() == TransactionState::GROWING) {
+                active_txns.push_back(txn_id);
+            }
+        }
+        
+        return active_txns;
+    }
 
     static std::unordered_map<txn_id_t, Transaction *> txn_map;     // 全局事务表，存放事务ID与事务对象的映射关系
     std::shared_mutex txn_map_mutex_;
@@ -148,7 +176,7 @@ private:
     std::mutex latch_;  // 用于txn_map的并发
     SmManager *sm_manager_;
     LockManager *lock_manager_;
-
+    bool transactions_paused_ = false;  // 事务暂停标志
     std::atomic<timestamp_t> last_commit_ts_{0};    // 最后提交的时间戳,仅用于MVCC
     Watermark running_txns_{0};             // 存储所有正在运行事务的读取时间戳，以便于垃圾回收，仅用于MVCC
 };

@@ -63,7 +63,25 @@ class DeleteExecutor : public AbstractExecutor {
                 std::cout << "DEBUG:删除操作没有关联有效事务!" << std::endl;
             }
 
-
+            if (context_ && context_->txn_ && context_->log_mgr_) {
+                // 创建DELETE日志记录
+                DeleteLogRecord* log_record = new DeleteLogRecord(
+                    context_->txn_->get_transaction_id(),
+                    old_record,  // 要删除的记录
+                    rid,
+                    tab_name_
+                );
+                
+                // 追加日志记录
+                context_->log_mgr_->add_log_to_buffer(log_record);
+                
+                // 释放日志记录内存
+                delete log_record;
+                
+                std::cout << "DEBUG: 已生成DELETE日志记录，表名: " << tab_name_ 
+                          << ", RID: (" << rid.page_no << "," << rid.slot_no << ")" << std::endl;
+            }
+            
             bool debug = fh_->is_record(rid);
             fh_->delete_record(rid, context_); // 更新数据文件中的记录
 

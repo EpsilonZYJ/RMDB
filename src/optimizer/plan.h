@@ -47,7 +47,8 @@ typedef enum PlanTag{
     T_Aggregation,
     T_Limit,
     T_Explain,
-    T_SemiJoin
+    T_SemiJoin,
+    T_CreateCheckpoint
 } PlanTag;
 
 // 查询执行计划
@@ -274,3 +275,14 @@ class ExplainPlan : public Plan {
         ~ExplainPlan() = default;
         std::unique_ptr<AbstractExecutor> get_executor(Context *context);
 };
+/**
+ * @brief 创建检查点的计划
+ */
+ class CreateCheckpointPlan : public Plan {
+    public:
+        CreateCheckpointPlan() {
+            Plan::tag = T_CreateCheckpoint; 
+        }
+        ~CreateCheckpointPlan() = default;
+        
+    };

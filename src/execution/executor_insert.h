@@ -101,7 +101,24 @@ class InsertExecutor : public AbstractExecutor {
             WriteRecord* write_record = new WriteRecord(WType::INSERT_TUPLE, tab_name_,rid_, rec);
             // 添加到事务写集合
             context_->txn_->append_write_record(write_record);
-            
+            if (context_ && context_->txn_ && context_->log_mgr_) {
+                // 创建INSERT日志记录
+                InsertLogRecord* log_record = new InsertLogRecord(
+                    context_->txn_->get_transaction_id(),
+                    rec,
+                    rid_,
+                    tab_name_
+                );
+                
+                // 追加日志记录
+                context_->log_mgr_->add_log_to_buffer(log_record);
+                
+                // 释放日志记录内存
+                delete log_record;
+                
+                std::cout << "DEBUG: 已生成INSERT日志记录，表名: " << tab_name_ 
+                          << ", RID: (" << rid_.page_no << "," << rid_.slot_no << ")" << std::endl;
+            }
             std::cout << "DEBUG:已将插入写记录添加到事务 " << context_->txn_->get_transaction_id() 
                     << ", 写集合大小: " << context_->txn_->get_write_set()->size() << std::endl;
         } else {

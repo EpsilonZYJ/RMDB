@@ -61,8 +61,17 @@ class Portal
 
     // 将查询执行计划转换成对应的算子树
     std::shared_ptr<PortalStmt> start(std::shared_ptr<Plan> plan, Context *context)
-    {
-        if (auto x = std::dynamic_pointer_cast<ExplainPlan>(plan)) {
+    {   
+        if (auto create_checkpoint = std::dynamic_pointer_cast<CreateCheckpointPlan>(plan)) {
+            // 使用正确的构造函数创建 PortalStmt
+            return std::make_shared<PortalStmt>(
+                PORTAL_CMD_UTILITY,          // 使用命令工具类型
+                std::vector<TabCol>(),       // 无选择列
+                std::unique_ptr<AbstractExecutor>(),  // 无执行器
+                plan                         // 检查点计划
+            );
+        }
+        else if (auto x = std::dynamic_pointer_cast<ExplainPlan>(plan)) {
             // 创建一个特殊的 PortalStmt 来处理 EXPLAIN 命令
             return std::make_shared<PortalStmt>(PORTAL_EXPLAIN, std::vector<TabCol>(), std::unique_ptr<AbstractExecutor>(), plan);
         }

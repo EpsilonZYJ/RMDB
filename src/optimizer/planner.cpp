@@ -1156,6 +1156,9 @@
 
     std::shared_ptr<Plan> Planner::do_planner(std::shared_ptr<Query> query, Context *context)
     {
+        if (auto create_checkpoint = std::dynamic_pointer_cast<ast::CreateCheckpoint>(query->parse)) {
+            return std::make_shared<CreateCheckpointPlan>();
+        }
         bool is_explain = query->is_explain;
         std::shared_ptr<Plan> plannerRoot;
         if (auto x = std::dynamic_pointer_cast<ast::CreateTable>(query->parse)) {

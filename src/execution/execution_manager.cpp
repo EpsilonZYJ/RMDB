@@ -78,6 +78,11 @@ void QlManager::run_mutli_query(std::shared_ptr<Plan> plan, Context *context){
 
 // 执行help; show tables; desc table; begin; commit; abort;语句
 void QlManager::run_cmd_utility(std::shared_ptr<Plan> plan, txn_id_t *txn_id, Context *context) {
+    if (auto x = std::dynamic_pointer_cast<CreateCheckpointPlan>(plan)) {
+        // 创建静态检查点
+        log_manager_->create_static_checkpoint(txn_mgr_, buffer_pool_manager_, sm_manager_);
+        std::cout << "静态检查点创建成功" << std::endl;
+    }
     if (auto x = std::dynamic_pointer_cast<OtherPlan>(plan)) {
         switch(x->tag) {
             case T_Help:

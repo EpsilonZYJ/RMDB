@@ -30,13 +30,31 @@ public:
         buffer_pool_manager_ = buffer_pool_manager;
         sm_manager_ = sm_manager;
     }
+    // 执行基于检查点的恢复
+    void recover_from_checkpoint();
+    
+    // 从磁盘加载日志记录
+    std::vector<LogRecord*> load_log_records(lsn_t start_lsn = INVALID_LSN);
+    
+    // 根据类型创建日志记录对象
+    LogRecord* create_log_record_by_type(LogType type);
 
     void analyze();
     void redo();
     void undo();
 private:
+    // 活跃事务表
+    std::unordered_map<txn_id_t, lsn_t> active_txn_table_;
+    // 脏页表
+    std::unordered_map<PageId, lsn_t> dirty_page_table_;
     LogBuffer buffer_;                                              // 读入日志
     DiskManager* disk_manager_;                                     // 用来读写文件
     BufferPoolManager* buffer_pool_manager_;                        // 对页面进行读写
-    SmManager* sm_manager_;                                         // 访问数据库元数据
+    SmManager* sm_manager_;        
+    LogManager* log_manager_;  // 日志管理器   
+    // 重做单个日志记录
+    void redo_log_record(LogRecord* log_record);
+    
+    // 撤销单个日志记录
+    void undo_log_record(LogRecord* log_record);
 };

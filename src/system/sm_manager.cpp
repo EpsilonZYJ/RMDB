@@ -18,6 +18,7 @@ See the Mulan PSL v2 for more details. */
 #include "index/ix.h"
 #include "record/rm.h"
 #include "record_printer.h"
+#include "record/rm_manager.h"
 
 /**
  * @description: 判断是否为一个文件夹
@@ -349,4 +350,30 @@ void SmManager::show_index(std::string &table_name, Context *context) {
     }
 
     outfile.close();
+}
+
+std::unique_ptr<RmFileHandle> SmManager::open_table_file(const std::string& table_name) {
+    char cwd[1024];
+    if (getcwd(cwd, sizeof(cwd)) != NULL) {
+        std::cout << "当前工作目录: " << cwd << std::endl;
+    }
+    // 不添加数据库名前缀
+    std::cout << "尝试打开表文件: " << table_name << std::endl;
+    
+    // 检查文件是否存在
+    if (access(table_name.c_str(), F_OK) != -1) {
+        std::cout << "文件存在: " << table_name << std::endl;
+    } else {
+        std::cerr << "文件不存在: " << table_name << std::endl;
+    }
+    
+    return std::unique_ptr<RmFileHandle>(
+        rm_manager_->open_file(table_name.c_str())
+    );
+}
+
+void SmManager::get_all_tables(std::vector<std::string>& tables) const {
+    for (const auto& pair : db_.tabs_) {
+        tables.push_back(pair.first);
+    }
 }
