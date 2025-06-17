@@ -22,7 +22,7 @@ std::vector<std::shared_ptr<ast::JoinExpr>> current_joins;
 
 // keywords
 %token SHOW TABLES CREATE TABLE DROP DESC INSERT INTO VALUES DELETE FROM ASC ORDER BY
-WHERE UPDATE SET SELECT INT CHAR FLOAT INDEX AND JOIN ON EXIT HELP TXN_BEGIN TXN_COMMIT 
+WHERE UPDATE SET SELECT INT CHAR FLOAT DATE INDEX AND JOIN ON EXIT HELP TXN_BEGIN TXN_COMMIT 
 TXN_ABORT TXN_ROLLBACK ORDER_BY ENABLE_NESTLOOP ENABLE_SORTMERGE EXPLAIN SEMI
 COUNT MAX MIN SUM AVG AS GROUP HAVING LIMIT
 // non-keywords
@@ -32,6 +32,7 @@ COUNT MAX MIN SUM AVG AS GROUP HAVING LIMIT
 %token <sv_str> IDENTIFIER VALUE_STRING
 %token <sv_int> VALUE_INT
 %token <sv_float> VALUE_FLOAT
+%token <sv_date> VALUE_DATE
 %token <sv_bool> VALUE_BOOL
 
 // specify types for non-terminal symbol
@@ -221,6 +222,10 @@ type:
     {
         $$ = std::make_shared<TypeLen>(SV_TYPE_FLOAT, sizeof(float));
     }
+        DATE
+    {
+        $$ = std::make_shared<TypeLen>(SV_TYPE_DATE, 10)
+    }
     ;
 
 valueList:
@@ -250,6 +255,10 @@ value:
     |   VALUE_BOOL
     {
         $$ = std::make_shared<BoolLit>($1);
+    }
+    |   VALUE_DATE
+    {
+        $$ = std::make_shared<DateLit>($1);
     }
     ;
 

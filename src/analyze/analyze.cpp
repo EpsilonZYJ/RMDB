@@ -116,7 +116,7 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse)
             }
         }
 
-        
+       // TODO orderby不能使用别名
 
         for (auto &item: x->cols) {
             query->cols.emplace_back(TabCol{item->col->tab_name, item->col->col_name});
@@ -688,6 +688,8 @@ Value Analyze::convert_sv_value(const std::shared_ptr<ast::Value> &sv_val) {
         val.set_float(float_lit->val);
     } else if (auto str_lit = std::dynamic_pointer_cast<ast::StringLit>(sv_val)) {
         val.set_str(str_lit->val);
+    } else if (auto date_lit = std::dynamic_pointer_cast<ast::DateLit>(sv_val)) {
+        val.set_date(date_lit->val);
     } else {
         throw InternalError("Unexpected sv value type");
     }

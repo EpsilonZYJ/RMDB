@@ -74,6 +74,7 @@ class IndexScanExecutor : public AbstractExecutor {
                         *(float*)(key + offset) = std::numeric_limits<float>::min();
                         break;
                     case TYPE_STRING:
+                    case TYPE_DATE:
                         memset(key + offset, 0, index_meta_.cols[i].len);
                         break;
                     default:
@@ -102,6 +103,7 @@ class IndexScanExecutor : public AbstractExecutor {
                         *(float*)(key + offset) = std::numeric_limits<float>::max();
                         break;
                     case TYPE_STRING:
+                    case TYPE_DATE:
                         memset(key + offset, 0xFF, index_meta_.cols[i].len);
                         break;
                     default:

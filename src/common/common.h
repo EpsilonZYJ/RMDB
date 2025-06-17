@@ -15,6 +15,7 @@ See the Mulan PSL v2 for more details. */
 #include <memory>
 #include <string>
 #include <vector>
+#include <regex>
 #include "defs.h"
 #include "record/rm_defs.h"
 #include "parser/parser.h"
@@ -54,6 +55,12 @@ struct Value {
         str_val = std::move(str_val_);
     }
 
+    // Date类型与字符串类型公用str_val（因为底层都是字符串存储）
+    void set_date(Date date) {
+        type = TYPE_DATE;
+        str_val = date.toString();  // YYYY-MM-DD
+    }
+
     Value() = default; // TODO 默认构造函数不是很好的设计，可能会导致未定义行为
 
     // 拷贝构造
@@ -65,6 +72,10 @@ struct Value {
             float_val = other.float_val;
         } else if (type == TYPE_STRING) {
             str_val = other.str_val;
+        } else if (type == TYPE_DATE) { // 为了易读，将Date与string的比较逻辑拆分开
+            str_val = other.str_val;  // Date类型也存储在str_val中
+        } else {
+            throw InternalError("Invalid value type");
         }
     }
 
@@ -79,6 +90,10 @@ struct Value {
             other.float_val = 0.0f;
         } else if (type == TYPE_STRING) {
             str_val = std::move(other.str_val);
+        } else if (type == TYPE_DATE) {
+            str_val = std::move(other.str_val);  // Date类型也存储在str_val中
+        } else {
+            throw InternalError("Invalid value type");
         }
     }
 
@@ -92,6 +107,10 @@ struct Value {
                 float_val = other.float_val;
             } else if (type == TYPE_STRING) {
                 str_val = other.str_val;
+            } else if (type == TYPE_DATE) {
+                str_val = other.str_val;  // Date类型也存储在str_val中
+            } else {
+                throw InternalError("Invalid value type");
             }
             raw = other.raw;
         }
@@ -110,6 +129,10 @@ struct Value {
                 other.float_val = 0.0f;
             } else if (type == TYPE_STRING) {
                 str_val = std::move(other.str_val);
+            } else if (type == TYPE_DATE) {
+                str_val = std::move(other.str_val);  // Date类型也存储在str_val中
+            } else {
+                throw InternalError("Invalid value type");
             }
             raw = std::move(other.raw);
         }
@@ -133,6 +156,14 @@ struct Value {
             }
             memset(raw->data, 0, len);
             memcpy(raw->data, str_val.c_str(), str_val.size());
+        } else if (type == TYPE_DATE) {
+            if (len < (int)str_val.size()) {
+                throw StringOverflowError();
+            }
+            memset(raw->data, 0, len);
+            memcpy(raw->data, str_val.c_str(), str_val.size());
+        } else {
+            throw InternalError("Invalid value type");
         }
     }
 
@@ -150,6 +181,14 @@ struct Value {
             }
             memset(raw->data, 0, len);
             memcpy(raw->data, str_val.c_str(), str_val.size());
+        } else if (type == TYPE_DATE) {
+            if (len < (int)str_val.size()) {
+                throw StringOverflowError();
+            }
+            memset(raw->data, 0, len);
+            memcpy(raw->data, str_val.c_str(), str_val.size());
+        } else {
+            throw InternalError("Invalid value type");
         }
     }
     
@@ -174,6 +213,9 @@ struct Value {
             return float_val == rhs.float_val;
         }else if((type==TYPE_STRING)&&(rhs.type==TYPE_STRING)){
             return str_val == rhs.str_val;
+        }else if((type==TYPE_DATE)&&(rhs.type==TYPE_DATE)){
+            return str_val == rhs.str_val; // Date类型也存储在str_val中
+
         }else{
             throw InternalError("Invalid value type");
         }
@@ -203,6 +245,8 @@ struct Value {
             return float_val < rhs.float_val;
         }else if((type==TYPE_STRING)&&(rhs.type==TYPE_STRING)){
             return str_val < rhs.str_val;
+        }else if((type==TYPE_DATE)&&(rhs.type==TYPE_DATE)){
+            return str_val < rhs.str_val; // Date类型也存储在str_val中
         }else{
             throw InternalError("Invalid value type");
         }
@@ -267,6 +311,12 @@ struct Value {
             sscanf(str_val.c_str(), "%d", &int_val);
         else if(type == TYPE_STRING && new_type == TYPE_FLOAT)
             sscanf(str_val.c_str(), "%f", &float_val);
+        else if(type == TYPE_STRING && new_type == TYPE_DATE) {
+            std::regex pattern(R"(^\d{4}-\d{2}-\d{2}$)"); // YYYY-MM-DD
+            if (!std::regex_match(str_val, pattern)) {
+                throw InvalidArgumentError(str_val, "Invalid date format, expected YYYY-MM-DD");
+            }
+        }
         else throw IncompatibleTypeError(coltype2str(type), coltype2str(new_type));
         type = new_type;
 

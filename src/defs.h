@@ -40,6 +40,39 @@ struct Rid {
     friend bool operator!=(const Rid &x, const Rid &y) { return !(x == y); }
 };
 
+struct Date {
+    std::string year;  // YYYY
+    std::string month; // MM
+    std::string day;   // DD
+
+    Date(std::string date) {
+        if (date.size() != 10 || date[4] != '-' || date[7] != '-') {
+            throw InvalidArgumentError(date, "Invalid date format, expected YYYY-MM-DD");
+        }
+        year = date.substr(0, 4);
+        month = date.substr(5, 2);
+        day = date.substr(8, 2);
+    }
+
+    Date(int y, int m, int d) {
+        if (y < 0 || m < 1 || m > 12 || d < 1 || d > 31) {
+            throw InvalidArgumentError("Date", "Invalid date values");
+        }
+        year = std::to_string(y);
+        month = (m < 10 ? "0" : "") + std::to_string(m);
+        day = (d < 10 ? "0" : "") + std::to_string(d);
+    }
+
+    std::string toString() const {
+        return year + "-" + month + "-" + day;
+    }
+
+    friend std::ostream &operator<<(std::ostream &os, const Date &date) {
+        os << date.year << "-" << date.month << "-" << date.day;
+        return os;
+    }
+};
+
 enum ColType {
     TYPE_INT, 
     TYPE_FLOAT, 
@@ -58,7 +91,8 @@ inline std::string coltype2str(ColType type) {
     std::map<ColType, std::string> m = {
             {TYPE_INT,    "INT"},
             {TYPE_FLOAT,  "FLOAT"},
-            {TYPE_STRING, "STRING"}
+            {TYPE_STRING, "STRING"},
+            {TYPE_DATE,   "DATE"}
     };
     return m.at(type);
 }

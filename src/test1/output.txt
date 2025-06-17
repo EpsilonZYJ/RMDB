@@ -12,3 +12,18 @@ failure
 | Tables |
 | t |
 | id |
+| Tables |
+| t |
+| id |
+| id |
+failure
+| Tables |
+| t |
+| id |
+failure
+| t | unique | (id) |
+failure
+failure
+| id |
+| 1 |
+failure
