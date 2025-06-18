@@ -97,7 +97,7 @@ class InsertExecutor : public AbstractExecutor {
         sm_manager_->db_.get_table(tab_name_).increment_tuple_count();
         // 添加写记录到事务写集合
         if (context_ && context_->txn_) {
-            // 创建写记录 - 修正data变量为rec并使用正确的rid_
+            // 创建写记录
             WriteRecord* write_record = new WriteRecord(WType::INSERT_TUPLE, tab_name_,rid_, rec);
             // 添加到事务写集合
             context_->txn_->append_write_record(write_record);
@@ -109,10 +109,8 @@ class InsertExecutor : public AbstractExecutor {
                     rid_,
                     tab_name_
                 );
-                
                 // 追加日志记录
-                context_->log_mgr_->add_log_to_buffer(log_record);
-                
+                context_->log_mgr_->add_log_to_buffer(log_record);  
                 // 释放日志记录内存
                 delete log_record;
                 

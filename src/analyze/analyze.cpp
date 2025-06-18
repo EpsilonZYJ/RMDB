@@ -611,15 +611,12 @@ void Analyze::check_clause(const std::vector<std::string> &tab_names,
         
 //     }
 // }
-// 修改第二个check_clause函数
 void Analyze::check_clause(const std::vector<std::string> &tab_names, 
     std::vector<Condition> &conds,
     const std::map<std::string, std::string> &tab_alias_map,
     bool check_having) {
-    
-    // 先创建条件的副本，以便恢复原始表名
+    // 先创建条件的副本，恢复原始表名
     std::vector<Condition> conds_copy = conds;
-    
     // 临时替换条件中的别名为实际表名
     for (auto &cond : conds) {
         // 处理表别名 
@@ -634,20 +631,16 @@ void Analyze::check_clause(const std::vector<std::string> &tab_names,
             }
         }
     }
-    
     // 调用第一个check_clause进行基本检查和HAVING检查
     check_clause(tab_names, conds, check_having);
-    
-    // 恢复原始条件，然后用别名映射进行正确的处理
+    // 恢复原始条
     conds = conds_copy;
-    
-    // 现在使用别名映射正确处理条件
+    // 用别名映射正确处理条件
     std::vector<ColMeta> all_cols;
     get_all_cols(tab_names, all_cols);
     
     for (auto &cond : conds) {
         if (cond.agg_type == AGG_COUNT && cond.lhs_col.tab_name.empty() && cond.lhs_col.col_name.empty())  continue; // count(*)
-
         // 使用带别名参数的check_column
         cond.lhs_col = check_column(all_cols, cond.lhs_col, tab_alias_map);
         if (!cond.is_rhs_val) {
@@ -702,7 +695,6 @@ CompOp Analyze::convert_sv_comp_op(ast::SvCompOp op) {
     return m.at(op);
 }
 
-// 在Analyze类中添加新函数
 void Analyze::analyze_table_refs(const std::vector<std::string> &tab_refs, std::shared_ptr<Query> query) {
     std::cout << "DEBUG: 原始表引用: ";
     for (const auto& ref : tab_refs) {

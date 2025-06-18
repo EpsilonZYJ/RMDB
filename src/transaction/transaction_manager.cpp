@@ -54,8 +54,7 @@ Transaction * TransactionManager::begin(Transaction* txn, LogManager* log_manage
             std::cerr << "Warning: Failed to write begin log: " << e.what() << std::endl;
         }
     }
-    
-    // 4. 返回当前事务指针
+
     return txn;
 }
 
@@ -88,7 +87,6 @@ void TransactionManager::commit(Transaction* txn, LogManager* log_manager) {
     for (auto lock_id : *lock_set) {
         lock_manager_->unlock(txn, lock_id);
     }
-    
     // 释放事务相关资源
     lock_set->clear();
     

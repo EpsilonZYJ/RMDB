@@ -165,6 +165,10 @@ See the Mulan PSL v2 for more details. */
             // 执行redo和undo操作
             redo();
             undo();
+
+            // 清空脏页表和活跃事务表
+            active_txn_table_.clear();
+            dirty_page_table_.clear();
         }
         
         std::cout << "分析阶段完成" << std::endl;
@@ -190,7 +194,7 @@ See the Mulan PSL v2 for more details. */
                 throw std::runtime_error("LSN对应的记录不是检查点记录");
             }
             
-            // 1. 从检查点获取活跃事务列表
+            // 从检查点获取活跃事务列表
             CheckpointLogRecord* checkpoint = dynamic_cast<CheckpointLogRecord*>(checkpoint_record);
             active_txn_table_.clear();
             // 获取活跃事务的方法名
@@ -208,7 +212,7 @@ See the Mulan PSL v2 for more details. */
             throw;
         }
         
-        // 2. 从检查点开始扫描日志
+        // 从检查点开始扫描日志
         std::vector<LogRecord*> log_records = log_manager_->scan_log_from_lsn(checkpoint_lsn);
         
         // redo_list记录需要重做的事务，初始为空
@@ -223,28 +227,24 @@ See the Mulan PSL v2 for more details. */
                     // 新事务开始，加入ATT
                     active_txn_table_[txn_id] = record->lsn_;
                     break;
-                    
                 case LogType::commit:
                     // 事务提交，从ATT移除，加入redo_list
                     active_txn_table_.erase(txn_id);
                     redo_list.insert(txn_id);
-                    break;
-                    
+                    break;   
                 case LogType::ABORT:
                     // 事务中止，从ATT移除
                     active_txn_table_.erase(txn_id);
                     break;
-                    
                 case LogType::UPDATE:
                 case LogType::INSERT:
                 case LogType::DELETE:
                 // 更新ATT中的LSN
                 if (active_txn_table_.find(txn_id) != active_txn_table_.end()) {
                         active_txn_table_[txn_id] = record->lsn_;
-                }
-                
-                // 更新DPT（脏页表）
-                {  // 加大括号创建新的作用域，避免变量初始化问题
+                }      
+                // 更新脏页表
+                {  
                         Rid rid;
                         bool has_valid_rid = false;
                         std::string table_name;
@@ -295,20 +295,17 @@ See the Mulan PSL v2 for more details. */
                     break;
             }
         }
-        
-        // 3. 执行REDO操作
         std::cout << "开始REDO阶段，需要重做的事务数: " << redo_list.size() << std::endl;
         redo();
-        
-        // 4. 执行UNDO操作
         std::cout << "开始UNDO阶段，需要撤销的事务数: " << active_txn_table_.size() << std::endl;
         undo();
-        
         // 清理日志记录
         for (auto* record : log_records) {
             delete record;
         }
-        
+        // 恢复完成后清空脏页表和活跃事务表
+        active_txn_table_.clear();
+        dirty_page_table_.clear();
         std::cout << "从检查点恢复完成" << std::endl;
     }
 
@@ -325,16 +322,13 @@ void RecoveryManager::redo() {
             min_rec_lsn = rec_lsn;
         }
     }
-    
     // 如果没有脏页，直接返回
     if (min_rec_lsn == INVALID_LSN) {
         std::cout << "没有需要重做的操作" << std::endl;
         return;
     }
-    
     // 扫描日志
     std::vector<LogRecord*> log_records = log_manager_->scan_log_from_lsn(min_rec_lsn);
-    
     // 按照LSN顺序重做操作
     for (auto* record : log_records) {
         Rid rid;
@@ -369,14 +363,11 @@ void RecoveryManager::redo() {
         PageId page_id;
         page_id.fd = sm_manager_->fhs_[table_name]->GetFd();  // 获取文件描述符
         page_id.page_no = rid.page_no;
-
         // 比较 PageId 和 INVALID_PAGE_ID
         if (rid.page_no == INVALID_PAGE_ID) continue;
-        
-        // 检查是否需要重做（页面在DPT中且日志LSN >= recLSN）
+        // 检查是否需要重做（页面在脏页表中且日志LSN >= recLSN）
         if (dirty_page_table_.find(page_id) != dirty_page_table_.end() &&
         record->lsn_ >= dirty_page_table_[page_id]) {
-            
             // 检查页面在缓冲池中的LSN是否小于日志LSN
             Page* page = buffer_pool_manager_->fetch_page(page_id);
             if (page && page->get_page_lsn() < record->lsn_) {
@@ -388,12 +379,10 @@ void RecoveryManager::redo() {
             if (page) buffer_pool_manager_->unpin_page(page_id, true);
         }
     }
-    
     // 清理日志记录
     for (auto* record : log_records) {
         delete record;
     }
-    
     std::cout << "REDO阶段完成" << std::endl;
 }
 
@@ -402,16 +391,14 @@ void RecoveryManager::redo() {
  */
 void RecoveryManager::undo() {
         std::cout << "执行UNDO阶段..." << std::endl;
-    
+
         // 如果没有未完成的事务，直接返回
         if (active_txn_table_.empty()) {
             std::cout << "没有需要撤销的事务" << std::endl;
             return;
         }
-        
         // 构建每个事务的最后一个LSN映射
         std::unordered_map<txn_id_t, lsn_t> txn_last_lsn_map = active_txn_table_;
-        
         // 按照LSN从大到小的顺序回滚操作
         while (!txn_last_lsn_map.empty()) {
             // 找到最大的LSN及其对应的事务
@@ -480,8 +467,6 @@ void RecoveryManager::undo() {
                         // 获取表和RID信息
                         std::string table_name = insert_log->table_name_; // 直接使用成员变量
                         Rid rid = insert_log->rid_;  
-                        
-                        // 使用现有API执行插入操作
                         RmFileHandle* file_handle = sm_manager_->fhs_[table_name].get();
                         if (file_handle) {
                             file_handle->insert_record(rid, insert_log->insert_value_.data);
@@ -497,8 +482,6 @@ void RecoveryManager::undo() {
                         // 获取表和RID信息
                         std::string table_name = update_log->table_name_;
                         Rid rid = update_log->rid_;
-                        
-                        // 使用现有API执行更新操作
                         RmFileHandle* file_handle = sm_manager_->fhs_[table_name].get();
                         if (file_handle) {
                             file_handle->update_record(rid, update_log->new_value_.data, nullptr);
@@ -515,8 +498,6 @@ void RecoveryManager::undo() {
                         // 获取表和RID信息
                         std::string table_name = delete_log->table_name_;
                         Rid rid = delete_log->rid_;
-                        
-                        // 使用现有API执行删除操作
                         RmFileHandle* file_handle = sm_manager_->fhs_[table_name].get();
                         if (file_handle) {
                             file_handle->delete_record(rid, nullptr);
@@ -551,8 +532,6 @@ void RecoveryManager::undo() {
                     // 获取表和RID信息
                     std::string table_name = insert_log->table_name_;
                     Rid rid = insert_log->rid_;
-                    
-                    // 使用现有API撤销插入操作（删除记录）
                     RmFileHandle* file_handle = sm_manager_->fhs_[table_name].get();
                     if (file_handle) {
                         file_handle->delete_record(rid, nullptr);
@@ -568,8 +547,6 @@ void RecoveryManager::undo() {
                     // 获取表和RID信息
                     std::string table_name = update_log->table_name_; 
                     Rid rid = update_log->rid_;
-                    
-                    // 使用现有API撤销更新操作（恢复旧值）
                     RmFileHandle* file_handle = sm_manager_->fhs_[table_name].get();
                     if (file_handle) {
                         file_handle->update_record(rid, update_log->old_value_.data, nullptr);
@@ -585,8 +562,6 @@ void RecoveryManager::undo() {
                     // 获取表和RID信息
                     std::string table_name = delete_log->table_name_;
                     Rid rid = delete_log->rid_;
-                    
-                    // 使用现有API撤销删除操作（重新插入记录）
                     RmFileHandle* file_handle = sm_manager_->fhs_[table_name].get();
                     if (file_handle) {
                         file_handle->insert_record(rid, delete_log->deleted_value_.data);

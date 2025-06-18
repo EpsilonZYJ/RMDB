@@ -74,10 +74,8 @@ class DeleteExecutor : public AbstractExecutor {
                 
                 // 追加日志记录
                 context_->log_mgr_->add_log_to_buffer(log_record);
-                
                 // 释放日志记录内存
-                delete log_record;
-                
+                delete log_record;   
                 std::cout << "DEBUG: 已生成DELETE日志记录，表名: " << tab_name_ 
                           << ", RID: (" << rid.page_no << "," << rid.slot_no << ")" << std::endl;
             }
@@ -85,9 +83,8 @@ class DeleteExecutor : public AbstractExecutor {
             bool debug = fh_->is_record(rid);
             fh_->delete_record(rid, context_); // 更新数据文件中的记录
 
-            // 增加删除计数
+            // 删除计数
             deleted_count++;
-
             for (size_t i = 0; i < tab_.indexes.size(); i++) {
                 auto& index = tab_.indexes[i]; // 获取当前遍历到的索引 类型为IndexMeta
                 auto ih = sm_manager_->ihs_.at(sm_manager_->get_ix_manager()->get_index_name(tab_name_, index.cols)).get(); // 获取对应的B+树，类型为IxNodeHandl
