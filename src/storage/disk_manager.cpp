@@ -265,3 +265,48 @@ void DiskManager::write_log(char *log_data, int size) {
     // 添加fsync确保数据写入磁盘
     fsync(log_fd_);
 }
+
+/**
+ * @description: 关闭日志文件，释放文件句柄
+ * @return {bool} 是否成功关闭
+ */
+ bool DiskManager::close_log_file() {
+    if (log_fd_ != -1) {
+        // 确保文件数据已刷新到磁盘
+        fsync(log_fd_);
+        // 从文件映射表中移除
+        std::string log_path = fd2path_[log_fd_];
+        path2fd_.erase(log_path);
+        fd2path_.erase(log_fd_);
+        if (close(log_fd_) == -1) {
+            std::cerr << "关闭日志文件失败: " << strerror(errno) << std::endl;
+            return false; }
+        log_fd_ = -1;
+        return true;
+    }
+    return true; 
+}
+
+/**
+ * @description: 重新打开日志文件
+ * @return {bool} 是否成功打开
+ */
+bool DiskManager::reopen_log_file() {
+    if (log_fd_ == -1) {
+        // 检查文件是否存在，不存在则创建
+        if (!is_file(LOG_FILE_NAME)) {
+            create_file(LOG_FILE_NAME);
+        }
+        log_fd_ = open(LOG_FILE_NAME.c_str(), O_RDWR | O_APPEND);
+        if (log_fd_ == -1) {
+            std::cerr << "重新打开日志文件失败: " << strerror(errno) << std::endl;
+            return false;
+        }
+        // 更新文件映射
+        path2fd_[LOG_FILE_NAME] = log_fd_;
+        fd2path_[log_fd_] = LOG_FILE_NAME;
+        
+        return true;
+    }
+    return true; 
+}

@@ -25,10 +25,12 @@ public:
 
 class RecoveryManager {
 public:
-    RecoveryManager(DiskManager* disk_manager, BufferPoolManager* buffer_pool_manager, SmManager* sm_manager) {
+    RecoveryManager(DiskManager* disk_manager, BufferPoolManager* buffer_pool_manager, SmManager* sm_manager
+                    , LogManager* log_manager) {
         disk_manager_ = disk_manager;
         buffer_pool_manager_ = buffer_pool_manager;
         sm_manager_ = sm_manager;
+        log_manager_ = log_manager;
     }
     // 执行基于检查点的恢复
     void recover_from_checkpoint();
@@ -42,6 +44,7 @@ public:
     void analyze();
     void redo();
     void undo();
+    void truncate_log_after_recovery();
 private:
     // 活跃事务表
     std::unordered_map<txn_id_t, lsn_t> active_txn_table_;

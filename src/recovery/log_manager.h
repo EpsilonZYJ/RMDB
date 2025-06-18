@@ -545,10 +545,11 @@ public:
      // 获取当前LSN
      lsn_t get_current_lsn() { return global_lsn_; }
      std::vector<LogRecord*> scan_log_from_lsn(lsn_t start_lsn = INVALID_LSN);
-
+     bool truncate_log(lsn_t truncate_lsn);
+     lsn_t create_checkpoint(const std::vector<txn_id_t>& active_txns);
 private:    
     std::atomic<lsn_t> global_lsn_{0};  // 全局lsn，递增，用于为每条记录分发lsn
-    std::mutex latch_;                  // 用于对log_buffer_的互斥访问
+    std::recursive_mutex latch_;                  // 用于对log_buffer_的互斥访问
     LogBuffer log_buffer_;              // 日志缓冲区
     lsn_t persist_lsn_;                 // 记录已经持久化到磁盘中的最后一条日志的日志号
     DiskManager* disk_manager_;

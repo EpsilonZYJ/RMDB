@@ -88,7 +88,9 @@ class DiskManager {
     page_id_t get_fd2pageno(int fd) { return fd2pageno_[fd]; }
 
     static constexpr int MAX_FD = 8192;
-
+    
+    bool close_log_file();
+    bool reopen_log_file();
    private:
     // 文件打开列表，用于记录文件是否被打开
     std::unordered_map<std::string, int> path2fd_;  //<Page文件磁盘路径,Page fd>哈希表
