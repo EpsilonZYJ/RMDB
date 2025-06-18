@@ -131,10 +131,7 @@ single_op ";"|"("|")"|","|"*"|"="|">"|"<"|"."
     yylval->sv_str = std::string(yytext + 1, strlen(yytext) - 2);
     return VALUE_STRING;
 }
-{value_date} {
-    yylval->sv_str = std::string(yytext + 1, strlen(yytext) - 2);
-    return VALUE_DATE;
-}
+
     /* EOF */
 <<EOF>> { return T_EOF; }
     /* unexpected char */

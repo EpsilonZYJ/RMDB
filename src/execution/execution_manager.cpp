@@ -209,6 +209,12 @@ void QlManager::select_from(std::unique_ptr<AbstractExecutor> executorTreeRoot, 
             } else if (col.type == TYPE_STRING) {
                 col_str = std::string((char *)rec_buf, col.len);
                 col_str.resize(strlen(col_str.c_str()));
+            } else if (col.type == TYPE_DATE) { 
+                // Date is stored as a string in the record
+                col_str = std::string((char *)rec_buf, col.len);
+                col_str.resize(strlen(col_str.c_str()));
+            } else {
+                throw IncompatibleTypeError(coltype2str(col.type), "Unknown");
             }
             columns.push_back(col_str);
         }

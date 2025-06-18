@@ -35,6 +35,8 @@ class SeqScanExecutor : public AbstractExecutor {
 
    public:
     SeqScanExecutor(SmManager *sm_manager, std::string tab_name, std::vector<Condition> conds, Context *context) {
+        std::cout << "DEBUG: 使用顺序扫描" << std::endl;
+        
         sm_manager_ = sm_manager;
         tab_name_ = std::move(tab_name);
         conds_ = std::move(conds);

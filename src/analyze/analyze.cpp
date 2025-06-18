@@ -574,7 +574,8 @@ void Analyze::check_clause(const std::vector<std::string> &tab_names,
             rhs_type = rhs_col->type;
         }
 
-        if (!value_type_match(lhs_type, rhs_type)) 
+        if (!value_type_match(lhs_type, rhs_type) &&
+            !(lhs_type == TYPE_DATE && rhs_type == TYPE_STRING)) 
             throw IncompatibleTypeError(coltype2str(lhs_type), coltype2str(rhs_type));
     }
 }

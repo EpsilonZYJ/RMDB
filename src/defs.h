@@ -12,6 +12,8 @@ See the Mulan PSL v2 for more details. */
 
 #include <iostream>
 #include <map>
+#include <errors.h>
+#include <regex>
 
 // 此处重载了<<操作符，在ColMeta中进行了调用
 template<typename T, typename = typename std::enable_if<std::is_enum<T>::value, T>::type>
@@ -41,34 +43,93 @@ struct Rid {
 };
 
 struct Date {
-    std::string year;  // YYYY
-    std::string month; // MM
-    std::string day;   // DD
+    std::string date; // 格式为 "YYYY-MM-DD"
 
-    Date(std::string date) {
-        if (date.size() != 10 || date[4] != '-' || date[7] != '-') {
-            throw InvalidArgumentError(date, "Invalid date format, expected YYYY-MM-DD");
+    Date(std::string date_) : date(std::move(date_)) {
+        if (!check_valid()) {
+            throw InvalidArgumentError("date", "Invalid date");
         }
-        year = date.substr(0, 4);
-        month = date.substr(5, 2);
-        day = date.substr(8, 2);
-    }
-
-    Date(int y, int m, int d) {
-        if (y < 0 || m < 1 || m > 12 || d < 1 || d > 31) {
-            throw InvalidArgumentError("Date", "Invalid date values");
-        }
-        year = std::to_string(y);
-        month = (m < 10 ? "0" : "") + std::to_string(m);
-        day = (d < 10 ? "0" : "") + std::to_string(d);
     }
 
     std::string toString() const {
-        return year + "-" + month + "-" + day;
+        return date;
+    }
+
+    bool check_valid() const {
+        return check_valid(date);
+    }
+
+    static bool check_valid(const std::string &date) {
+        // 首先检查格式是否正确
+        std::regex datetime_regex(R"(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})");
+        if (!std::regex_match(date, datetime_regex)) {
+            return false;
+        }
+        
+        // 接下来检查日期和时间值是否合法
+        try {
+            int year = std::stoi(date.substr(0, 4));
+            int month = std::stoi(date.substr(5, 2));
+            int day = std::stoi(date.substr(8, 2));
+            int hour = std::stoi(date.substr(11, 2));
+            int minute = std::stoi(date.substr(14, 2));
+            int second = std::stoi(date.substr(17, 2));
+            
+            // 检查年月日是否合法
+            if (year < 0 || month < 1 || month > 12 || day < 1) {
+                return false;
+            }
+            
+            // 根据月份获取天数上限
+            int max_days = 31;
+            if (month == 4 || month == 6 || month == 9 || month == 11) {
+                max_days = 30;
+            } else if (month == 2) {
+                // 闰年判断
+                bool is_leap = (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0);
+                max_days = is_leap ? 29 : 28;
+            }
+            if (day > max_days) {
+                return false;
+            }
+            
+            // 检查时分秒是否合法
+            if (hour < 0 || hour > 23 || minute < 0 || minute > 59 || second < 0 || second > 59) {
+                return false;
+            }
+            
+            return true;
+        } catch (const std::exception&) {
+            return false;
+        }
+    }
+
+    friend bool operator==(const Date &x, const Date &y) {
+        return x.date == y.date;
+    }
+
+    friend bool operator!=(const Date &x, const Date &y) {
+        return !(x == y);
+    }
+
+    friend bool operator<(const Date &x, const Date &y) {
+        return x.date < y.date;
+    }
+
+    friend bool operator>(const Date &x, const Date &y) {
+        return x.date > y.date;
+    }
+
+    friend bool operator<=(const Date &x, const Date &y) {
+        return x.date <= y.date;
+    }
+
+    friend bool operator>=(const Date &x, const Date &y) {
+        return x.date >= y.date;
     }
 
     friend std::ostream &operator<<(std::ostream &os, const Date &date) {
-        os << date.year << "-" << date.month << "-" << date.day;
+        os << date;
         return os;
     }
 };

@@ -222,9 +222,9 @@ type:
     {
         $$ = std::make_shared<TypeLen>(SV_TYPE_FLOAT, sizeof(float));
     }
-        DATE
+    |   DATE
     {
-        $$ = std::make_shared<TypeLen>(SV_TYPE_DATE, 10)
+        $$ = std::make_shared<TypeLen>(SV_TYPE_DATE, 19);
     }
     ;
 

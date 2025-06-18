@@ -56,6 +56,10 @@ struct Value {
     }
 
     // Date类型与字符串类型公用str_val（因为底层都是字符串存储）
+    void set_date(std::string date) {
+        type = TYPE_DATE;
+        str_val = std::move(date);
+    }
     void set_date(Date date) {
         type = TYPE_DATE;
         str_val = date.toString();  // YYYY-MM-DD
@@ -215,7 +219,10 @@ struct Value {
             return str_val == rhs.str_val;
         }else if((type==TYPE_DATE)&&(rhs.type==TYPE_DATE)){
             return str_val == rhs.str_val; // Date类型也存储在str_val中
-
+        }else if((type==TYPE_STRING)&&(rhs.type==TYPE_DATE) ||
+                (type==TYPE_DATE)&&(rhs.type==TYPE_STRING)){
+            // 如果左侧是字符串，右侧是日期，则比较字符串
+            return str_val == rhs.str_val; // Date类型也存储在str_val中
         }else{
             throw InternalError("Invalid value type");
         }
@@ -246,6 +253,10 @@ struct Value {
         }else if((type==TYPE_STRING)&&(rhs.type==TYPE_STRING)){
             return str_val < rhs.str_val;
         }else if((type==TYPE_DATE)&&(rhs.type==TYPE_DATE)){
+            return str_val < rhs.str_val; // Date类型也存储在str_val中
+        }else if((type==TYPE_STRING)&&(rhs.type==TYPE_DATE) ||
+                (type==TYPE_DATE)&&(rhs.type==TYPE_STRING)){
+            // 如果左侧是字符串，右侧是日期，则比较字符串
             return str_val < rhs.str_val; // Date类型也存储在str_val中
         }else{
             throw InternalError("Invalid value type");
@@ -312,8 +323,7 @@ struct Value {
         else if(type == TYPE_STRING && new_type == TYPE_FLOAT)
             sscanf(str_val.c_str(), "%f", &float_val);
         else if(type == TYPE_STRING && new_type == TYPE_DATE) {
-            std::regex pattern(R"(^\d{4}-\d{2}-\d{2}$)"); // YYYY-MM-DD
-            if (!std::regex_match(str_val, pattern)) {
+            if (!Date::check_valid(str_val)) {
                 throw InvalidArgumentError(str_val, "Invalid date format, expected YYYY-MM-DD");
             }
         }

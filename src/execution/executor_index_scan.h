@@ -117,6 +117,8 @@ class IndexScanExecutor : public AbstractExecutor {
    public:
     IndexScanExecutor(SmManager *sm_manager, std::string tab_name, std::vector<Condition> conds, std::vector<std::string> index_col_names,
                     Context *context) {
+        std::cout << "DEBUG: 使用索引扫描" << std::endl;
+
         sm_manager_ = sm_manager;
         context_ = context;
         tab_name_ = std::move(tab_name);
