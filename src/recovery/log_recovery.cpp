@@ -169,7 +169,7 @@ See the Mulan PSL v2 for more details. */
             // 清空脏页表和活跃事务表
             active_txn_table_.clear();
             dirty_page_table_.clear();
-            truncate_log_after_recovery();//日志截断
+            //truncate_log_after_recovery();//日志截断
         }
         
         std::cout << "分析阶段完成" << std::endl;
@@ -307,7 +307,7 @@ See the Mulan PSL v2 for more details. */
         // 恢复完成后清空脏页表和活跃事务表
         active_txn_table_.clear();
         dirty_page_table_.clear();
-        truncate_log_after_recovery();//日志截断
+        //truncate_log_after_recovery();//日志截断
         std::cout << "从检查点恢复完成" << std::endl;
     }
 
