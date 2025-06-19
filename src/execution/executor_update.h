@@ -92,7 +92,7 @@ class UpdateExecutor : public AbstractExecutor {
                                index.cols[j].len);
                         offset += index.cols[j].len;
                     }
-                    if (old_keys[i] != new_keys[i] && !ihs[i]->is_unique(new_keys[i], context_->txn_)) {
+                    if (strcmp(old_keys[i], new_keys[i]) != 0 && !ihs[i]->is_unique(new_keys[i], context_->txn_)) {
                         for (int j = 0; j <= i; ++j) {
                             delete []old_keys[j];
                             delete []new_keys[j];
