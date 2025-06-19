@@ -263,9 +263,20 @@ class CheckpointLogRecord: public LogRecord {
             }
         }
         
-        ~CheckpointLogRecord() {
+        CheckpointLogRecord::CheckpointLogRecord(const CheckpointLogRecord& other) : LogRecord(other) {
+            this->active_txns_size_ = other.active_txns_size_;
+            if (other.active_txns_ && other.active_txns_size_ > 0) {
+                this->active_txns_ = new txn_id_t[other.active_txns_size_];
+                memcpy(this->active_txns_, other.active_txns_, sizeof(txn_id_t) * other.active_txns_size_);
+            } else {
+                this->active_txns_ = nullptr;
+            }
+        }
+        
+        CheckpointLogRecord::~CheckpointLogRecord() {
             if (active_txns_) {
                 delete[] active_txns_;
+                active_txns_ = nullptr;
             }
         }
         
