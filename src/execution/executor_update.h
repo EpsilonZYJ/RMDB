@@ -56,6 +56,17 @@ class UpdateExecutor : public AbstractExecutor {
                 auto col_meta = tab_.get_col(set_clauses.lhs.col_name);
                 int offset = col_meta->offset;
                 Value value = set_clauses.rhs; // 拷贝构造避免修改原值
+
+                // 特殊处理日期类型
+                if (col_meta->type == TYPE_DATE && value.type == TYPE_STRING) {
+                    // 如果是日期类型且值是字符串，则将字符串转换为日期格式
+                    Date date(value.str_val);
+                    value.set_date(date);
+                }
+
+                if (!value_type_match(col_meta->type, value.type)){ 
+                    throw IncompatibleTypeError(coltype2str(col_meta->type), coltype2str(value.type));
+                }
                 if(col_meta->type != value.type) 
                     value.value_cast(col_meta->type); // 确保新值与字段类型匹配
                 memcpy(new_record.data + offset, value.raw->data, col_meta->len);

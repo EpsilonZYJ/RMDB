@@ -74,6 +74,7 @@ class IndexScanExecutor : public AbstractExecutor {
                         *(float*)(key + offset) = std::numeric_limits<float>::min();
                         break;
                     case TYPE_STRING:
+                    case TYPE_DATE:
                         memset(key + offset, 0, index_meta_.cols[i].len);
                         break;
                     default:
@@ -102,6 +103,7 @@ class IndexScanExecutor : public AbstractExecutor {
                         *(float*)(key + offset) = std::numeric_limits<float>::max();
                         break;
                     case TYPE_STRING:
+                    case TYPE_DATE:
                         memset(key + offset, 0xFF, index_meta_.cols[i].len);
                         break;
                     default:
@@ -115,6 +117,8 @@ class IndexScanExecutor : public AbstractExecutor {
    public:
     IndexScanExecutor(SmManager *sm_manager, std::string tab_name, std::vector<Condition> conds, std::vector<std::string> index_col_names,
                     Context *context) {
+        std::cout << "DEBUG: 使用索引扫描" << std::endl;
+
         sm_manager_ = sm_manager;
         context_ = context;
         tab_name_ = std::move(tab_name);

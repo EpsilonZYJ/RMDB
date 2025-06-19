@@ -29,7 +29,7 @@ enum AggType {
 namespace ast {
 
 enum SvType {
-    SV_TYPE_INT, SV_TYPE_FLOAT, SV_TYPE_STRING, SV_TYPE_BOOL
+    SV_TYPE_INT, SV_TYPE_FLOAT, SV_TYPE_STRING, SV_TYPE_BOOL, SV_TYPE_DATE
 };
 
 enum SvCompOp {
@@ -155,6 +155,12 @@ struct StringLit : public Value {
     std::string val;
 
     StringLit(std::string val_) : val(std::move(val_)) {}
+};
+
+struct DateLit : public Value {
+    std::string val; // YYYY-MM-DD格式的日期字符串
+
+    DateLit(std::string val_) : val(std::move(val_)) {}
 };
 
 struct BoolLit : public Value {
@@ -328,6 +334,7 @@ struct SemValue {
     int sv_int;
     float sv_float;
     std::string sv_str;
+    std::string sv_date; // 用于存储日期字符串，格式为YYYY-MM-DD
     bool sv_bool;
     OrderByDir sv_orderby_dir;
     std::vector<std::string> sv_strs;

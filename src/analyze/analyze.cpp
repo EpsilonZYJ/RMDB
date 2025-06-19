@@ -116,7 +116,7 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse)
             }
         }
 
-        
+       // TODO orderby不能使用别名
 
         for (auto &item: x->cols) {
             query->cols.emplace_back(TabCol{item->col->tab_name, item->col->col_name});
@@ -238,7 +238,6 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse)
                 // 解析表名，去掉别名部分
                 std::string left_table = join_expr->left;
                 std::string right_table = join_expr->right;
-                
                 // 处理左表可能的别名
                 size_t left_space = left_table.find(' ');
                 if (left_space != std::string::npos) {
@@ -265,11 +264,9 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse)
                     cond.is_join_cond = true;  //标记为JOIN
                     if (join_expr->type == SEMI_JOIN) {
                         cond.is_semi_join = true;  //标记为SEMI JOIN
-                        std::cout << "DEBUG: 检测到SEMI JOIN条件" << std::endl;
-                    }
+                        std::cout << "DEBUG: 检测到SEMI JOIN条件" << std::endl;}
                 }
                 query->join_conds.push_back(join_conds);
-                
                 // 检查JOIN条件
                 check_clause({left_table, right_table}, join_conds,query->tab_alias_map);
             }
@@ -523,6 +520,7 @@ void Analyze::get_clause(const std::vector<std::shared_ptr<ast::BinaryExpr>> &sv
     conds.clear();
     for (auto &expr : sv_conds) {
         Condition cond;
+        cond.rhs_val.set_int(0);  
         cond.lhs_col = {.tab_name = expr->lhs->tab_name, .col_name = expr->lhs->col_name};
         cond.op = convert_sv_comp_op(expr->op);
         if (auto rhs_val = std::dynamic_pointer_cast<ast::Value>(expr->rhs)) {
@@ -574,7 +572,8 @@ void Analyze::check_clause(const std::vector<std::string> &tab_names,
             rhs_type = rhs_col->type;
         }
 
-        if (!value_type_match(lhs_type, rhs_type)) 
+        if (!value_type_match(lhs_type, rhs_type) &&
+            !(lhs_type == TYPE_DATE && rhs_type == TYPE_STRING)) 
             throw IncompatibleTypeError(coltype2str(lhs_type), coltype2str(rhs_type));
     }
 }
@@ -681,6 +680,8 @@ Value Analyze::convert_sv_value(const std::shared_ptr<ast::Value> &sv_val) {
         val.set_float(float_lit->val);
     } else if (auto str_lit = std::dynamic_pointer_cast<ast::StringLit>(sv_val)) {
         val.set_str(str_lit->val);
+    } else if (auto date_lit = std::dynamic_pointer_cast<ast::DateLit>(sv_val)) {
+        val.set_date(date_lit->val);
     } else {
         throw InternalError("Unexpected sv value type");
     }

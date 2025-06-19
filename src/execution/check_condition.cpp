@@ -20,6 +20,10 @@ bool check_condition(const RmRecord& record, TabMeta& tab_, const Condition& con
         lhs_value.float_val = *(float*)lhs_value.raw->data;
     } else if (lhs_value.type == TYPE_STRING) {
         lhs_value.str_val = std::string(lhs_value.raw->data);
+    } else if (lhs_value.type == TYPE_DATE) {
+        lhs_value.str_val = std::string(lhs_value.raw->data);  // Date类型也存储在str_val中
+    } else {
+        throw InternalError("Invalid value type");
     }
     
     // 获取右操作数的值
@@ -33,12 +37,16 @@ bool check_condition(const RmRecord& record, TabMeta& tab_, const Condition& con
         rhs_value.init_raw(len);
         memcpy(rhs_value.raw->data, record.data + rhs_offset, len);
 // TODO 这对吗？
-        if (lhs_value.type == TYPE_INT) {
-            lhs_value.int_val = *(int*)lhs_value.raw->data;
-        } else if (lhs_value.type == TYPE_FLOAT) {
-            lhs_value.float_val = *(float*)lhs_value.raw->data;
-        } else if (lhs_value.type == TYPE_STRING) {
-            lhs_value.str_val = std::string(lhs_value.raw->data);
+        if (rhs_value.type == TYPE_INT) {
+            rhs_value.int_val = *(int*)rhs_value.raw->data;
+        } else if (rhs_value.type == TYPE_FLOAT) {
+            rhs_value.float_val = *(float*)rhs_value.raw->data;
+        } else if (rhs_value.type == TYPE_STRING) {
+            rhs_value.str_val = std::string(rhs_value.raw->data);
+        } else if (rhs_value.type == TYPE_DATE) {
+            rhs_value.str_val = std::string(rhs_value.raw->data);  // Date类型也存储在str_val中
+        } else {
+            throw InternalError("Invalid value type");
         }
     }
 
@@ -68,6 +76,8 @@ bool check_condition(const RmRecord& record,
         lhs_value.float_val = *(float*)lhs_value.raw->data;
     } else if (lhs_value.type == TYPE_STRING) {
         lhs_value.str_val = std::string(lhs_value.raw->data);
+    }else if (lhs_value.type == TYPE_DATE) { 
+        lhs_value.str_val = std::string(lhs_value.raw->data);
     }
     
     // 获取右操作数的值
@@ -76,7 +86,7 @@ bool check_condition(const RmRecord& record,
         rhs_value = cond.rhs_val;
     } else {
         int rhs_offset = rhs_col.offset;
-        rhs_value.type = lhs_col.type;
+        rhs_value.type = rhs_col.type;
         int len = rhs_col.len;
         rhs_value.init_raw(len);
         memcpy(rhs_value.raw->data, record.data + rhs_offset, len);
@@ -86,6 +96,8 @@ bool check_condition(const RmRecord& record,
         } else if (rhs_value.type == TYPE_FLOAT) {
             rhs_value.float_val = *(float*)rhs_value.raw->data;
         } else if (rhs_value.type == TYPE_STRING) {
+            rhs_value.str_val = std::string(rhs_value.raw->data);
+        }else if (rhs_value.type == TYPE_DATE) {  
             rhs_value.str_val = std::string(rhs_value.raw->data);
         }
     }

@@ -51,7 +51,15 @@ class InsertExecutor : public AbstractExecutor {
         for (size_t i = 0; i < values_.size(); i++) { // 依次遍历每个待插入的值
             auto &col = tab_.cols[i]; // 类型为ColMeta
             auto &val = values_[i];  //（父）类型为Value
-            if (!value_type_match(col.type, val.type)) { // 判断类型是否符合
+            
+            // 特殊处理日期类型
+            if (col.type == TYPE_DATE && val.type == TYPE_STRING) {
+                // 如果是日期类型且值是字符串，则将字符串转换为日期格式
+                Date date(val.str_val);
+                val.set_date(date);
+            }
+
+            if (!value_type_match(col.type, val.type)){ 
                 throw IncompatibleTypeError(coltype2str(col.type), coltype2str(val.type));
             }
             if(col.type != val.type) {

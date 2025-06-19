@@ -214,6 +214,12 @@ void QlManager::select_from(std::unique_ptr<AbstractExecutor> executorTreeRoot, 
             } else if (col.type == TYPE_STRING) {
                 col_str = std::string((char *)rec_buf, col.len);
                 col_str.resize(strlen(col_str.c_str()));
+            } else if (col.type == TYPE_DATE) { 
+                // Date is stored as a string in the record
+                col_str = std::string((char *)rec_buf, col.len);
+                col_str.resize(strlen(col_str.c_str()));
+            } else {
+                throw IncompatibleTypeError(coltype2str(col.type), "Unknown");
             }
             columns.push_back(col_str);
         }
@@ -240,31 +246,3 @@ void QlManager::run_dml(std::unique_ptr<AbstractExecutor> exec){
     exec->Next();
 }
 
-// void QlManager::run_explain(std::shared_ptr<Plan> plan, Context *context) {
-//     if (auto x = std::dynamic_pointer_cast<ExplainPlan>(plan)) {
-//         // 创建ExplainExecutor
-//         auto executor = x->get_executor(context);
-        
-//         // 直接获取执行计划文本并输出，不添加表格格式
-//         executor->beginTuple();
-//         std::unique_ptr<RmRecord> record = executor->Next();
-//         if (record) {
-//             // 获取执行计划文本
-//             std::string explain_text(record->data);
-            
-//             // 将结果写入上下文缓冲区
-//             memcpy(context->data_send_ + *(context->offset_), 
-//                    explain_text.c_str(), explain_text.length());
-//             *(context->offset_) += explain_text.length();
-            
-//             // 写入输出文件但不添加边框
-//             std::fstream outfile;
-//             outfile.open("output.txt", std::ios::out | std::ios::app);
-//             outfile << explain_text << std::endl;
-//             outfile.close();
-            
-//             // 可选：打印调试信息
-//             std::cout << "DEBUG: EXPLAIN输出完成" << std::endl;
-//         }
-//     }
-// }

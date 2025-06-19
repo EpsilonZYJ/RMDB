@@ -38,7 +38,8 @@ struct AggregateKeyHash {
                 case TYPE_FLOAT:
                     hash_combine(hash, std::hash<float>()(value.float_val));
                     break;
-                case TYPE_STRING:
+                case TYPE_STRING: 
+                case TYPE_DATE:
                     hash_combine(hash, std::hash<std::string>()(value.str_val));
                     break;
             }
@@ -277,7 +278,8 @@ private:
                 v.set_float(val);
                 break;
             }
-            case TYPE_STRING: {
+            case TYPE_STRING: 
+            case TYPE_DATE:{
                 std::string val(record->data + col.offset, col.len);
                 v.set_str(val);
                 break;

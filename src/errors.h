@@ -170,3 +170,9 @@ class SemiJoinColumnError : public RMDBError {
         explicit SemiJoinColumnError(const std::string &column_names) : 
             RMDBError("SEMI JOIN can only select columns from the left table. Invalid columns: " + column_names) {}
     };
+
+class InvalidArgumentError : public RMDBError {
+   public:
+    InvalidArgumentError(const std::string &arg_name, const std::string &reason)
+        : RMDBError("Invalid argument: " + arg_name + ", reason: " + reason) {}
+};

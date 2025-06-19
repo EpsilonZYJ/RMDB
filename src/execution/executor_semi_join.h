@@ -34,6 +34,7 @@ class SemiJoinExecutor : public AbstractExecutor {
             case TYPE_FLOAT:
                 return compareFloats(*(float*)left_value, *(float*)right_value, op);
             case TYPE_STRING:
+            case TYPE_DATE:
                 return compareStrings(left_value, right_value, op);
             default:
                 std::cout << "DEBUG: 不支持的数据类型: " << type << std::endl;
