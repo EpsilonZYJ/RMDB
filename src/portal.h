@@ -239,7 +239,6 @@ class Portal
                 );
             } else {
                 // 默认使用嵌套循环连接
-                std::cout << "DEBUG: 创建全连接执行器SemiJoinExecutor" << std::endl;
                 return std::make_unique<NestedLoopJoinExecutor>(
                     std::move(left), 
                     std::move(right), 

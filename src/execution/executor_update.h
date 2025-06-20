@@ -102,7 +102,7 @@ class UpdateExecutor : public AbstractExecutor {
                         delete []ihs;
                         throw IndexNotUniqueError(sm_manager_->get_ix_manager()->get_index_name(tab_name_, index.cols));
                     }
-                    ++i;
+                    //++i;
             }
 
             // 在更新前，添加写记录到事务写集合

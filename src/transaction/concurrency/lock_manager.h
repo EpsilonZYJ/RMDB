@@ -43,6 +43,23 @@ class LockManager {
     };
 
 public:
+    bool unlock_all(Transaction* txn) {
+        if (txn == nullptr) return false;
+        
+        bool success = true;
+        auto lock_set = *(txn->get_lock_set());
+        
+        for (const auto& lock_id : lock_set) {
+            // 直接复用现有的unlock方法
+            if (!unlock(txn, lock_id)) {
+                success = false;
+            }
+        }
+        
+        // 清空事务的锁集合
+        txn->get_lock_set()->clear();
+        return success;
+    }
     LockManager() {}
 
     ~LockManager() {}

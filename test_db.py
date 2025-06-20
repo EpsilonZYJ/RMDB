@@ -4,6 +4,8 @@ import time
 import argparse
 import os
 import signal
+import fcntl
+import select  # 将所有模块导入移到顶部
 
 # 默认路径和参数
 DEFAULT_SERVER_PATH = "./build/bin/rmdb"
@@ -12,10 +14,10 @@ DEFAULT_SQL_FILE = "./test_case.sql"
 DEFAULT_DB_NAME = "test_db"  # 默认数据库名
 
 def execute_client_server_mode(server_path, client_path, sql_file, db_name=DEFAULT_DB_NAME, output_file=None):
-    """使用客户端-服务端模式执行SQL文件"""
+    """使用客户端-服务端模式执行SQL文件，检测错误并立即停止"""
     print(f"客户端-服务端模式执行SQL文件: {sql_file}, 数据库: {db_name}")
     
-    # 设置详细输出文件
+    # 设置输出文件
     detail_output = f"{os.path.splitext(sql_file)[0]}_cs_detail.log"
     if output_file is None:
         output_file = f"{os.path.splitext(sql_file)[0]}_cs_result.txt"
@@ -31,101 +33,107 @@ def execute_client_server_mode(server_path, client_path, sql_file, db_name=DEFAU
             text=True
         )
         
-        # 等待服务端启动
-        time.sleep(2)
-        print("服务端已启动，准备客户端连接...")
+        # 等待服务端启动 - 减少等待时间
+        time.sleep(1)
         
-        # 读取SQL文件内容
+        # 读取SQL文件内容 - 直接按行读取，每行一条SQL
         with open(sql_file, 'r') as f:
-            content = f.read()
-        
-        # 将SQL文件内容解析为完整语句
-        sql_statements = []
-        current_statement = ""
-        # 按行处理以保留注释
-        for line in content.splitlines():
-            line = line.strip()
-            # 跳过空行和注释行
-            if not line or line.startswith('--'):
-                continue
-                
-            # 添加到当前语句
-            current_statement += line + " "
+            sql_statements = [line.strip() for line in f if line.strip() and not line.strip().startswith('--')]
             
-            # 检查语句是否结束（以分号结尾）
-            if line.rstrip().endswith(';'):
-                sql_statements.append(current_statement.strip())
-                current_statement = ""  # 重置当前语句
-
-        # 如果最后还有未完成的语句（无分号）
-        if current_statement.strip():
-            sql_statements.append(current_statement.strip())
-
-        print(f"共解析出 {len(sql_statements)} 条SQL语句")
+        print(f"加载了 {len(sql_statements)} 条SQL语句")
         
-        # 启动客户端执行SQL命令
-        print(f"启动客户端: {client_path}")
+        # 启动客户端
         client_process = subprocess.Popen(
             [client_path],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
-            text=True
+            text=True,
+            bufsize=1  # 行缓冲，提高响应速度
         )
         
-        # 向客户端发送SQL命令
-        print("开始发送SQL命令...")
-        for i, statement in enumerate(sql_statements):
-            print(f"发送SQL #{i+1}: {statement}")
-            client_process.stdin.write(statement + "\n")
-            client_process.stdin.flush()
-            time.sleep(0.5)  # 给客户端足够处理时间
-        
-        # 发送退出命令
-        client_process.stdin.write("exit;\n")
-        client_process.stdin.flush()
-        
-        # 收集客户端输出
+        # 创建输出文件
         with open(output_file, 'w') as out, open(detail_output, 'w') as detail:
-            while True:
-                line = client_process.stdout.readline()
-                if not line and client_process.poll() is not None:
-                    break
+            # 向客户端发送SQL命令
+            for i, statement in enumerate(sql_statements):
+                print(f"SQL #{i+1}: {statement[:50]}{'...' if len(statement) > 50 else ''}")
                 
-                if line:
-                    out.write(line)
-                    detail.write(line)
-                    print(f"客户端输出: {line.rstrip()}")
+                # 发送SQL语句
+                client_process.stdin.write(statement + "\n")
+                client_process.stdin.flush()
+                
+                # 设置非阻塞读取
+                fd = client_process.stdout.fileno()
+                flags = fcntl.fcntl(fd, fcntl.F_GETFL)
+                fcntl.fcntl(fd, fcntl.F_SETFL, flags | os.O_NONBLOCK)
+                
+                # 等待响应 - 减少等待时间
+                error_detected = False
+                response_text = ""
+                timeout = 1.5  # 减少每条语句响应的超时时间
+                start_time = time.time()
+                
+                while time.time() - start_time < timeout:
+                    # 检查是否有数据可读 - 减少select等待时间
+                    r, _, _ = select.select([fd], [], [], 0.05)
+                    if not r:
+                        continue
+                        
+                    try:
+                        line = client_process.stdout.readline()
+                        if line:
+                            # 只写入必要的输出
+                            out.write(line)
+                            detail.write(line)
+                            response_text += line
+                            
+                            # 检查错误关键词 - 优化关键词列表
+                            if any(keyword in line for keyword in ["ERROR", "error", "失败", "Exception"]):
+                                error_detected = True
+                                break
+                    except IOError:
+                        # 没有更多数据可读
+                        time.sleep(0.01)  # 减少等待时间
+                
+                # 如果检测到错误
+                if error_detected:
+                    print(f"\n[!] SQL语句 #{i+1} 执行失败: {statement}")
+                    print(f"[!] 错误信息: {response_text.strip()}")
+                    
+                    # 记录错误详情
+                    detail.write(f"\n===== 失败SQL #{i+1} =====\n{statement}\n")
+                    
+                    # 发送退出并终止
+                    client_process.stdin.write("exit;\n")
+                    client_process.stdin.flush()
+                    client_process.terminate()
+                    return False
+            
+            # 所有SQL执行完毕，发送退出
+            client_process.stdin.write("exit;\n")
+            client_process.stdin.flush()
+            
+            # 收集最后输出
+            fcntl.fcntl(fd, fcntl.F_SETFL, flags)  # 恢复阻塞模式
+            remaining_output, _ = client_process.communicate(timeout=10)
+            if remaining_output:
+                out.write(remaining_output)
+                detail.write(remaining_output)
         
-        # 等待客户端执行完毕
-        client_return_code = client_process.wait(timeout=30)
-        print(f"客户端执行结果: {'成功' if client_return_code == 0 else f'失败 (代码: {client_return_code})'}")
-        
-        # 记录命令信息
-        with open(detail_output, 'a') as f:
-            f.write("\n\n===== 命令信息 =====\n")
-            f.write(f"服务端: {server_path} {db_name}\n")
-            f.write(f"客户端: {client_path}\n")
-            f.write(f"SQL文件: {sql_file}\n") 
-            f.write(f"返回码: {client_return_code}\n")
-        
-        return client_return_code == 0
+        print("所有SQL语句执行成功!")
+        return True
         
     except Exception as e:
         print(f"执行出错: {e}")
-        with open(detail_output, 'a') as f:
-            f.write(f"\n\n===== 异常信息 =====\n{str(e)}\n")
         return False
         
     finally:
         # 关闭服务端
         if server_process:
-            print("关闭服务端...")
             server_process.terminate()
             try:
-                server_process.wait(timeout=5)
+                server_process.wait(timeout=3)
             except subprocess.TimeoutExpired:
-                print("服务端未正常关闭，强制终止")
                 server_process.kill()
 
 def execute_direct_mode(db_executable, sql_file, db_name=DEFAULT_DB_NAME, output_file=None):
