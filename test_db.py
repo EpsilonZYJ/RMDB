@@ -1,17 +1,59 @@
-#!/usr/bin/env python3
 import subprocess
 import time
 import argparse
 import os
 import signal
 import fcntl
-import select  # 将所有模块导入移到顶部
+import select 
 
 # 默认路径和参数
 DEFAULT_SERVER_PATH = "./build/bin/rmdb"
 DEFAULT_CLIENT_PATH = "./rmdb_client/build/rmdb_client"
 DEFAULT_SQL_FILE = "./test_case.sql"
 DEFAULT_DB_NAME = "test_db"  # 默认数据库名
+
+def parse_sql_statements(sql_file):
+    """按分号分割SQL语句，支持多行和注释跳过"""
+    statements = []
+    with open(sql_file, 'r') as f:
+        sql = ''
+        in_multiline_comment = False
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            # 处理多行注释
+            if in_multiline_comment:
+                if '*/' in line:
+                    in_multiline_comment = False
+                    line = line.split('*/', 1)[1].strip()
+                else:
+                    continue
+            if line.startswith('/*'):
+                in_multiline_comment = True
+                if '*/' in line:
+                    in_multiline_comment = False
+                    line = line.split('*/', 1)[1].strip()
+                else:
+                    continue
+            # 跳过单行注释
+            if line.startswith('--') or line.startswith('//'):
+                continue
+            # 去除行内注释
+            if '--' in line:
+                line = line.split('--', 1)[0].strip()
+            if '//' in line:
+                line = line.split('//', 1)[0].strip()
+            sql += (' ' if sql else '') + line
+            while ';' in sql:
+                idx = sql.find(';')
+                statement = sql[:idx+1].strip()
+                if statement:
+                    statements.append(statement)
+                sql = sql[idx+1:].strip()
+        if sql:
+            statements.append(sql+';')
+    return statements
 
 def execute_client_server_mode(server_path, client_path, sql_file, db_name=DEFAULT_DB_NAME, output_file=None):
     """使用客户端-服务端模式执行SQL文件，检测错误并立即停止"""
@@ -36,10 +78,8 @@ def execute_client_server_mode(server_path, client_path, sql_file, db_name=DEFAU
         # 等待服务端启动 - 减少等待时间
         time.sleep(1)
         
-        # 读取SQL文件内容 - 直接按行读取，每行一条SQL
-        with open(sql_file, 'r') as f:
-            sql_statements = [line.strip() for line in f if line.strip() and not line.strip().startswith('--')]
-            
+        # 使用 robust SQL 解析
+        sql_statements = parse_sql_statements(sql_file)
         print(f"加载了 {len(sql_statements)} 条SQL语句")
         
         # 启动客户端
@@ -67,27 +107,25 @@ def execute_client_server_mode(server_path, client_path, sql_file, db_name=DEFAU
                 flags = fcntl.fcntl(fd, fcntl.F_GETFL)
                 fcntl.fcntl(fd, fcntl.F_SETFL, flags | os.O_NONBLOCK)
                 
-                # 等待响应 - 减少等待时间
+                # 等待响应
                 error_detected = False
                 response_text = ""
-                timeout = 1.5  # 减少每条语句响应的超时时间
+                timeout = 0.1 
                 start_time = time.time()
                 
                 while time.time() - start_time < timeout:
-                    # 检查是否有数据可读 - 减少select等待时间
-                    r, _, _ = select.select([fd], [], [], 0.05)
+                    # 检查是否有数据可读
+                    r, _, _ = select.select([fd], [], [], 0.02)
                     if not r:
                         continue
                         
                     try:
                         line = client_process.stdout.readline()
                         if line:
-                            # 只写入必要的输出
                             out.write(line)
                             detail.write(line)
-                            response_text += line
-                            
-                            # 检查错误关键词 - 优化关键词列表
+                            response_text += line                
+                            # 检查错误关键词
                             if any(keyword in line for keyword in ["ERROR", "error", "失败", "Exception"]):
                                 error_detected = True
                                 break

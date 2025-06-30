@@ -187,7 +187,7 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse)
         for (auto &group_by: x->group_bys) 
             query->group_bys.emplace_back(TabCol{group_by->tab_name, group_by->col_name});
         for (auto &tab_col: query->group_bys) // 校验group by的列
-            tab_col = check_column(all_cols, tab_col); //! 注意赋值
+            tab_col = check_column(all_cols, tab_col, query->tab_alias_map);  //! 注意赋值
         
         // 检验group by与target list的列的兼容性
         if(x->group_bys.empty()) { // 没有group by
@@ -217,7 +217,8 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse)
         if(x->has_sort) {
             TabCol tab_col = TabCol{std::move(x->order->cols->tab_name), 
                                     std::move(x->order->cols->col_name)};
-            tab_col = check_column(all_cols, tab_col);  //! 注意赋值
+            // 使用带别名映射的check_column版本
+            tab_col = check_column(all_cols, tab_col, query->tab_alias_map);
             query->order_bys = std::move(tab_col);
         }
 

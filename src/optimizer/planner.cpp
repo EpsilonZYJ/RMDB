@@ -480,13 +480,28 @@
             
             // 过滤列单独存储，不合并到required_cols
             if (filter_cols_by_table.find(table) != filter_cols_by_table.end()) {
-                // 仅添加那些不在输出和连接列中的过滤列
                 for (const auto& col : filter_cols_by_table[table]) {
-                    // 检查此列是否已经是输出列或连接列
-                    bool already_required = required_cols_by_table[table].find(col) != 
-                                        required_cols_by_table[table].end();
-                    if (!already_required) {
-                        // 单独存储而不是合并
+                    // 检查此列是否用于连接不同表（WHERE子句中的隐式连接）
+                    bool is_join_column = false;
+                    for (const auto& cond : query->conds) {
+                        if (!cond.is_rhs_val && 
+                            cond.lhs_col.tab_name != cond.rhs_col.tab_name) {
+                            // 这是一个连接不同表的条件
+                            if ((cond.lhs_col.tab_name == table && 
+                                 cond.lhs_col.col_name == col) ||
+                                (cond.rhs_col.tab_name == table && 
+                                 cond.rhs_col.col_name == col)) {
+                                is_join_column = true;
+                                break;
+                            }
+                        }
+                    }
+                    
+                    if (is_join_column) {
+                        // 这是连接列，必须保留
+                        required_cols_by_table[table].insert(col);
+                    } else {
+                        // 非连接列，可以单独存储
                         query->table_filter_cols[table].insert(col);
                     }
                 }
