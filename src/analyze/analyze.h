@@ -21,6 +21,7 @@ See the Mulan PSL v2 for more details. */
 #include "common/common.h"
 #include <map>
 #include <set>
+#include "parser/ast.h"
 class Query{
     public:
     std::shared_ptr<ast::TreeNode> parse;//抽象语法树
@@ -47,7 +48,6 @@ class Query{
     TabCol order_bys;
     // limit n
     int limit = -1; // -1表示没有限制
-
     std::map<std::string, std::set<std::string>> table_filter_cols; // 仅用于过滤的列
     
     //join的连接条件

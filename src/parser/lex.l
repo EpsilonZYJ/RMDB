@@ -113,7 +113,12 @@ single_op ";"|"("|")"|","|"*"|"="|">"|"<"|"."
 ">=" { return GEQ; }
 "<=" { return LEQ; }
 "<>" { return NEQ; }
+"+" { yylval->sv_char = '+'; return OP_PLUS; }
+"-" { yylval->sv_char = '-'; return OP_MINUS; }
+
+"/" { yylval->sv_char = '/'; return OP_DIVIDE; }
 {single_op} { return yytext[0]; }
+
     /* id */
 {identifier} {
     yylval->sv_str = yytext;

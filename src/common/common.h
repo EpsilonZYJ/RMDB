@@ -375,4 +375,7 @@ struct Condition {
 struct SetClause {
     TabCol lhs;
     Value rhs;
+    bool is_expr = false;   // 是否为表达式更新
+    TabCol ref_col;         // 引用的列
+    char op_type = '\0';    // 运算符类型(+,-,*,/)
 };

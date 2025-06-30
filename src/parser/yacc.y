@@ -34,6 +34,7 @@ COUNT MAX MIN SUM AVG AS GROUP HAVING LIMIT STATIC_CHECKPOINT
 %token <sv_float> VALUE_FLOAT
 %token <sv_date> VALUE_DATE
 %token <sv_bool> VALUE_BOOL
+%token <sv_char> OP_PLUS OP_MINUS OP_TIMES OP_DIVIDE
 
 // specify types for non-terminal symbol
 %type <sv_node> stmt dbStmt ddl dml txnStmt setStmt
@@ -367,6 +368,22 @@ setClause:
         colName '=' value
     {
         $$ = std::make_shared<SetClause>($1, $3);
+    }
+    |   colName '=' colName OP_PLUS value
+    {
+        $$ = std::make_shared<SetClause>($1, $3, '+', $5);
+    }
+    |   colName '=' colName OP_MINUS value
+    {
+        $$ = std::make_shared<SetClause>($1, $3, '-', $5);
+    }
+    |   colName '=' colName '*' value
+    {
+        $$ = std::make_shared<SetClause>($1, $3, '*', $5);
+    }
+    |   colName '=' colName OP_DIVIDE value
+    {
+        $$ = std::make_shared<SetClause>($1, $3, '/', $5);
     }
     ;
 

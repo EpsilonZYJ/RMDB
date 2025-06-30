@@ -110,7 +110,11 @@ extern int yydebug;
     VALUE_INT = 311,               /* VALUE_INT  */
     VALUE_FLOAT = 312,             /* VALUE_FLOAT  */
     VALUE_DATE = 313,              /* VALUE_DATE  */
-    VALUE_BOOL = 314               /* VALUE_BOOL  */
+    VALUE_BOOL = 314,              /* VALUE_BOOL  */
+    OP_PLUS = 315,                 /* OP_PLUS  */
+    OP_MINUS = 316,                /* OP_MINUS  */
+    OP_TIMES = 317,                /* OP_TIMES  */
+    OP_DIVIDE = 318                /* OP_DIVIDE  */
   };
   typedef enum yytokentype yytoken_kind_t;
 #endif

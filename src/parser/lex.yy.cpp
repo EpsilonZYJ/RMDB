@@ -1,6 +1,6 @@
-#line 2 "lex.yy.cpp"
+#line 2 "/home/wangyiming/db2025-yoursql/src/parser/lex.yy.cpp"
 
-#line 4 "lex.yy.cpp"
+#line 4 "/home/wangyiming/db2025-yoursql/src/parser/lex.yy.cpp"
 
 #define  YY_INT_ALIGNED short int
 
@@ -379,8 +379,8 @@ static void yynoreturn yy_fatal_error ( const char* msg  );
 	(yy_hold_char) = *yy_cp; \
 	*yy_cp = '\0'; \
 	(yy_c_buf_p) = yy_cp;
-#define YY_NUM_RULES 65
-#define YY_END_OF_BUFFER 66
+#define YY_NUM_RULES 68
+#define YY_END_OF_BUFFER 69
 /* This struct is not used in this scanner,
    but its presence is necessary. */
 struct yy_trans_info
@@ -390,32 +390,32 @@ struct yy_trans_info
 	};
 static const flex_int16_t yy_accept[238] =
     {   0,
-        0,    0,    0,    0,   66,   64,    6,    7,    7,   64,
-       59,   64,   64,   64,   61,   59,   59,   60,   60,   60,
-       60,   60,   60,   60,   60,   60,   60,   60,   60,   60,
-       60,   60,   60,   60,   60,   60,   60,    3,    4,    6,
-        7,    0,   63,   61,    5,    1,   62,   57,   58,   56,
-       60,   60,   60,   44,   60,   60,   49,   60,   60,   60,
-       60,   60,   60,   60,   60,   60,   60,   60,   60,   60,
-       60,   60,   60,   60,   60,   60,   35,   60,   60,   60,
-       60,   60,   60,   60,   60,   60,   60,   60,    2,    5,
-       62,   60,   33,   50,   43,   60,   60,   60,   60,   60,
+        0,    0,    0,    0,   69,   67,    6,    7,    7,   67,
+       62,   59,   60,   61,   64,   62,   62,   63,   63,   63,
+       63,   63,   63,   63,   63,   63,   63,   63,   63,   63,
+       63,   63,   63,   63,   63,   63,   63,    3,    4,    6,
+        7,    0,   66,   64,    5,    1,   65,   57,   58,   56,
+       63,   63,   63,   44,   63,   63,   49,   63,   63,   63,
+       63,   63,   63,   63,   63,   63,   63,   63,   63,   63,
+       63,   63,   63,   63,   63,   63,   35,   63,   63,   63,
+       63,   63,   63,   63,   63,   63,   63,   63,    2,    5,
+       65,   63,   33,   50,   43,   63,   63,   63,   63,   63,
 
-       60,   60,   60,   60,   60,   60,   60,   60,   60,   60,
-       60,   60,   60,   60,   60,   28,   60,   60,   40,   41,
-       60,   60,   60,   60,   25,   60,   60,   42,   60,   60,
-       60,   60,   60,   60,   60,   29,   60,   60,   60,   31,
-       60,   17,   16,   60,   37,   60,   60,   60,   22,   60,
-       60,   38,   60,   60,   19,   34,   60,   60,   60,   60,
-       36,    8,   60,   60,   54,   60,   60,   60,   11,    9,
-       60,   39,   60,   60,   60,   60,   55,   30,   46,   60,
-       32,   60,   48,   47,   60,   60,   60,   15,   60,   60,
-       23,   10,   14,   21,   60,   60,   45,   18,   60,   26,
+       63,   63,   63,   63,   63,   63,   63,   63,   63,   63,
+       63,   63,   63,   63,   63,   28,   63,   63,   40,   41,
+       63,   63,   63,   63,   25,   63,   63,   42,   63,   63,
+       63,   63,   63,   63,   63,   29,   63,   63,   63,   31,
+       63,   17,   16,   63,   37,   63,   63,   63,   22,   63,
+       63,   38,   63,   63,   19,   34,   63,   63,   63,   63,
+       36,    8,   63,   63,   54,   63,   63,   63,   11,    9,
+       63,   39,   63,   63,   63,   63,   55,   30,   46,   63,
+       32,   63,   48,   47,   63,   63,   63,   15,   63,   63,
+       23,   10,   14,   21,   63,   63,   45,   18,   63,   26,
 
-       60,   13,   24,   20,   60,   27,   60,   60,   60,   60,
-       12,   60,   60,   60,   60,   60,   60,   60,   60,   60,
-       60,   60,   60,   60,   60,   60,   60,   60,   60,   60,
-       51,   60,   60,   52,   60,   53,    0
+       63,   13,   24,   20,   63,   27,   63,   63,   63,   63,
+       12,   63,   63,   63,   63,   63,   63,   63,   63,   63,
+       63,   63,   63,   63,   63,   63,   63,   63,   63,   63,
+       51,   63,   63,   52,   63,   53,    0
     } ;
 
 static const YY_CHAR yy_ec[256] =
@@ -690,9 +690,9 @@ char *yytext;
         } \
     }
 
-#line 694 "lex.yy.cpp"
+#line 694 "/home/wangyiming/db2025-yoursql/src/parser/lex.yy.cpp"
 
-#line 696 "lex.yy.cpp"
+#line 696 "/home/wangyiming/db2025-yoursql/src/parser/lex.yy.cpp"
 
 #define INITIAL 0
 #define STATE_COMMENT 1
@@ -930,7 +930,7 @@ YY_DECL
 
 #line 48 "lex.l"
     /* block comment */
-#line 934 "lex.yy.cpp"
+#line 934 "/home/wangyiming/db2025-yoursql/src/parser/lex.yy.cpp"
 
 	while ( /*CONSTCOND*/1 )		/* loops until end-of-file is reached */
 		{
@@ -1292,38 +1292,53 @@ YY_RULE_SETUP
 case 59:
 YY_RULE_SETUP
 #line 117 "lex.l"
+{ yylval->sv_char = '+'; return OP_PLUS; }
+	YY_BREAK
+case 60:
+YY_RULE_SETUP
+#line 118 "lex.l"
+{ yylval->sv_char = '-'; return OP_MINUS; }
+	YY_BREAK
+case 61:
+YY_RULE_SETUP
+#line 120 "lex.l"
+{ yylval->sv_char = '/'; return OP_DIVIDE; }
+	YY_BREAK
+case 62:
+YY_RULE_SETUP
+#line 121 "lex.l"
 { return yytext[0]; }
 	YY_BREAK
 /* id */
-case 60:
+case 63:
 YY_RULE_SETUP
-#line 119 "lex.l"
+#line 124 "lex.l"
 {
     yylval->sv_str = yytext;
     return IDENTIFIER;
 }
 	YY_BREAK
 /* literals */
-case 61:
+case 64:
 YY_RULE_SETUP
-#line 124 "lex.l"
+#line 129 "lex.l"
 {
     yylval->sv_int = atoi(yytext);
     return VALUE_INT;
 }
 	YY_BREAK
-case 62:
+case 65:
 YY_RULE_SETUP
-#line 128 "lex.l"
+#line 133 "lex.l"
 {
     yylval->sv_float = atof(yytext);
     return VALUE_FLOAT;
 }
 	YY_BREAK
-case 63:
-/* rule 63 can match eol */
+case 66:
+/* rule 66 can match eol */
 YY_RULE_SETUP
-#line 132 "lex.l"
+#line 137 "lex.l"
 {
     yylval->sv_str = std::string(yytext + 1, strlen(yytext) - 2);
     return VALUE_STRING;
@@ -1332,21 +1347,21 @@ YY_RULE_SETUP
 /* EOF */
 case YY_STATE_EOF(INITIAL):
 case YY_STATE_EOF(STATE_COMMENT):
-#line 138 "lex.l"
+#line 143 "lex.l"
 { return T_EOF; }
 	YY_BREAK
 /* unexpected char */
-case 64:
+case 67:
 YY_RULE_SETUP
-#line 140 "lex.l"
+#line 145 "lex.l"
 { std::cerr << "Lexer Error: unexpected character " << yytext[0] << std::endl; }
 	YY_BREAK
-case 65:
+case 68:
 YY_RULE_SETUP
-#line 141 "lex.l"
+#line 146 "lex.l"
 ECHO;
 	YY_BREAK
-#line 1350 "lex.yy.cpp"
+#line 1365 "/home/wangyiming/db2025-yoursql/src/parser/lex.yy.cpp"
 
 	case YY_END_OF_BUFFER:
 		{
@@ -2312,6 +2327,6 @@ void yyfree (void * ptr )
 
 #define YYTABLES_NAME "yytables"
 
-#line 141 "lex.l"
+#line 146 "lex.l"
 
 

@@ -365,11 +365,37 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse)
             SetClause set_clause;
             set_clause.lhs.tab_name = x->tab_name;
             set_clause.lhs.col_name = sv_set_clause->col_name;
-            set_clause.rhs = convert_sv_value(sv_set_clause->val);
             
-            // 初始化raw字段
-            auto col = tab.get_col(set_clause.lhs.col_name);
-            set_clause.rhs.init_raw(col->len);
+            // 根据表达式类型处理
+            if (sv_set_clause->expr_type == ast::SIMPLE_VALUE) {
+                // 原来的简单赋值处理
+                set_clause.rhs = convert_sv_value(sv_set_clause->val);
+            } else {
+                // 处理列引用表达式
+                set_clause.rhs = convert_sv_value(sv_set_clause->val); 
+                
+                // 检查引用的列是否存在
+                TabCol ref_col = {.tab_name = x->tab_name, .col_name = sv_set_clause->ref_col_name};
+                
+                // 创建临时的cols变量，因为当前上下文中没有all_cols
+                std::vector<ColMeta> cols;
+                get_all_cols({x->tab_name}, cols);
+                ref_col = check_column(cols, ref_col);
+                
+                // 检查操作数类型兼容性
+                auto target_col = tab.get_col(set_clause.lhs.col_name);
+                auto ref_col_meta = tab.get_col(ref_col.col_name);
+                if (!value_type_match(target_col->type, ref_col_meta->type) ||
+                    !value_type_match(target_col->type, set_clause.rhs.type)) {
+                    throw IncompatibleTypeError(coltype2str(target_col->type), 
+                                               "Expression operand types");
+                }
+                
+                
+                set_clause.is_expr = true;                     // 标记为表达式更新
+                set_clause.ref_col = ref_col;                  // 引用列
+                set_clause.op_type = sv_set_clause->op;        // 运算符
+            }
             
             query->set_clauses.push_back(set_clause);
         }

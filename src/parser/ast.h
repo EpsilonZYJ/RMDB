@@ -177,12 +177,29 @@ struct Col : public Expr {
             tab_name(std::move(tab_name_)), col_name(std::move(col_name_)) {}
 };
 
-struct SetClause : public TreeNode {
-    std::string col_name;
-    std::shared_ptr<Value> val;
+// 定义更新表达式类型
+enum UpdateExprType {
+    SIMPLE_VALUE,  // 简单赋值
+    COLUMN_EXPR    // 列表达式
+};
 
+struct SetClause : public TreeNode {
+    std::string col_name;      // 要更新的列名
+    std::shared_ptr<Value> val;// 当为简单赋值时的值
+    UpdateExprType expr_type;  // 表达式类型
+    std::string ref_col_name;  // 引用的列名
+    char op;                   // 运算符：+, -, *, /
+    
+    // 简单赋值构造函数
     SetClause(std::string col_name_, std::shared_ptr<Value> val_) :
-            col_name(std::move(col_name_)), val(std::move(val_)) {}
+            col_name(std::move(col_name_)), val(std::move(val_)), 
+            expr_type(SIMPLE_VALUE), ref_col_name(""), op(0) {}
+    
+    // 列表达式构造函数
+    SetClause(std::string col_name_, std::string ref_col_name_, 
+              char op_, std::shared_ptr<Value> val_) :
+            col_name(std::move(col_name_)), val(std::move(val_)),
+            expr_type(COLUMN_EXPR), ref_col_name(std::move(ref_col_name_)), op(op_) {}
 };
 
 /* WHERE条件语句的二元比较 */
@@ -336,6 +353,7 @@ struct SemValue {
     std::string sv_str;
     std::string sv_date; // 用于存储日期字符串，格式为YYYY-MM-DD
     bool sv_bool;
+    char sv_char;  // 用于存储运算符
     OrderByDir sv_orderby_dir;
     std::vector<std::string> sv_strs;
 
