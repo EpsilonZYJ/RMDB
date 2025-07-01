@@ -135,7 +135,11 @@ class UpdateExecutor : public AbstractExecutor {
                 } else {
                     // 处理普通赋值
                     Value value = set_clause.rhs;
-                    
+                    if (value.type != col_meta->type) {
+                        if (value_type_match(col_meta->type, value.type)) {
+                            // 转换类型
+                            value.value_cast(col_meta->type);
+                          }}
                     if (!value.raw) {
                         value.init_raw(col_meta->len);               
                         // 根据值类型设置raw数据

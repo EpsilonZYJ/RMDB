@@ -1,0 +1,50 @@
+create table t1(id int,name char(4));
+show tables;
+create table t2(id int);
+show tables;
+drop table t1;
+show tables;
+drop table t2;
+show tables;
+
+create table grade (name char(20),id int,score float);
+insert into grade values ('Data Structure', 1, 90.5);
+insert into grade values ('Data Structure', 2, 95.0);
+insert into grade values ('Calculus', 2, 92.0);
+insert into grade values ('Calculus', 1, 88.5);
+select * from grade;
+select score,name,id from grade where score > 90;
+select id from grade where name = 'Data Structure';
+select name from grade where id = 2 and score > 90; 
+
+drop table grade;
+create table grade (name char(20),id int,score float);
+insert into grade values ('Data Structure', 1, 90.5);
+insert into grade values ('Data Structure', 2, 95.0);
+insert into grade values ('Calculus', 2, 92.0);
+insert into grade values ('Calculus', 1, 88.5);
+select * from grade;
+update grade set score =  90 where name = 'Calculus';
+select * from grade;
+update grade set name = 'Error name' where name > 'A';
+select * from grade;
+update grade set name = 'Error' ,id = -1,score = 0 where name = 'Error name' and score >= 90;
+select * from grade;
+
+drop table grade;
+create table grade (name char(20),id int,score float);
+insert into grade values ('Data Structure', 1, 90.5);
+select * from grade;
+delete from grade where score > 90;
+select * from grade;
+
+create table t ( id int , t_name char (3));
+create table d (d_name char(5),id int);
+insert into t values (1,'aaa');
+insert into t values (2,'baa');
+insert into t values (3,'bba');
+insert into d values ('12345',1);
+insert into d values ('23456',2);
+select * from t, d;
+select t.id,t_name,d_name from t,d where t.id = d.id;
+select t.id,t_name,d_name from t join d where t.id = d.id;
