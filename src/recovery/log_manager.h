@@ -446,10 +446,32 @@ class UpdateLogRecord: public LogRecord {
         table_name_[table_name_size_] = '\0';  // 显式添加终止符
         log_tot_len_ += sizeof(size_t) + table_name_size_;
     }
+
+    // 新增构造函数，支持表达式更新
+    UpdateLogRecord(txn_id_t txn_id, RmRecord& old_value, RmRecord& new_value, Rid& rid, 
+        std::string table_name, bool is_expr_update, char op_type, std::string ref_col_name)
+    : UpdateLogRecord(txn_id, old_value, new_value, rid, table_name) {
+
+    is_expr_update_ = is_expr_update;
+    op_type_ = op_type;
+
+    if (!ref_col_name.empty()) {
+    ref_col_name_size_ = ref_col_name.length();
+    ref_col_name_ = new char[ref_col_name_size_ + 1];
+    memcpy(ref_col_name_, ref_col_name.c_str(), ref_col_name_size_);
+    ref_col_name_[ref_col_name_size_] = '\0';
+
+    // 更新记录总长度
+    log_tot_len_ += sizeof(bool) + sizeof(char) + sizeof(size_t) + ref_col_name_size_;
+    }
+    }
     
     ~UpdateLogRecord() {
         if (table_name_) {
             delete[] table_name_;
+        }
+        if (ref_col_name_) {
+            delete[] ref_col_name_;
         }
     }
 
@@ -476,12 +498,28 @@ class UpdateLogRecord: public LogRecord {
         memcpy(dest + offset, &table_name_size_, sizeof(size_t));
         offset += sizeof(size_t);
         memcpy(dest + offset, table_name_, table_name_size_);
+
+        offset += table_name_size_;
+        // 写入是否为表达式更新
+        memcpy(dest + offset, &is_expr_update_, sizeof(bool));
+        offset += sizeof(bool);
+        if (is_expr_update_) {
+            // 写入操作符
+            memcpy(dest + offset, &op_type_, sizeof(char));
+            offset += sizeof(char);
+            // 写入引用列名
+            memcpy(dest + offset, &ref_col_name_size_, sizeof(size_t));
+            offset += sizeof(size_t);
+            if (ref_col_name_size_ > 0) {
+                memcpy(dest + offset, ref_col_name_, ref_col_name_size_);
+            }
+        }
     }
     
     // 从src中反序列化出一条Update日志记录
     void deserialize(const char* src) override {
         LogRecord::deserialize(src);
-        
+    
         // 读取旧值
         old_value_.Deserialize(src + OFFSET_LOG_DATA);
         int offset = OFFSET_LOG_DATA + old_value_.size + sizeof(int);
@@ -495,9 +533,33 @@ class UpdateLogRecord: public LogRecord {
         offset += sizeof(Rid);
         table_name_size_ = *reinterpret_cast<const size_t*>(src + offset);
         offset += sizeof(size_t);
-        table_name_ = new char[table_name_size_ + 1];  // +1 for null terminator
+        table_name_ = new char[table_name_size_ + 1];
         memcpy(table_name_, src + offset, table_name_size_);
-        table_name_[table_name_size_] = '\0';  // 显式添加终止符
+        table_name_[table_name_size_] = '\0';
+        offset += table_name_size_;
+        
+        // 添加下面代码以读取表达式相关字段
+        if (offset < log_tot_len_) {  // 兼容旧日志格式
+            // 读取是否为表达式更新
+            memcpy(&is_expr_update_, src + offset, sizeof(bool));
+            offset += sizeof(bool);
+            
+            if (is_expr_update_) {
+                // 读取操作符
+                memcpy(&op_type_, src + offset, sizeof(char));
+                offset += sizeof(char);
+                
+                // 读取引用列名
+                memcpy(&ref_col_name_size_, src + offset, sizeof(size_t));
+                offset += sizeof(size_t);
+                
+                if (ref_col_name_size_ > 0) {
+                    ref_col_name_ = new char[ref_col_name_size_ + 1];
+                    memcpy(ref_col_name_, src + offset, ref_col_name_size_);
+                    ref_col_name_[ref_col_name_size_] = '\0';
+                }
+            }
+        }
     }
     
     void format_print() override {
@@ -514,6 +576,10 @@ class UpdateLogRecord: public LogRecord {
     Rid rid_;                   // 更新记录的位置
     char* table_name_;          // 更新记录的表名称
     size_t table_name_size_;    // 表名称的大小
+    bool is_expr_update_ = false;      // 是否为表达式更新
+    char op_type_ = '\0';              // 操作符类型(+,-,*,/)
+    char* ref_col_name_ = nullptr;     // 引用的列名
+    size_t ref_col_name_size_ = 0;     // 引用列名长度
 };
 
 /* 日志缓冲区，只有一个buffer，因此需要阻塞地去把日志写入缓冲区中 */

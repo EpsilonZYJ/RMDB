@@ -526,53 +526,52 @@ void RecoveryManager::undo() {
     void RecoveryManager::undo_log_record(LogRecord* log_record) {
         if (!log_record) return;
     
-    try {
-        switch (log_record->log_type_) {
-            case LogType::INSERT: {
-                InsertLogRecord* insert_log = dynamic_cast<InsertLogRecord*>(log_record);
-                if (insert_log) {
-                    // 获取表和RID信息
-                    std::string table_name = insert_log->table_name_;
-                    Rid rid = insert_log->rid_;
-                    RmFileHandle* file_handle = sm_manager_->fhs_[table_name].get();
-                    if (file_handle) {
-                        file_handle->delete_record(rid, nullptr);
-                        std::cout << "撤销INSERT: table=" << table_name 
-                        << ", rid=(" << rid.page_no << "," << rid.slot_no << ")" << std::endl;
-                    }
-                }
-                break;
+        try {
+            // 在处理前验证日志类型有效性
+            if (static_cast<int>(log_record->log_type_) < 0 || 
+                static_cast<int>(log_record->log_type_) > static_cast<int>(LogType::CHECKPOINT)) {
+                std::cerr << "错误: UNDO阶段遇到无效的日志类型: " << static_cast<int>(log_record->log_type_) << std::endl;
+                return;  // 跳过此记录
             }
-            case LogType::UPDATE: {
-                UpdateLogRecord* update_log = dynamic_cast<UpdateLogRecord*>(log_record);
-                if (update_log) {
-                    // 获取表和RID信息
-                    std::string table_name = update_log->table_name_; 
-                    Rid rid = update_log->rid_;
-                    RmFileHandle* file_handle = sm_manager_->fhs_[table_name].get();
-                    if (file_handle) {
-                        file_handle->update_record(rid, update_log->old_value_.data, nullptr);
-                        std::cout << "撤销UPDATE: table=" << table_name 
-                        << ", rid=(" << rid.page_no << "," << rid.slot_no << ")" << std::endl;
-                    }
+            
+            switch (log_record->log_type_) {
+                case LogType::INSERT: {
+                    InsertLogRecord* insert_record = dynamic_cast<InsertLogRecord*>(log_record);
+                    std::string tab_name(insert_record->table_name_);
+                    auto fh = sm_manager_->fhs_.at(tab_name).get();
+                    fh->delete_record(insert_record->rid_, nullptr);
+                    std::cout << "撤销INSERT: table=" << tab_name << ", rid=(" 
+                            << insert_record->rid_.page_no << "," << insert_record->rid_.slot_no << ")" << std::endl;
+                    break;
                 }
-                break;
-            }
-            case LogType::DELETE: {
-                DeleteLogRecord* delete_log = dynamic_cast<DeleteLogRecord*>(log_record);
-                if (delete_log) {
-                    // 获取表和RID信息
-                    std::string table_name = delete_log->table_name_;
-                    Rid rid = delete_log->rid_;
-                    RmFileHandle* file_handle = sm_manager_->fhs_[table_name].get();
-                    if (file_handle) {
-                        file_handle->insert_record(rid, delete_log->deleted_value_.data);
-                        std::cout << "撤销DELETE: table=" << table_name 
-                        << ", rid=(" << rid.page_no << "," << rid.slot_no << ")" << std::endl;
-                    }
+                case LogType::DELETE: {
+                    DeleteLogRecord* delete_record = dynamic_cast<DeleteLogRecord*>(log_record);
+                    std::string tab_name(delete_record->table_name_);
+                    auto fh = sm_manager_->fhs_.at(tab_name).get();
+                    fh->insert_record(delete_record->rid_, delete_record->deleted_value_.data);
+                    std::cout << "撤销DELETE: table=" << tab_name << ", rid=(" 
+                            << delete_record->rid_.page_no << "," << delete_record->rid_.slot_no << ")" << std::endl;
+                    break;
                 }
-                break;
-            }
+                case LogType::UPDATE: {
+                    UpdateLogRecord* update_record = dynamic_cast<UpdateLogRecord*>(log_record);
+                    std::string tab_name(update_record->table_name_);
+                    auto fh = sm_manager_->fhs_.at(tab_name).get();
+                    
+                    // 表达式更新与普通更新的UNDO操作相同，都是恢复旧记录
+                    fh->update_record(update_record->rid_, update_record->old_value_.data, nullptr);
+                    
+                    std::cout << "撤销UPDATE: table=" << tab_name << ", rid=(" 
+                            << update_record->rid_.page_no << "," << update_record->rid_.slot_no << ")";
+                    
+                    // 添加表达式信息输出（帮助调试）
+                    if (update_record->is_expr_update_) {
+                        std::cout << " [表达式更新: " << update_record->op_type_ << "]";
+                    }
+                    std::cout << std::endl;
+                    
+                    break;
+                }
             default:
                 break;
         }
@@ -630,4 +629,34 @@ void RecoveryManager::truncate_log_after_recovery() {
         } else {
             std::cerr << "日志截断失败" << std::endl;
         }
+}
+
+LogRecord* RecoveryManager::create_log_record_by_type(LogType type) {
+    printf("DEBUG: 创建日志记录，类型=%d\n", (int)type);
+    
+    // 添加类型安全检查
+    if ((int)type < 0 || (int)type > 6) {
+        printf("警告: 无效的日志类型 %d，使用默认类型(UPDATE)\n", (int)type);
+        return new UpdateLogRecord(); // 返回默认记录而不是抛出异常
+    }
+    
+    switch (type) {
+        case LogType::begin:
+            return new BeginLogRecord();
+        case LogType::commit:
+            return new CommitLogRecord();
+        case LogType::ABORT:
+            return new AbortLogRecord();
+        case LogType::INSERT:
+            return new InsertLogRecord();
+        case LogType::UPDATE:
+            return new UpdateLogRecord();
+        case LogType::DELETE:
+            return new DeleteLogRecord();
+        case LogType::CHECKPOINT:
+            return new CheckpointLogRecord();
+        default:
+            printf("警告: 未知的日志类型 %d，使用默认类型\n", (int)type);
+            return new UpdateLogRecord();
+    }
 }

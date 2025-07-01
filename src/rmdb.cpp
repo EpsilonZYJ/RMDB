@@ -60,11 +60,14 @@ void sigint_handler(int signo) {
 void SetTransaction(txn_id_t *txn_id, Context *context, bool is_begin_stmt = false) {
     std::cout << "DEBUG: SetTransaction - 当前事务ID: " << *txn_id << std::endl;
     
-    if (is_begin_stmt || *txn_id == INVALID_TXN_ID) {
-        // 直接创建新事务
+    if (*txn_id == INVALID_TXN_ID) {
+        // 创建新事务
         context->txn_ = txn_manager->begin(nullptr, context->log_mgr_);
-        *txn_id = context->txn_->get_transaction_id();
-        context->txn_->set_txn_mode(true);  // 显式事务模式
+        *txn_id = context->txn_->get_transaction_id(); 
+        // 只有BEGIN语句才设置为显式事务
+        context->txn_->set_txn_mode(is_begin_stmt);
+        std::cout << "创建" << (is_begin_stmt ? "显式" : "隐式") 
+                << "事务: " << *txn_id << std::endl;
         return;
     }
     // 非BEGIN语句的正常处理
@@ -227,12 +230,12 @@ void *client_handler(void *sock_fd) {
 
         // TODO 第二关暂时将这里注释掉
         // 如果是单挑语句，需要按照一个完整的事务来执行，所以执行完当前语句后，自动提交事务
-        if (context->txn_ != nullptr && context->txn_->get_txn_mode() == false)
-        {
-            txn_manager->commit(context->txn_, context->log_mgr_);
-            // 重置事务ID，确保下次使用新事务
-            txn_id = INVALID_TXN_ID;
-        }
+        // if (context->txn_ != nullptr && context->txn_->get_txn_mode() == false)
+        // {
+        //     txn_manager->commit(context->txn_, context->log_mgr_);
+        //     // 重置事务ID，确保下次使用新事务
+        //     txn_id = INVALID_TXN_ID;
+        // }
         
         delete context; // 确保每次循环结束释放context
     }

@@ -163,6 +163,12 @@ void LogManager::flush_log_to_disk() {
                 char* log_data = new char[log_tot_len];
                 log_file.read(log_data, log_tot_len);
                 
+                if ((int)log_type < 0 || (int)log_type > 6) {
+                    std::cerr << "警告: 读取到无效的日志类型: " << (int)log_type 
+                              << "，将使用默认类型(UPDATE)" << std::endl;
+                    log_type = LogType::UPDATE; // 强制转换为有效类型
+                }
+
                 // 根据日志类型创建对应的日志记录对象
                 switch (log_type) {
                     case LogType::begin:
@@ -176,6 +182,12 @@ void LogManager::flush_log_to_disk() {
                         break;
                     case LogType::INSERT:
                         record = new InsertLogRecord();
+                        break;
+                    case LogType::UPDATE:   
+                        record = new UpdateLogRecord();
+                        break;
+                    case LogType::DELETE:   
+                        record = new DeleteLogRecord();
                         break;
                     case LogType::CHECKPOINT:
                         record = new CheckpointLogRecord();
