@@ -10,7 +10,6 @@ See the Mulan PSL v2 for more details. */
 
 #undef NDEBUG
 
-
 #include <algorithm>
 #include <cassert>
 #include <cstdio>
@@ -20,7 +19,9 @@ See the Mulan PSL v2 for more details. */
 #include <iostream>
 #include <memory>
 #include <random>
+#include <regex>
 #include <set>
+#include <sstream> 
 #include <string>
 #include <thread>  // NOLINT
 #include <unordered_map>
@@ -29,11 +30,10 @@ See the Mulan PSL v2 for more details. */
 #include "gtest/gtest.h"
 #include "replacer/lru_replacer.h"
 #include "storage/disk_manager.h"
-#include "gtest/gtest.h"
+
 #define private public
 #include "record/rm.h"
 #include "storage/buffer_pool_manager.h"
-
 #undef private
 
 const std::string TEST_DB_NAME = "BufferPoolManagerTest_db";  // 以数据库名作为根目录

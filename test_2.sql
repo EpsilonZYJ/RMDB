@@ -141,9 +141,8 @@ INSERT INTO products VALUES (1005, 'Bluetooth Headphones', 'Electronics', 'Audio
 INSERT INTO students (student_id, student_name, age, major) VALUES (11, 'Kevin Thompson', 20, 'Chemistry');
 
 -- 一次插入多行
-INSERT INTO courses VALUES 
-    (111, 'Organic Chemistry', 4, 'Chemistry', 'Prof. Keller'),
-    (112, 'Inorganic Chemistry', 3, 'Chemistry', 'Prof. Lawrence');
+INSERT INTO courses VALUES (111, 'Organic Chemistry', 4, 'Chemistry', 'Prof. Keller'),
+INSERT INTO courses VALUES (112, 'Inorganic Chemistry', 3, 'Chemistry', 'Prof. Lawrence');
 
 -- 基本条件查询测试
 -- 相等条件查询
