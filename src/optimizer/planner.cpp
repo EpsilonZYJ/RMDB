@@ -414,7 +414,50 @@
             }
         }
     }
-    
+    // 处理GROUP BY列 
+    if (!query->group_bys.empty()) {
+        for (const auto& group_col : query->group_bys) {
+            const std::string& table_name = group_col.tab_name;
+            const std::string& col_name = group_col.col_name;
+            
+            // 使用std::find检查表是否存在
+            if (std::find(query->tables.begin(), query->tables.end(), table_name) != query->tables.end()) {
+                output_cols_by_table[table_name].insert(col_name);
+                std::cout << "DEBUG: 添加GROUP BY列到投影: " << table_name << "." << col_name << std::endl;
+            }
+        }
+    }
+     // 处理聚合函数中的列
+     if (!query->cols.empty() && !query->agg_types.empty()) {
+        for (size_t i = 0; i < query->cols.size(); ++i) {
+            if (i < query->agg_types.size() && query->agg_types[i] != NO_AGG) {
+                const TabCol& col = query->cols[i];
+                if (!col.tab_name.empty() && !col.col_name.empty()) {
+                    output_cols_by_table[col.tab_name].insert(col.col_name);
+                    std::cout << "DEBUG: 添加聚合函数列到投影: " << col.tab_name 
+                            << "." << col.col_name << std::endl;
+                }
+            }
+        }
+    }
+    // 处理HAVING子句中的列
+    if (!query->havings.empty()) {
+        for (const auto& having_cond : query->havings) {
+            // 处理左侧列
+            if (!having_cond.lhs_col.tab_name.empty()) {
+                output_cols_by_table[having_cond.lhs_col.tab_name].insert(having_cond.lhs_col.col_name);
+                std::cout << "DEBUG: 添加HAVING列到投影: " << having_cond.lhs_col.tab_name 
+                        << "." << having_cond.lhs_col.col_name << std::endl;
+            }
+            
+            // 处理右侧列(如果不是常量值)
+            if (!having_cond.is_rhs_val && !having_cond.rhs_col.tab_name.empty()) {
+                output_cols_by_table[having_cond.rhs_col.tab_name].insert(having_cond.rhs_col.col_name);
+                std::cout << "DEBUG: 添加HAVING列到投影: " << having_cond.rhs_col.tab_name 
+                        << "." << having_cond.rhs_col.col_name << std::endl;
+            }
+        }
+    }
     // 从WHERE条件中收集需要的列 - 这些是过滤列
     for (const auto& cond : query->conds) {
         // 处理左侧列

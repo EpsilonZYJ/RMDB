@@ -9,7 +9,7 @@ import select
 # 默认路径和参数
 DEFAULT_SERVER_PATH = "./build/bin/rmdb"
 DEFAULT_CLIENT_PATH = "./rmdb_client/build/rmdb_client"
-DEFAULT_SQL_FILE = "./test_case.sql"
+DEFAULT_SQL_FILE = "./test_2.sql"
 DEFAULT_DB_NAME = "test_db"  # 默认数据库名
 
 def parse_sql_statements(sql_file):
