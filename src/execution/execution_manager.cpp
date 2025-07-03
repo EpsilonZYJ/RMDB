@@ -244,24 +244,24 @@ void QlManager::select_from(std::unique_ptr<AbstractExecutor> executorTreeRoot, 
 // 执行DML语句
 void QlManager::run_dml(std::unique_ptr<AbstractExecutor> exec){
     exec->Next();
-    // // 添加自动提交逻辑
-    // if (exec->context_ && exec->context_->txn_ && !exec->context_->txn_->get_txn_mode()) {
-    //     // 只有在非显式事务模式下才自动提交
-    //     std::cout << "自动提交隐式事务: " << exec->context_->txn_->get_transaction_id() << std::endl;
+    // 添加自动提交逻辑
+    if (exec->context_ && exec->context_->txn_ && !exec->context_->txn_->get_txn_mode()) {
+        // 只有在非显式事务模式下才自动提交
+        std::cout << "自动提交隐式事务: " << exec->context_->txn_->get_transaction_id() << std::endl;
         
-    //     // 创建COMMIT日志
-    //     if (exec->context_->log_mgr_) {
-    //         std::cout << "添加提交日志记录: 事务=" << exec->context_->txn_->get_transaction_id() << std::endl;
-    //         CommitLogRecord* log_record = new CommitLogRecord(exec->context_->txn_->get_transaction_id());
-    //         exec->context_->log_mgr_->add_log_to_buffer(log_record);
-    //         delete log_record;
+        // 创建COMMIT日志
+        if (exec->context_->log_mgr_) {
+            std::cout << "添加提交日志记录: 事务=" << exec->context_->txn_->get_transaction_id() << std::endl;
+            CommitLogRecord* log_record = new CommitLogRecord(exec->context_->txn_->get_transaction_id());
+            exec->context_->log_mgr_->add_log_to_buffer(log_record);
+            delete log_record;
             
-    //         // 确保刷新到磁盘
-    //         exec->context_->log_mgr_->flush_log_to_disk();
-    //     }
+            // 确保刷新到磁盘
+            exec->context_->log_mgr_->flush_log_to_disk();
+        }
         
-    //     // 设置事务状态
-    //     exec->context_->txn_->set_state(TransactionState::COMMITTED);
-    // }
+        // 设置事务状态
+        exec->context_->txn_->set_state(TransactionState::COMMITTED);
+    }
 }
 

@@ -15,7 +15,7 @@ See the Mulan PSL v2 for more details. */
 #include <memory>
 #include <string>
 #include <vector>
-#include <regex>
+//#include <regex>
 #include "defs.h"
 #include "record/rm_defs.h"
 #include "parser/parser.h"
