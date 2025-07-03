@@ -49,53 +49,119 @@ class NestedLoopJoinExecutor : public AbstractExecutor {
         }
     }
 
+    // void beginTuple() override {
+    //     isend = false;
+
+    //     for(left_->beginTuple(); !(left_->is_end()); left_->nextTuple()) { // 外层循环
+    //         for(right_->beginTuple(); !(right_->is_end()); right_->nextTuple()) { // 内层循环
+    //             auto rec_left = left_->Next();
+    //             auto rec_right = right_->Next();
+
+    //             std::unique_ptr<RmRecord> new_rec = std::make_unique<RmRecord>(len_);
+    //             memcpy(new_rec->data, rec_left->data, left_->tupleLen());
+    //             memcpy(new_rec->data + left_->tupleLen(), rec_right->data, right_->tupleLen());
+    //             if(check_condition(
+    //                 *new_rec, 
+    //                 left_cols_,
+    //                 right_cols_, 
+    //                 fed_conds_)
+    //             ) return; // TODO:如果右值不是value，这里是不是也正确？
+    //         }
+    //     }
+
+    //     isend = true;       
+    // }
+
+    // void nextTuple() override {
+    //     right_->nextTuple(); // 先将右表的指针移动到下一条记录
+
+    //     for(; !(left_->is_end()); left_->nextTuple()) { // 外层循环
+    //         for(; !(right_->is_end()); right_->nextTuple()) { // 内层循环
+    //             auto rec_left = left_->Next();
+    //             auto rec_right = right_->Next();
+
+    //             std::unique_ptr<RmRecord> new_rec = std::make_unique<RmRecord>(len_);
+    //             memcpy(new_rec->data, rec_left->data, left_->tupleLen());
+    //             memcpy(new_rec->data + left_->tupleLen(), rec_right->data, right_->tupleLen());
+    //             if(check_condition(
+    //                 *new_rec, 
+    //                 left_cols_,
+    //                 right_cols_, 
+    //                 fed_conds_)
+    //             ) return; // TODO:如果右值不是value，这里是不是也正确？
+    //         }
+    //         right_->beginTuple(); // 内层循环结束后，重新开始右表的遍历（这句话不能用于内循环的初始化）
+    //     }
+
+    //     isend = true;  
+    // }
     void beginTuple() override {
         isend = false;
-
-        for(left_->beginTuple(); !(left_->is_end()); left_->nextTuple()) { // 外层循环
-            for(right_->beginTuple(); !(right_->is_end()); right_->nextTuple()) { // 内层循环
-                auto rec_left = left_->Next();
-                auto rec_right = right_->Next();
-
-                std::unique_ptr<RmRecord> new_rec = std::make_unique<RmRecord>(len_);
-                memcpy(new_rec->data, rec_left->data, left_->tupleLen());
-                memcpy(new_rec->data + left_->tupleLen(), rec_right->data, right_->tupleLen());
-                if(check_condition(
-                    *new_rec, 
-                    left_cols_,
-                    right_cols_, 
-                    fed_conds_)
-                ) return; // TODO:如果右值不是value，这里是不是也正确？
-            }
+        // 初始化左表
+        left_->beginTuple();
+        if (left_->is_end()) {
+            isend = true;
+            return;
         }
-
-        isend = true;       
+        // 初始化右表
+        right_->beginTuple();
+        // 找到第一个满足条件的结果
+        while (true) {
+            if (right_->is_end()) {
+                // 右表遍历完，移到左表下一行
+                left_->nextTuple();
+                if (left_->is_end()) {
+                    isend = true;
+                    return;
+                }
+                right_->beginTuple(); // 重新开始右表
+            }
+            
+            // 检查当前组合是否满足条件
+            auto rec_left = left_->Next();
+            auto rec_right = right_->Next();
+            
+            std::unique_ptr<RmRecord> new_rec = std::make_unique<RmRecord>(len_);
+            memcpy(new_rec->data, rec_left->data, left_->tupleLen());
+            memcpy(new_rec->data + left_->tupleLen(), rec_right->data, right_->tupleLen());
+            
+            if (check_condition(*new_rec, left_cols_, right_cols_, fed_conds_)) {
+                return; // 找到满足条件的结果，不返回记录但保持当前状态
+            }
+            // 当前组合不满足条件，移到右表下一行
+            right_->nextTuple();
+        }
     }
-
+    
     void nextTuple() override {
-        right_->nextTuple(); // 先将右表的指针移动到下一条记录
-
-        for(; !(left_->is_end()); left_->nextTuple()) { // 外层循环
-            for(; !(right_->is_end()); right_->nextTuple()) { // 内层循环
-                auto rec_left = left_->Next();
-                auto rec_right = right_->Next();
-
-                std::unique_ptr<RmRecord> new_rec = std::make_unique<RmRecord>(len_);
-                memcpy(new_rec->data, rec_left->data, left_->tupleLen());
-                memcpy(new_rec->data + left_->tupleLen(), rec_right->data, right_->tupleLen());
-                if(check_condition(
-                    *new_rec, 
-                    left_cols_,
-                    right_cols_, 
-                    fed_conds_)
-                ) return; // TODO:如果右值不是value，这里是不是也正确？
+        // 移到下一个组合
+        right_->nextTuple();
+        // 查找下一个满足条件的组合
+        while (true) {
+            if (right_->is_end()) {
+                // 右表遍历完，移到左表下一行
+                left_->nextTuple();
+                if (left_->is_end()) {
+                    isend = true;
+                    return;
+                }
+                right_->beginTuple(); // 重新开始右表
             }
-            right_->beginTuple(); // 内层循环结束后，重新开始右表的遍历（这句话不能用于内循环的初始化）
+            // 检查当前组合
+            auto rec_left = left_->Next();
+            auto rec_right = right_->Next();
+            
+            std::unique_ptr<RmRecord> new_rec = std::make_unique<RmRecord>(len_);
+            memcpy(new_rec->data, rec_left->data, left_->tupleLen());
+            memcpy(new_rec->data + left_->tupleLen(), rec_right->data, right_->tupleLen());
+            
+            if (check_condition(*new_rec, left_cols_, right_cols_, fed_conds_)) {
+                return; // 找到满足条件的结果
+            }
+            // 当前组合不满足条件，移到右表下一行
+            right_->nextTuple();
         }
-
-        isend = true;  
     }
-
     std::unique_ptr<RmRecord> Next() override {
         auto rec_left = left_->Next();
         auto rec_right = right_->Next();
