@@ -674,19 +674,19 @@ void Analyze::check_clause(const std::vector<std::string> &tab_names,
         }
         
         //! 冗余
-        // TabMeta &lhs_tab = sm_manager_->db_.get_table(cond.lhs_col.tab_name);
-        // auto lhs_col = lhs_tab.get_col(cond.lhs_col.col_name);
-        // ColType lhs_type = lhs_col->type;
-        // ColType rhs_type;
+        TabMeta &lhs_tab = sm_manager_->db_.get_table(cond.lhs_col.tab_name);
+        auto lhs_col = lhs_tab.get_col(cond.lhs_col.col_name);
+        ColType lhs_type = lhs_col->type;
+        ColType rhs_type;
         
-        // if (cond.is_rhs_val) {
-        //     cond.rhs_val.init_raw(lhs_col->len);
-        //     rhs_type = cond.rhs_val.type;
-        // } else {
-        //     TabMeta &rhs_tab = sm_manager_->db_.get_table(cond.rhs_col.tab_name);
-        //     auto rhs_col = rhs_tab.get_col(cond.rhs_col.col_name);
-        //     rhs_type = rhs_col->type;
-        // }
+        if (cond.is_rhs_val) {
+            cond.rhs_val.init_raw(lhs_col->len);
+            rhs_type = cond.rhs_val.type;
+        } else {
+            TabMeta &rhs_tab = sm_manager_->db_.get_table(cond.rhs_col.tab_name);
+            auto rhs_col = rhs_tab.get_col(cond.rhs_col.col_name);
+            rhs_type = rhs_col->type;
+        }
     }
 }
 
