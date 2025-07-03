@@ -43,7 +43,7 @@ struct Rid {
 };
 
 struct Date {
-    std::string date; // 格式为 "YYYY-MM-DD"
+    std::string date; 
 
     Date(std::string date_) : date(std::move(date_)) {
         if (!check_valid()) {
@@ -59,50 +59,7 @@ struct Date {
         return check_valid(date);
     }
 
-    // static bool check_valid(const std::string &date) {
-    //     // 首先检查格式是否正确
-    //     std::regex datetime_regex(R"(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})");
-    //     if (!std::regex_match(date, datetime_regex)) {
-    //         return false;
-    //     }
-        
-    //     // 接下来检查日期和时间值是否合法
-    //     try {
-    //         int year = std::stoi(date.substr(0, 4));
-    //         int month = std::stoi(date.substr(5, 2));
-    //         int day = std::stoi(date.substr(8, 2));
-    //         int hour = std::stoi(date.substr(11, 2));
-    //         int minute = std::stoi(date.substr(14, 2));
-    //         int second = std::stoi(date.substr(17, 2));
-            
-    //         // 检查年月日是否合法
-    //         if (year < 0 || month < 1 || month > 12 || day < 1) {
-    //             return false;
-    //         }
-            
-    //         // 根据月份获取天数上限
-    //         int max_days = 31;
-    //         if (month == 4 || month == 6 || month == 9 || month == 11) {
-    //             max_days = 30;
-    //         } else if (month == 2) {
-    //             // 闰年判断
-    //             bool is_leap = (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0);
-    //             max_days = is_leap ? 29 : 28;
-    //         }
-    //         if (day > max_days) {
-    //             return false;
-    //         }
-            
-    //         // 检查时分秒是否合法
-    //         if (hour < 0 || hour > 23 || minute < 0 || minute > 59 || second < 0 || second > 59) {
-    //             return false;
-    //         }
-            
-    //         return true;
-    //     } catch (const std::exception&) {
-    //         return false;
-    //     }
-    // }
+ 
     static bool check_valid(const std::string &date) {
         // 首先检查长度是否正确（格式为 "YYYY-MM-DD HH:MM:SS" 应为19个字符）
         if (date.length() != 19) return false;
@@ -172,7 +129,7 @@ struct Date {
     }
 
     friend std::ostream &operator<<(std::ostream &os, const Date &date) {
-        os << date;
+        os << date.date;
         return os;
     }
 };

@@ -30,6 +30,11 @@ bool check_condition(const RmRecord& record, TabMeta& tab_, const Condition& con
     Value rhs_value;
     if (cond.is_rhs_val) {
         rhs_value = cond.rhs_val;
+        //当左侧是DATE类型，右侧是STRING类型时进行转换
+        if (lhs_value.type == TYPE_DATE && rhs_value.type == TYPE_STRING) {
+            // 转换类型但保留字符串值
+            rhs_value.type = TYPE_DATE;
+        }
     } else {
         int rhs_offset = tab_.get_col(cond.rhs_col.col_name)->offset;
         rhs_value.type = tab_.get_col(cond.rhs_col.col_name)->type;
@@ -49,7 +54,18 @@ bool check_condition(const RmRecord& record, TabMeta& tab_, const Condition& con
             throw InternalError("Invalid value type");
         }
     }
-
+    if (lhs_value.type == TYPE_DATE && rhs_value.type == TYPE_DATE) {
+        // 截断为标准日期长度19个字符
+        if (lhs_value.str_val.length() > 19) {
+            lhs_value.str_val = lhs_value.str_val.substr(0, 19);
+        }
+        if (rhs_value.str_val.length() > 19) {
+            rhs_value.str_val = rhs_value.str_val.substr(0, 19);
+        }
+        
+        std::cout << "标准化后比较: [" << lhs_value.str_val << "] vs [" 
+                  << rhs_value.str_val << "]" << std::endl;
+    }
     return cond.check(lhs_value, rhs_value);
 }
 
@@ -84,6 +100,11 @@ bool check_condition(const RmRecord& record,
     Value rhs_value;
     if (cond.is_rhs_val) {
         rhs_value = cond.rhs_val;
+        // 当左侧是DATE类型，右侧是STRING类型时进行转换
+        if (lhs_value.type == TYPE_DATE && rhs_value.type == TYPE_STRING) {
+            // 转换类型但保留字符串值
+            rhs_value.type = TYPE_DATE;
+        }
     } else {
         int rhs_offset = rhs_col.offset;
         rhs_value.type = rhs_col.type;
@@ -101,7 +122,18 @@ bool check_condition(const RmRecord& record,
             rhs_value.str_val = std::string(rhs_value.raw->data);
         }
     }
-
+    if (lhs_value.type == TYPE_DATE && rhs_value.type == TYPE_DATE) {
+        // 截断为标准日期长度19个字符
+        if (lhs_value.str_val.length() > 19) {
+            lhs_value.str_val = lhs_value.str_val.substr(0, 19);
+        }
+        if (rhs_value.str_val.length() > 19) {
+            rhs_value.str_val = rhs_value.str_val.substr(0, 19);
+        }
+        
+        std::cout << "标准化后比较: [" << lhs_value.str_val << "] vs [" 
+                  << rhs_value.str_val << "]" << std::endl;
+    }
     return cond.check(lhs_value, rhs_value);
 }
 
