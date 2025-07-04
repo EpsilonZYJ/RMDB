@@ -9,7 +9,7 @@ import select
 # 默认路径和参数
 DEFAULT_SERVER_PATH = "./build/bin/rmdb"
 DEFAULT_CLIENT_PATH = "./rmdb_client/build/rmdb_client"
-DEFAULT_SQL_FILE = "./test_5.sql"
+DEFAULT_SQL_FILE = "./test_7.sql"
 DEFAULT_DB_NAME = "test_db"  # 默认数据库名
 
 def parse_sql_statements(sql_file):
@@ -109,13 +109,13 @@ def execute_client_server_mode(server_path, client_path, sql_file, db_name=DEFAU
                 
                 # 等待响应
                 error_detected = False
-                response_text = ""
-                timeout = 0.1 
+                response_text =""
+                timeout = 0.1
                 start_time = time.time()
                 
                 while time.time() - start_time < timeout:
                     # 检查是否有数据可读
-                    r, _, _ = select.select([fd], [], [], 0.02)
+                    r, _, _ = select.select([fd], [], [], 0.1)
                     if not r:
                         continue
                         
@@ -131,7 +131,7 @@ def execute_client_server_mode(server_path, client_path, sql_file, db_name=DEFAU
                                 break
                     except IOError:
                         # 没有更多数据可读
-                        time.sleep(0.01)  # 减少等待时间
+                        time.sleep(0.1)  # 减少等待时间
                 
                 # 如果检测到错误
                 if error_detected:
