@@ -252,18 +252,37 @@ int DiskManager::read_log(char *log_data, int size, int offset) {
  * @param {int} size 要写入的内容大小
  */
 void DiskManager::write_log(char *log_data, int size) {
-    if (log_fd_ == -1) {
-        log_fd_ = open_file(LOG_FILE_NAME);
-    }
+  // 关闭现有文件句柄
+  if (log_fd_ != -1) {
+    close_log_file();
+}
 
-    // write from the file_end
-    lseek(log_fd_, 0, SEEK_END);
-    ssize_t bytes_write = write(log_fd_, log_data, size);
-    if (bytes_write != size) {
-        throw UnixError();
-    }
-    // 添加fsync确保数据写入磁盘
-    fsync(log_fd_);
+// 总是以追加模式重新打开文件
+log_fd_ = open(LOG_FILE_NAME.c_str(), O_RDWR | O_APPEND | O_CREAT, 0644);
+        if (log_fd_ == -1) {
+            std::cerr << "无法打开日志文件: " << strerror(errno) << std::endl;
+            throw UnixError();
+        }
+
+        // 更新文件映射
+        path2fd_[LOG_FILE_NAME] = log_fd_;
+        fd2path_[log_fd_] = LOG_FILE_NAME;
+
+        // 直接写入(O_APPEND确保追加到文件末尾)
+        ssize_t bytes_write = write(log_fd_, log_data, size);
+        if (bytes_write != size) {
+            std::cerr << "日志写入不完整: " << bytes_write << "/" << size << std::endl;
+            throw UnixError();
+        }
+
+        // 确保数据刷新到磁盘
+        fsync(log_fd_);
+
+        // 调试日志文件大小
+        struct stat st;
+        if (fstat(log_fd_, &st) == 0) {
+            std::cout << "DEBUG: 日志文件当前大小: " << st.st_size << " 字节" << std::endl;
+        }
 }
 
 /**

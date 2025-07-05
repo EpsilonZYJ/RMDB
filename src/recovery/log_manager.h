@@ -231,7 +231,13 @@ public:
         printf("insert rid: %d, %d\n", rid_.page_no, rid_.slot_no);
         printf("table name: %s\n", table_name_);
     }
-
+    ~InsertLogRecord(){
+        if (table_name_) {
+            std::cout << "[DEBUG] 释放InsertLogRecord的table_name_内存" << std::endl;
+            delete[] table_name_;
+            table_name_ = nullptr;
+        }
+    }
     RmRecord insert_value_;     // 插入的记录
     Rid rid_;                   // 记录插入的位置
     char* table_name_;          // 插入记录的表名称

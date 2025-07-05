@@ -104,7 +104,12 @@ void QlManager::run_cmd_utility(std::shared_ptr<Plan> plan, txn_id_t *txn_id, Co
             case T_Transaction_begin:
             {
                 // 显示开启一个事务
+                context->txn_ = txn_mgr_->begin(nullptr, log_manager_);
+                *txn_id = context->txn_->get_transaction_id();
+                
+                // 设置为显式事务
                 context->txn_->set_txn_mode(true);
+                std::cout << "显式事务开始: 新ID=" << *txn_id << std::endl;
                 break;
             }  
             case T_Transaction_commit:

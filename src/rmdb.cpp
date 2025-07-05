@@ -141,14 +141,14 @@ void *client_handler(void *sock_fd) {
         Context *context = new Context(lock_manager.get(), log_manager.get(), nullptr, data_send, &offset);
         std::cout << "DEBUG: 创建新的Context对象: " << context << std::endl;
         //SetTransaction(&txn_id, context); //TODO： 第二关暂时将这里注释掉
-        // if (strcmp(data_recv, "begin;") == 0 || strcmp(data_recv, "BEGIN;") == 0) {
-        //     // 对BEGIN语句特殊处理
-        //     SetTransaction(&txn_id, context, true);
-        // } else {
-        //     // 普通语句
-        //     SetTransaction(&txn_id, context);
-        // }
-        // 用于判断是否已经调用了yy_delete_buffer来删除buf
+        if (strcmp(data_recv, "begin;") == 0 || strcmp(data_recv, "BEGIN;") == 0) {
+            // 对BEGIN语句特殊处理
+            SetTransaction(&txn_id, context, true);
+        } else {
+            // 普通语句
+            SetTransaction(&txn_id, context);
+        }
+        //用于判断是否已经调用了yy_delete_buffer来删除buf
         bool finish_analyze = false;
         pthread_mutex_lock(buffer_mutex);
         YY_BUFFER_STATE buf = yy_scan_string(data_recv);

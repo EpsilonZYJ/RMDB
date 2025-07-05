@@ -29,33 +29,35 @@ Transaction * TransactionManager::begin(Transaction* txn, LogManager* log_manage
     // 如果需要支持MVCC请在上述过程中添加代码
     
     // 判断传入事务参数是否为空指针
-    if (txn == nullptr) {
-        // 如果为空指针，创建新事务
-        txn_id_t txn_id = next_txn_id_++;
-        txn = new Transaction(txn_id);
-        txn->set_state(TransactionState::GROWING);
-    }
+    txn_id_t txn_id = next_txn_id_++;
+    std::cout << "[DEBUG] BEGIN: 创建新事务，txn_id=" << txn_id << std::endl;
     
-    // 把开始事务加入到全局事务表中
+    // 永远创建新事务
+    Transaction* new_txn = new Transaction(txn_id);
+    new_txn->set_state(TransactionState::GROWING);
+    
+    // 显式设置事务模式
+    bool is_explicit = (txn != nullptr && txn->get_txn_mode());
+    new_txn->set_txn_mode(is_explicit);
+    
+    // 添加到事务表
     {
         std::unique_lock<std::mutex> lock(latch_);
-        txn_map[txn->get_transaction_id()] = txn;
+        txn_map[txn_id] = new_txn;
     }
     
-    // 写入BEGIN日志记录
+    // 写日志
     if (log_manager != nullptr) {
         try {
-            BeginLogRecord log_record(txn->get_transaction_id());
-            log_record.prev_lsn_ = txn->get_prev_lsn();
+            BeginLogRecord log_record(txn_id);
             lsn_t lsn = log_manager->add_log_to_buffer(&log_record);
-            txn->set_prev_lsn(lsn);
+            new_txn->set_prev_lsn(lsn);
         } catch (const std::exception& e) {
-            // 处理日志错误
-            std::cerr << "Warning: Failed to write begin log: " << e.what() << std::endl;
+            std::cerr << "创建BEGIN日志失败: " << e.what() << std::endl;
         }
     }
 
-    return txn;
+    return new_txn;
 }
 
 /**
@@ -132,6 +134,8 @@ void TransactionManager::commit(Transaction* txn, LogManager* log_manager) {
     // } catch (std::exception& e) {
     //     std::cerr << "提交事务出错: " << e.what() << std::endl;
     // }
+    std::cout << "[DEBUG] COMMIT: 提交事务，txn_id=" << (txn ? txn->get_transaction_id() : -1) << std::endl;
+
     if (txn == nullptr) {
         std::cerr << "错误: 尝试提交空事务" << std::endl;
         return;
@@ -328,6 +332,7 @@ void TransactionManager::abort(Transaction * txn, LogManager *log_manager) {
     // } else {
     //     std::cerr << "警告: 由于日志错误，事务仍保留在txn_map中" << std::endl;
     // }
+    std::cout << "[DEBUG] ABORT: 回滚事务，txn_id=" << (txn ? txn->get_transaction_id() : -1) << std::endl;
     if (txn == nullptr) {
         std::cerr << "错误: 尝试回滚空事务" << std::endl;
         return;
@@ -353,8 +358,7 @@ void TransactionManager::abort(Transaction * txn, LogManager *log_manager) {
         // 2. 回滚所有写操作 - 从后向前处理确保正确的顺序
         std::deque<WriteRecord*>& write_set = *(txn->get_write_set());
         std::vector<WriteRecord*> records_to_delete;
-        
-        // 复制所有记录，避免迭代器失效问题
+        std::cout << "[DEBUG] 开始回滚写记录，共" << write_set.size() << "条" << std::endl;        // 复制所有记录，避免迭代器失效问题
         for (auto it = write_set.rbegin(); it != write_set.rend(); ++it) {
             records_to_delete.push_back(*it);
         }

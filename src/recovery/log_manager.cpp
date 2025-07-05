@@ -18,6 +18,9 @@ See the Mulan PSL v2 for more details. */
  */
 lsn_t LogManager::add_log_to_buffer(LogRecord* log_record) {
         std::unique_lock<std::recursive_mutex> latch(latch_);
+        std::cout << "[DEBUG] 添加日志记录: 类型=" << LogTypeStr[log_record->log_type_] 
+          << ", txn_id=" << log_record->log_tid_
+          << ", 大小=" << log_record->log_tot_len_ << std::endl;
         // 为日志记录分配一个LSN
         lsn_t lsn = global_lsn_++;
         log_record->lsn_ = lsn;   
@@ -36,31 +39,41 @@ lsn_t LogManager::add_log_to_buffer(LogRecord* log_record) {
  * @description: 把日志缓冲区的内容刷到磁盘中，由于目前只设置了一个缓冲区，因此需要阻塞其他日志操作
  */
 void LogManager::flush_log_to_disk() {
-        std::unique_lock<std::recursive_mutex> latch(latch_);//上锁
-        if (disk_manager_ == nullptr) {
-                std::cerr << "错误: disk_manager_是空指针" << std::endl;
-                return; // 或抛出异常
+    std::unique_lock<std::recursive_mutex> latch(latch_);
+    std::cout << "[DEBUG] 刷新日志到磁盘，当前偏移量=" << log_buffer_.offset_ << std::endl;
+    
+    if (disk_manager_ == nullptr) {
+        std::cerr << "错误: disk_manager_是空指针" << std::endl;
+        return;
+    }
+    
+    // 仅当缓冲区有内容时才写入
+    if (log_buffer_.offset_ > 0) {
+        try {
+            // 确保日志文件以追加模式打开
+            if (!disk_manager_->is_file(LOG_FILE_NAME)) {
+                disk_manager_->create_file(LOG_FILE_NAME);
+            } else {
+                // 确保文件是打开的且可写
+                disk_manager_->close_log_file();
+                disk_manager_->reopen_log_file();
+            }
+            
+            // 写入并验证结果
+            disk_manager_->write_log(log_buffer_.buffer_, log_buffer_.offset_);
+    
+            // 假设写入成功，如果有错误会抛出异常
+            std::cout << "[DEBUG] 日志成功写入磁盘, 大小=" << log_buffer_.offset_ << std::endl;
+            
+            // 更新持久化LSN并重置缓冲区
+            persist_lsn_ = *reinterpret_cast<lsn_t*>(log_buffer_.buffer_ + OFFSET_LSN);
+            log_buffer_.offset_ = 0;
+            memset(log_buffer_.buffer_, 0, LOG_BUFFER_SIZE);
+            std::cout << "[DEBUG] 日志成功写入磁盘，持久化LSN=" << persist_lsn_ << std::endl;
+        } catch (const std::exception& e) {
+            std::cerr << "日志写入异常: " << e.what() << std::endl;
         }
-        // 仅当缓冲区有内容时才写入
-        if (log_buffer_.offset_ > 0) {
-                try {
-                // 确保日志文件存在
-                if (!disk_manager_->is_file(LOG_FILE_NAME)) {
-                        disk_manager_->create_file(LOG_FILE_NAME);
-                        std::cout << "Created log file: " << LOG_FILE_NAME << std::endl;
-                }
-                //写入磁盘
-                disk_manager_->write_log(log_buffer_.buffer_, log_buffer_.offset_);
-                persist_lsn_ = *reinterpret_cast<lsn_t*>(log_buffer_.buffer_ + OFFSET_LSN);
-                
-                // 重置日志缓冲区
-                log_buffer_.offset_ = 0;
-                memset(log_buffer_.buffer_, 0, sizeof(log_buffer_.buffer_));
-                } catch (const std::exception& e) {
-                std::cerr << "Error writing log to disk: " << e.what() << std::endl;
-                throw; 
-                }
-        }
+    }
 }
 
 /**
