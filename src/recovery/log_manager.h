@@ -173,14 +173,17 @@ class AbortLogRecord: public LogRecord {
 
 class InsertLogRecord: public LogRecord {
 public:
+    std::string table_name_;
+    size_t table_name_size_;
+
     InsertLogRecord() {
         log_type_ = LogType::INSERT;
         lsn_ = INVALID_LSN;
         log_tot_len_ = LOG_HEADER_SIZE;
         log_tid_ = INVALID_TXN_ID;
         prev_lsn_ = INVALID_LSN;
-        table_name_ = nullptr;
     }
+
     InsertLogRecord(txn_id_t txn_id, RmRecord& insert_value, Rid& rid, std::string table_name) 
         : InsertLogRecord() {
         log_tid_ = txn_id;
@@ -189,15 +192,14 @@ public:
         log_tot_len_ += sizeof(int);
         log_tot_len_ += insert_value_.size;
         log_tot_len_ += sizeof(Rid);
-        table_name_size_ = table_name.length();
-        table_name_ = new char[table_name_size_ + 1];  // +1 for null terminator
-        memcpy(table_name_, table_name.c_str(), table_name_size_);
-        table_name_[table_name_size_] = '\0';  // 显式添加终止符
         
+        // 直接赋值，string会自动管理内存
+        table_name_ = table_name;
+        table_name_size_ = table_name.length();
         log_tot_len_ += sizeof(size_t) + table_name_size_;
     }
 
-    // 把insert日志记录序列化到dest中
+    // 序列化函数修改
     void serialize(char* dest) const override {
         LogRecord::serialize(dest);
         int offset = OFFSET_LOG_DATA;
@@ -209,9 +211,10 @@ public:
         offset += sizeof(Rid);
         memcpy(dest + offset, &table_name_size_, sizeof(size_t));
         offset += sizeof(size_t);
-        memcpy(dest + offset, table_name_, table_name_size_);
+        memcpy(dest + offset, table_name_.c_str(), table_name_size_);
     }
-    // 从src中反序列化出一条Insert日志记录
+
+    // 反序列化函数修改
     void deserialize(const char* src) override {
         LogRecord::deserialize(src);
         insert_value_.Deserialize(src + OFFSET_LOG_DATA);
@@ -220,28 +223,24 @@ public:
         offset += sizeof(Rid);
         table_name_size_ = *reinterpret_cast<const size_t*>(src + offset);
         offset += sizeof(size_t);
-        table_name_ = new char[table_name_size_ + 1];  // +1 for null terminator
-        memcpy(table_name_, src + offset, table_name_size_);
-        table_name_[table_name_size_] = '\0';  // 显式添加终止符
+        
+        // 使用string构造函数
+        table_name_ = std::string(src + offset, table_name_size_);
     }
+
+    // 删除析构函数中的手动内存管理
+    ~InsertLogRecord() = default;
+
     void format_print() override {
         printf("insert record\n");
         LogRecord::format_print();
         printf("insert_value: %s\n", insert_value_.data);
         printf("insert rid: %d, %d\n", rid_.page_no, rid_.slot_no);
-        printf("table name: %s\n", table_name_);
+        printf("table name: %s\n", table_name_.c_str());
     }
-    ~InsertLogRecord(){
-        if (table_name_) {
-            std::cout << "[DEBUG] 释放InsertLogRecord的table_name_内存" << std::endl;
-            delete[] table_name_;
-            table_name_ = nullptr;
-        }
-    }
-    RmRecord insert_value_;     // 插入的记录
-    Rid rid_;                   // 记录插入的位置
-    char* table_name_;          // 插入记录的表名称
-    size_t table_name_size_;    // 表名称的大小
+
+    RmRecord insert_value_;
+    Rid rid_;
 };
 
 // 新增检查点日志记录类
@@ -349,13 +348,15 @@ class CheckpointLogRecord: public LogRecord {
 */
 class DeleteLogRecord: public LogRecord {
     public:
+    std::string table_name_;
+    size_t table_name_size_;
+
     DeleteLogRecord() {
         log_type_ = LogType::DELETE;
         lsn_ = INVALID_LSN;
         log_tot_len_ = LOG_HEADER_SIZE;
         log_tid_ = INVALID_TXN_ID;
         prev_lsn_ = INVALID_LSN;
-        table_name_ = nullptr;
     }
     
     DeleteLogRecord(txn_id_t txn_id, RmRecord& deleted_value, Rid& rid, std::string table_name) 
@@ -366,18 +367,15 @@ class DeleteLogRecord: public LogRecord {
         log_tot_len_ += sizeof(int);
         log_tot_len_ += deleted_value_.size;
         log_tot_len_ += sizeof(Rid);
+        
+        // 直接赋值，string会自动管理内存
+        table_name_ = table_name;
         table_name_size_ = table_name.length();
-        table_name_ = new char[table_name_size_ + 1];  // +1 for null terminator
-        memcpy(table_name_, table_name.c_str(), table_name_size_);
-        table_name_[table_name_size_] = '\0';  // 显式添加终止符
         log_tot_len_ += sizeof(size_t) + table_name_size_;
     }
     
-    ~DeleteLogRecord() {
-        if (table_name_) {
-            delete[] table_name_;
-        }
-    }
+    // 删除析构函数中的手动内存管理
+    ~DeleteLogRecord() = default;
 
     // 把delete日志记录序列化到dest中
     void serialize(char* dest) const override {
@@ -391,7 +389,7 @@ class DeleteLogRecord: public LogRecord {
         offset += sizeof(Rid);
         memcpy(dest + offset, &table_name_size_, sizeof(size_t));
         offset += sizeof(size_t);
-        memcpy(dest + offset, table_name_, table_name_size_);
+        memcpy(dest + offset, table_name_.c_str(), table_name_size_);
     }
     
     // 从src中反序列化出一条Delete日志记录
@@ -403,9 +401,9 @@ class DeleteLogRecord: public LogRecord {
         offset += sizeof(Rid);
         table_name_size_ = *reinterpret_cast<const size_t*>(src + offset);
         offset += sizeof(size_t);
-        table_name_ = new char[table_name_size_ + 1];  // +1 for null terminator
-        memcpy(table_name_, src + offset, table_name_size_);
-        table_name_[table_name_size_] = '\0';  // 显式添加终止符
+        
+        // 使用string构造函数
+        table_name_ = std::string(src + offset, table_name_size_);
     }
     
     void format_print() override {
@@ -413,13 +411,11 @@ class DeleteLogRecord: public LogRecord {
         LogRecord::format_print();
         printf("deleted_value: %s\n", deleted_value_.data);
         printf("delete rid: %d, %d\n", rid_.page_no, rid_.slot_no);
-        printf("table name: %s\n", table_name_);
+        printf("table name: %s\n", table_name_.c_str());
     }
 
     RmRecord deleted_value_;    // 被删除的记录内容
     Rid rid_;                   // 记录删除的位置
-    char* table_name_;          // 删除记录的表名称
-    size_t table_name_size_;    // 表名称的大小
 };
 
 /**
@@ -427,13 +423,20 @@ class DeleteLogRecord: public LogRecord {
 */
 class UpdateLogRecord: public LogRecord {
     public:
+    std::string table_name_;
+    size_t table_name_size_;
+    std::string ref_col_name_;
+    size_t ref_col_name_size_;
+
     UpdateLogRecord() {
         log_type_ = LogType::UPDATE;
         lsn_ = INVALID_LSN;
         log_tot_len_ = LOG_HEADER_SIZE;
         log_tid_ = INVALID_TXN_ID;
         prev_lsn_ = INVALID_LSN;
-        table_name_ = nullptr;
+        is_expr_update_ = false;
+        op_type_ = '\0';
+        ref_col_name_size_ = 0;
     }
     
     UpdateLogRecord(txn_id_t txn_id, RmRecord& old_value, RmRecord& new_value, Rid& rid, std::string table_name) 
@@ -446,40 +449,34 @@ class UpdateLogRecord: public LogRecord {
         log_tot_len_ += old_value_.size;
         log_tot_len_ += new_value_.size;
         log_tot_len_ += sizeof(Rid);
+        
+        // 直接赋值，string会自动管理内存
+        table_name_ = table_name;
         table_name_size_ = table_name.length();
-        table_name_ = new char[table_name_size_ + 1];  // +1 for null terminator
-        memcpy(table_name_, table_name.c_str(), table_name_size_);
-        table_name_[table_name_size_] = '\0';  // 显式添加终止符
         log_tot_len_ += sizeof(size_t) + table_name_size_;
+        
+        // 添加表达式相关字段的大小
+        log_tot_len_ += sizeof(bool) + sizeof(char) + sizeof(size_t);
     }
 
     // 新增构造函数，支持表达式更新
     UpdateLogRecord(txn_id_t txn_id, RmRecord& old_value, RmRecord& new_value, Rid& rid, 
         std::string table_name, bool is_expr_update, char op_type, std::string ref_col_name)
-    : UpdateLogRecord(txn_id, old_value, new_value, rid, table_name) {
+        : UpdateLogRecord(txn_id, old_value, new_value, rid, table_name) {
 
-    is_expr_update_ = is_expr_update;
-    op_type_ = op_type;
+        is_expr_update_ = is_expr_update;
+        op_type_ = op_type;
 
-    if (!ref_col_name.empty()) {
-    ref_col_name_size_ = ref_col_name.length();
-    ref_col_name_ = new char[ref_col_name_size_ + 1];
-    memcpy(ref_col_name_, ref_col_name.c_str(), ref_col_name_size_);
-    ref_col_name_[ref_col_name_size_] = '\0';
-
-    // 更新记录总长度
-    log_tot_len_ += sizeof(bool) + sizeof(char) + sizeof(size_t) + ref_col_name_size_;
-    }
+        if (!ref_col_name.empty()) {
+            ref_col_name_ = ref_col_name;
+            ref_col_name_size_ = ref_col_name.length();
+            // 更新记录总长度
+            log_tot_len_ += ref_col_name_size_;
+        }
     }
     
-    ~UpdateLogRecord() {
-        if (table_name_) {
-            delete[] table_name_;
-        }
-        if (ref_col_name_) {
-            delete[] ref_col_name_;
-        }
-    }
+    // 删除析构函数中的手动内存管理
+    ~UpdateLogRecord() = default;
 
     // 把update日志记录序列化到dest中
     void serialize(char* dest) const override {
@@ -503,22 +500,22 @@ class UpdateLogRecord: public LogRecord {
         offset += sizeof(Rid);
         memcpy(dest + offset, &table_name_size_, sizeof(size_t));
         offset += sizeof(size_t);
-        memcpy(dest + offset, table_name_, table_name_size_);
-
+        memcpy(dest + offset, table_name_.c_str(), table_name_size_);
         offset += table_name_size_;
+        
         // 写入是否为表达式更新
         memcpy(dest + offset, &is_expr_update_, sizeof(bool));
         offset += sizeof(bool);
-        if (is_expr_update_) {
-            // 写入操作符
-            memcpy(dest + offset, &op_type_, sizeof(char));
-            offset += sizeof(char);
-            // 写入引用列名
-            memcpy(dest + offset, &ref_col_name_size_, sizeof(size_t));
-            offset += sizeof(size_t);
-            if (ref_col_name_size_ > 0) {
-                memcpy(dest + offset, ref_col_name_, ref_col_name_size_);
-            }
+        
+        // 写入操作符
+        memcpy(dest + offset, &op_type_, sizeof(char));
+        offset += sizeof(char);
+        
+        // 写入引用列名
+        memcpy(dest + offset, &ref_col_name_size_, sizeof(size_t));
+        offset += sizeof(size_t);
+        if (ref_col_name_size_ > 0) {
+            memcpy(dest + offset, ref_col_name_.c_str(), ref_col_name_size_);
         }
     }
     
@@ -539,31 +536,27 @@ class UpdateLogRecord: public LogRecord {
         offset += sizeof(Rid);
         table_name_size_ = *reinterpret_cast<const size_t*>(src + offset);
         offset += sizeof(size_t);
-        table_name_ = new char[table_name_size_ + 1];
-        memcpy(table_name_, src + offset, table_name_size_);
-        table_name_[table_name_size_] = '\0';
+        
+        // 使用string构造函数
+        table_name_ = std::string(src + offset, table_name_size_);
         offset += table_name_size_;
         
         // 添加下面代码以读取表达式相关字段
         if (offset < log_tot_len_) {  // 兼容旧日志格式
             // 读取是否为表达式更新
-            memcpy(&is_expr_update_, src + offset, sizeof(bool));
+            is_expr_update_ = *reinterpret_cast<const bool*>(src + offset);
             offset += sizeof(bool);
             
-            if (is_expr_update_) {
-                // 读取操作符
-                memcpy(&op_type_, src + offset, sizeof(char));
-                offset += sizeof(char);
-                
-                // 读取引用列名
-                memcpy(&ref_col_name_size_, src + offset, sizeof(size_t));
-                offset += sizeof(size_t);
-                
-                if (ref_col_name_size_ > 0) {
-                    ref_col_name_ = new char[ref_col_name_size_ + 1];
-                    memcpy(ref_col_name_, src + offset, ref_col_name_size_);
-                    ref_col_name_[ref_col_name_size_] = '\0';
-                }
+            // 读取操作符
+            op_type_ = *reinterpret_cast<const char*>(src + offset);
+            offset += sizeof(char);
+            
+            // 读取引用列名
+            ref_col_name_size_ = *reinterpret_cast<const size_t*>(src + offset);
+            offset += sizeof(size_t);
+            
+            if (ref_col_name_size_ > 0) {
+                ref_col_name_ = std::string(src + offset, ref_col_name_size_);
             }
         }
     }
@@ -574,18 +567,17 @@ class UpdateLogRecord: public LogRecord {
         printf("old_value: %s\n", old_value_.data);
         printf("new_value: %s\n", new_value_.data);
         printf("update rid: %d, %d\n", rid_.page_no, rid_.slot_no);
-        printf("table name: %s\n", table_name_);
+        printf("table name: %s\n", table_name_.c_str());
+        if (is_expr_update_) {
+            printf("expression update: op=%c, ref_col=%s\n", op_type_, ref_col_name_.c_str());
+        }
     }
 
     RmRecord old_value_;        // 更新前的记录内容
     RmRecord new_value_;        // 更新后的记录内容
     Rid rid_;                   // 更新记录的位置
-    char* table_name_;          // 更新记录的表名称
-    size_t table_name_size_;    // 表名称的大小
     bool is_expr_update_ = false;      // 是否为表达式更新
     char op_type_ = '\0';              // 操作符类型(+,-,*,/)
-    char* ref_col_name_ = nullptr;     // 引用的列名
-    size_t ref_col_name_size_ = 0;     // 引用列名长度
 };
 
 /* 日志缓冲区，只有一个buffer，因此需要阻塞地去把日志写入缓冲区中 */
