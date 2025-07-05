@@ -426,6 +426,6 @@ lsn_t LogManager::create_checkpoint(const std::vector<txn_id_t>& active_txns) {
             fclose(restart_file);
         }
         
-        delete checkpoint_record;
+        //delete checkpoint_record;
         return checkpoint_lsn;
 }

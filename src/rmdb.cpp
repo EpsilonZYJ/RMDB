@@ -89,18 +89,15 @@ void SetTransaction(txn_id_t *txn_id, Context *context, bool is_begin_stmt = fal
     }
 }
 
+static thread_local Context* session_context = nullptr;
 void *client_handler(void *sock_fd) {
     int fd = *((int *)sock_fd);
     pthread_mutex_unlock(sockfd_mutex);
 
     int i_recvBytes;
-    // 接收客户端发送的请求
     char data_recv[BUFFER_LENGTH];
-    // 需要返回给客户端的结果
     char *data_send = new char[BUFFER_LENGTH];
-    // 需要返回给客户端的结果的长度
     int offset = 0;
-    // 记录客户端当前正在执行的事务ID
     txn_id_t txn_id = INVALID_TXN_ID;
 
     std::string output = "establish client connection, sockfd: " + std::to_string(fd) + "\n";
@@ -137,18 +134,20 @@ void *client_handler(void *sock_fd) {
         memset(data_send, '\0', BUFFER_LENGTH);
         offset = 0;
 
-        // 开启事务，初始化系统所需的上下文信息（包括事务对象指针、锁管理器指针、日志管理器指针、存放结果的buffer、记录结果长度的变量）
-        Context *context = new Context(lock_manager.get(), log_manager.get(), nullptr, data_send, &offset);
-        std::cout << "DEBUG: 创建新的Context对象: " << context << std::endl;
-        //SetTransaction(&txn_id, context); //TODO： 第二关暂时将这里注释掉
-        if (strcmp(data_recv, "begin;") == 0 || strcmp(data_recv, "BEGIN;") == 0) {
-            // 对BEGIN语句特殊处理
-            SetTransaction(&txn_id, context, true);
+        if (!session_context) {
+            session_context = new Context(lock_manager.get(), log_manager.get(), nullptr, data_send, &offset);
         } else {
-            // 普通语句
-            SetTransaction(&txn_id, context);
+            session_context->data_send_ = data_send;
+            session_context->offset_ = &offset;
         }
-        //用于判断是否已经调用了yy_delete_buffer来删除buf
+        std::cout << "DEBUG: 使用Context对象: " << session_context << std::endl;
+
+        if (strcmp(data_recv, "begin;") == 0 || strcmp(data_recv, "BEGIN;") == 0) {
+            SetTransaction(&txn_id, session_context, true);
+        } else {
+            SetTransaction(&txn_id, session_context);
+        }
+
         bool finish_analyze = false;
         pthread_mutex_lock(buffer_mutex);
         YY_BUFFER_STATE buf = yy_scan_string(data_recv);
@@ -156,26 +155,23 @@ void *client_handler(void *sock_fd) {
             if (ast::parse_tree != nullptr) {
                 std::cout << "DEBUG: 解析成功，开始分析语法树" << std::endl;
                 try {
-                    // analyze and rewrite
                     std::shared_ptr<Query> query = analyze->do_analyze(ast::parse_tree);
                     yy_delete_buffer(buf);
                     finish_analyze = true;
                     pthread_mutex_unlock(buffer_mutex);
-                    // 优化器
-                    std::shared_ptr<Plan> plan = optimizer->plan_query(query, context);
-                    // portal
-                    std::shared_ptr<PortalStmt> portalStmt = portal->start(plan, context);
-                    portal->run(portalStmt, ql_manager.get(), &txn_id, context);
+                    
+                    std::shared_ptr<Plan> plan = optimizer->plan_query(query, session_context);
+                    std::shared_ptr<PortalStmt> portalStmt = portal->start(plan, session_context);
+                    portal->run(portalStmt, ql_manager.get(), &txn_id, session_context);
                     portal->drop();
                 } catch (TransactionAbortException &e) {
-                    // 事务需要回滚，需要把abort信息返回给客户端并写入output.txt文件中
                     std::string str = "abort\n";
                     memcpy(data_send, str.c_str(), str.length());
                     data_send[str.length()] = '\0';
                     offset = str.length();
 
-                    // 回滚事务
-                    txn_manager->abort(context->txn_, log_manager.get());
+                    // 修复：使用session_context
+                    txn_manager->abort(session_context->txn_, log_manager.get());
                     std::cout << e.GetInfo() << std::endl;
 
                     std::fstream outfile;
@@ -183,7 +179,6 @@ void *client_handler(void *sock_fd) {
                     outfile << str;
                     outfile.close();
                 } catch (RMDBError &e) {
-                    // 遇到异常，需要打印failure到output.txt文件中，并发异常信息返回给客户端
                     std::cerr << e.what() << std::endl;
 
                     memcpy(data_send, e.what(), e.get_msg_len());
@@ -191,7 +186,6 @@ void *client_handler(void *sock_fd) {
                     data_send[e.get_msg_len() + 1] = '\0';
                     offset = e.get_msg_len() + 1;
 
-                    // 将报错信息写入output.txt
                     std::fstream outfile;
                     outfile.open("output.txt",std::ios::out | std::ios::app);
                     outfile << "failure\n";
@@ -199,7 +193,6 @@ void *client_handler(void *sock_fd) {
                 }
             }
         } else {
-            // 语法解析出错，将报错信息写入output.txt
             std::fstream outfile;
             outfile.open("output.txt",std::ios::out | std::ios::app);
             outfile << "failure\n";
@@ -210,41 +203,28 @@ void *client_handler(void *sock_fd) {
             yy_delete_buffer(buf);
             pthread_mutex_unlock(buffer_mutex);
         }
-        // future TODO: 格式化 sql_handler.result, 传给客户端
-        // send result with fixed format, use protobuf in the future
+
         if (write(fd, data_send, offset + 1) == -1) {
             break;
         }
 
-
-        // if (strcmp(data_recv, "begin;") == 0) {
-        //     // 已经在portal::run中创建了事务，这里设置为显式事务模式
-        //     if (context->txn_ != nullptr) {
-        //         context->txn_->set_txn_mode(true);
-        //     }
-        // } 
-        // else 
         if (strcmp(data_recv, "abort;") == 0 || strcmp(data_recv, "commit;") == 0) {
-            // 事务已经在相应的函数中被终止或提交，重置事务ID
             txn_id = INVALID_TXN_ID;
+            if (session_context) {
+                session_context->txn_ = nullptr;  // 清理事务指针
+            }
         }
-
-        // TODO 第二关暂时将这里注释掉
-        // 如果是单挑语句，需要按照一个完整的事务来执行，所以执行完当前语句后，自动提交事务
-        // if (context->txn_ != nullptr && context->txn_->get_txn_mode() == false)
-        // {
-        //     txn_manager->commit(context->txn_, context->log_mgr_);
-        //     // 重置事务ID，确保下次使用新事务
-        //     txn_id = INVALID_TXN_ID;
-        // }
-        
-        delete context; // 确保每次循环结束释放context
     }
 
-    // Clear
+    // 清理session_context
+    if (session_context) {
+        delete session_context;
+        session_context = nullptr;
+    }
+
     std::cout << "Terminating current client_connection..." << std::endl;
-    close(fd);           // close a file descriptor.
-    pthread_exit(NULL);  // terminate calling thread!
+    close(fd);
+    pthread_exit(NULL);
 }
 
 void start_server() {
