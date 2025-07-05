@@ -9,7 +9,7 @@ import select
 # 默认路径和参数
 DEFAULT_SERVER_PATH = "./build/bin/rmdb"
 DEFAULT_CLIENT_PATH = "./rmdb_client/build/rmdb_client"
-DEFAULT_SQL_FILE = "./test_7.sql"
+DEFAULT_SQL_FILE = "./new_order.sql"
 DEFAULT_DB_NAME = "test_db"  # 默认数据库名
 
 def parse_sql_statements(sql_file):
@@ -75,8 +75,16 @@ def execute_client_server_mode(server_path, client_path, sql_file, db_name=DEFAU
             text=True
         )
         
-        # 等待服务端启动 - 减少等待时间
-        time.sleep(1)
+        print("等待服务器启动...")
+        time.sleep(2)  # 给服务器更多启动时间
+
+        # 检查服务器是否仍在运行
+        if server_process.poll() is not None:
+            print(f"错误：服务器进程异常终止，返回码: {server_process.returncode}")
+            # 尝试获取服务器错误输出
+            output = server_process.stdout.read()
+            print(f"服务器输出: {output}")
+            return False
         
         # 使用 robust SQL 解析
         sql_statements = parse_sql_statements(sql_file)
@@ -110,7 +118,7 @@ def execute_client_server_mode(server_path, client_path, sql_file, db_name=DEFAU
                 # 等待响应
                 error_detected = False
                 response_text =""
-                timeout = 0.1
+                timeout = 0.3
                 start_time = time.time()
                 
                 while time.time() - start_time < timeout:
@@ -126,8 +134,10 @@ def execute_client_server_mode(server_path, client_path, sql_file, db_name=DEFAU
                             detail.write(line)
                             response_text += line                
                             # 检查错误关键词
-                            if any(keyword in line for keyword in ["ERROR", "error", "失败", "Exception"]):
+                            if any(keyword in line.lower() for keyword in ["error", "exception", "失败", "segmentation", "fault", "core"]):
                                 error_detected = True
+                                print(f"\n[!] 检测到错误: {line.strip()}")
+                                # 不要立即break，收集更多错误信息
                                 break
                     except IOError:
                         # 没有更多数据可读
@@ -166,13 +176,18 @@ def execute_client_server_mode(server_path, client_path, sql_file, db_name=DEFAU
         return False
         
     finally:
-        # 关闭服务端
+    # 关闭服务端
         if server_process:
-            server_process.terminate()
-            try:
-                server_process.wait(timeout=3)
-            except subprocess.TimeoutExpired:
-                server_process.kill()
+            if server_process.poll() is None:  # 如果仍在运行
+                print("关闭服务器进程...")
+                server_process.terminate()
+                try:
+                    server_process.wait(timeout=3)
+                except subprocess.TimeoutExpired:
+                    print("服务器未响应，强制终止")
+                    server_process.kill()
+            else:
+                print(f"服务器已终止，返回码: {server_process.returncode}")
 
 def execute_direct_mode(db_executable, sql_file, db_name=DEFAULT_DB_NAME, output_file=None):
     """执行单进程模式的SQL文件（无客户端-服务端）"""

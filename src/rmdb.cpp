@@ -217,13 +217,14 @@ void *client_handler(void *sock_fd) {
         }
 
 
-        if (strcmp(data_recv, "begin;") == 0) {
-            // 已经在portal::run中创建了事务，这里设置为显式事务模式
-            if (context->txn_ != nullptr) {
-                context->txn_->set_txn_mode(true);
-            }
-        } 
-        else if (strcmp(data_recv, "abort;") == 0 || strcmp(data_recv, "commit;") == 0) {
+        // if (strcmp(data_recv, "begin;") == 0) {
+        //     // 已经在portal::run中创建了事务，这里设置为显式事务模式
+        //     if (context->txn_ != nullptr) {
+        //         context->txn_->set_txn_mode(true);
+        //     }
+        // } 
+        // else 
+        if (strcmp(data_recv, "abort;") == 0 || strcmp(data_recv, "commit;") == 0) {
             // 事务已经在相应的函数中被终止或提交，重置事务ID
             txn_id = INVALID_TXN_ID;
         }

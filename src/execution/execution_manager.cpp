@@ -104,12 +104,11 @@ void QlManager::run_cmd_utility(std::shared_ptr<Plan> plan, txn_id_t *txn_id, Co
             case T_Transaction_begin:
             {
                 // 显示开启一个事务
-                context->txn_ = txn_mgr_->begin(nullptr, log_manager_);
-                *txn_id = context->txn_->get_transaction_id();
-                
-                // 设置为显式事务
-                context->txn_->set_txn_mode(true);
-                std::cout << "显式事务开始: 新ID=" << *txn_id << std::endl;
+                if (context->txn_ != nullptr) {
+                    context->txn_->set_txn_mode(true);
+                    *txn_id = context->txn_->get_transaction_id();
+                    std::cout << "设置事务为显式模式: ID=" << *txn_id << std::endl;
+                }
                 break;
             }  
             case T_Transaction_commit:
@@ -249,24 +248,25 @@ void QlManager::select_from(std::unique_ptr<AbstractExecutor> executorTreeRoot, 
 // 执行DML语句
 void QlManager::run_dml(std::unique_ptr<AbstractExecutor> exec){
     exec->Next();
+    
     // 添加自动提交逻辑
     if (exec->context_ && exec->context_->txn_ && !exec->context_->txn_->get_txn_mode()) {
         // 只有在非显式事务模式下才自动提交
         std::cout << "自动提交隐式事务: " << exec->context_->txn_->get_transaction_id() << std::endl;
         
-        // 创建COMMIT日志
-        if (exec->context_->log_mgr_) {
-            std::cout << "添加提交日志记录: 事务=" << exec->context_->txn_->get_transaction_id() << std::endl;
-            CommitLogRecord* log_record = new CommitLogRecord(exec->context_->txn_->get_transaction_id());
-            exec->context_->log_mgr_->add_log_to_buffer(log_record);
-            delete log_record;
-            
-            // 确保刷新到磁盘
-            exec->context_->log_mgr_->flush_log_to_disk();
+        // 使用事务管理器正确提交，而不是手动创建日志
+        try {
+            txn_mgr_->commit(exec->context_->txn_, exec->context_->log_mgr_);
+            std::cout << "隐式事务提交成功" << std::endl;
+        } catch (const std::exception& e) {
+            std::cerr << "隐式事务提交失败: " << e.what() << std::endl;
+            // 提交失败时尝试回滚
+            try {
+                txn_mgr_->abort(exec->context_->txn_, exec->context_->log_mgr_);
+            } catch (...) {
+                std::cerr << "回滚也失败" << std::endl;
+            }
         }
-        
-        // 设置事务状态
-        exec->context_->txn_->set_state(TransactionState::COMMITTED);
     }
 }
 

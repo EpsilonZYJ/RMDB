@@ -50,7 +50,8 @@ Transaction * TransactionManager::begin(Transaction* txn, LogManager* log_manage
     if (log_manager != nullptr) {
         try {
             BeginLogRecord log_record(txn_id);
-            lsn_t lsn = log_manager->add_log_to_buffer(&log_record);
+            log_record.prev_lsn_ = INVALID_LSN;  
+            lsn_t lsn = log_manager->add_log_to_buffer(&log_record); 
             new_txn->set_prev_lsn(lsn);
         } catch (const std::exception& e) {
             std::cerr << "创建BEGIN日志失败: " << e.what() << std::endl;
@@ -152,11 +153,10 @@ void TransactionManager::commit(Transaction* txn, LogManager* log_manager) {
     // 1. 记录提交日志
     if (log_manager != nullptr) {
         try {
-            auto commit_log = new CommitLogRecord(txn->get_transaction_id());
-            commit_log->prev_lsn_ = txn->get_prev_lsn();
-            lsn_t lsn = log_manager->add_log_to_buffer(commit_log);
+            CommitLogRecord commit_log(txn->get_transaction_id());
+            commit_log.prev_lsn_ = txn->get_prev_lsn();  
+            lsn_t lsn = log_manager->add_log_to_buffer(&commit_log); 
             txn->set_prev_lsn(lsn);
-            delete commit_log;
         } catch (std::exception& e) {
             std::cerr << "创建提交日志失败: " << e.what() << std::endl;
             log_success = false;
@@ -350,11 +350,10 @@ void TransactionManager::abort(Transaction * txn, LogManager *log_manager) {
     // 1. 记录回滚日志
     if (log_manager != nullptr) {
         try {
-            auto abort_log = new AbortLogRecord(txn->get_transaction_id());
-            abort_log->prev_lsn_ = txn->get_prev_lsn();
-            lsn_t lsn = log_manager->add_log_to_buffer(abort_log);
+            AbortLogRecord abort_log(txn->get_transaction_id());
+            abort_log.prev_lsn_ = txn->get_prev_lsn(); 
+            lsn_t lsn = log_manager->add_log_to_buffer(&abort_log); 
             txn->set_prev_lsn(lsn);
-            delete abort_log;
         } catch (std::exception& e) {
             std::cerr << "创建回滚日志失败: " << e.what() << std::endl;
             log_success = false;
