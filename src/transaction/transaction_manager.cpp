@@ -333,8 +333,15 @@ void TransactionManager::abort(Transaction * txn, LogManager *log_manager) {
     //     std::cerr << "警告: 由于日志错误，事务仍保留在txn_map中" << std::endl;
     // }
     std::cout << "[DEBUG] ABORT: 回滚事务，txn_id=" << (txn ? txn->get_transaction_id() : -1) << std::endl;
+    
     if (txn == nullptr) {
-        std::cerr << "错误: 尝试回滚空事务" << std::endl;
+        std::cerr << "[严重错误] 尝试回滚空事务指针" << std::endl;
+        return;
+    }
+    
+    if (txn->get_write_set() == nullptr) {
+        std::cerr << "[严重错误] 事务的写集合为空指针" << std::endl;
+        txn->set_state(TransactionState::ABORTED);
         return;
     }
     
@@ -385,23 +392,60 @@ void TransactionManager::abort(Transaction * txn, LogManager *log_manager) {
                     case WType::INSERT_TUPLE: {
                         // 处理索引
                         for (auto& index : table_meta.indexes) {
-                            std::string index_name = sm_manager_->get_ix_manager()->get_index_name(table_name, index.cols);
-                            if (sm_manager_->ihs_.find(index_name) != sm_manager_->ihs_.end()) {
+                            try {
+                                // 安全获取索引句柄
+                                std::string index_name = sm_manager_->get_ix_manager()->get_index_name(table_name, index.cols);
+                                if (sm_manager_->ihs_.find(index_name) == sm_manager_->ihs_.end() || !sm_manager_->ihs_.at(index_name)) {
+                                    std::cerr << "索引不存在或无效: " << index_name << std::endl;
+                                    continue;
+                                }
                                 auto ih = sm_manager_->ihs_.at(index_name).get();
                                 
-                                // 构建索引键
-                                char* key = new char[index.col_tot_len];
+                                // 检查记录数据是否为空
+                                if (!write_record->GetRecord().data) {
+                                    std::cerr << "记录数据为空: 表=" << table_name << ", RID=(" 
+                                              << write_record->GetRid().page_no << "," << write_record->GetRid().slot_no << ")" << std::endl;
+                                    continue;
+                                }
+                                
+                                // 使用智能指针管理索引键内存
+                                std::unique_ptr<char[]> key_ptr(new char[index.col_tot_len]);
+                                char* key = key_ptr.get();
+                                memset(key, 0, index.col_tot_len); // 初始化内存
+                                
+                                // 安全构建索引键
+                                bool key_valid = true;
                                 int offset = 0;
                                 for (size_t j = 0; j < index.col_num; j++) {
+                                    // 检查索引列是否在记录范围内
+                                    if (index.cols[j].offset >= write_record->GetRecord().size || 
+                                        index.cols[j].offset + index.cols[j].len > write_record->GetRecord().size) {
+                                        std::cerr << "索引列超出记录范围: 表=" << table_name 
+                                                  << ", 列偏移=" << index.cols[j].offset 
+                                                  << ", 列长度=" << index.cols[j].len 
+                                                  << ", 记录大小=" << write_record->GetRecord().size << std::endl;
+                                        key_valid = false;
+                                        break;
+                                    }
+                                    
+                                    // 复制索引键数据
                                     memcpy(key + offset, 
-                                          write_record->GetRecord().data + index.cols[j].offset, 
-                                          index.cols[j].len);
+                                           write_record->GetRecord().data + index.cols[j].offset, 
+                                           index.cols[j].len);
                                     offset += index.cols[j].len;
                                 }
                                 
-                                // 删除索引条目
-                                ih->delete_entry(key, txn);
-                                delete[] key;
+                                // 只有在键有效时才删除索引
+                                if (key_valid) {
+                                    ih->delete_entry(key, txn);
+                                    std::cout << "[DEBUG] 删除索引项: 表=" << table_name 
+                                              << ", 索引=" << index_name << std::endl;
+                                }
+                            } catch (std::exception& e) {
+                                std::cerr << "删除索引项异常: " << e.what() << std::endl;
+                                // 继续处理其他索引
+                            } catch (...) {
+                                std::cerr << "删除索引项未知异常" << std::endl;
                             }
                         }
                         
@@ -413,76 +457,169 @@ void TransactionManager::abort(Transaction * txn, LogManager *log_manager) {
                     
                     case WType::DELETE_TUPLE: {
                         // 恢复记录
-                        fh->insert_record(write_record->GetRid(), write_record->GetRecord().data);
-                        
-                        // 恢复索引
-                        for (auto& index : table_meta.indexes) {
-                            std::string index_name = sm_manager_->get_ix_manager()->get_index_name(table_name, index.cols);
-                            if (sm_manager_->ihs_.find(index_name) != sm_manager_->ihs_.end()) {
-                                auto ih = sm_manager_->ihs_.at(index_name).get();
-                                
-                                // 构建索引键
-                                char* key = new char[index.col_tot_len];
-                                int offset = 0;
-                                for (size_t j = 0; j < index.col_num; j++) {
-                                    memcpy(key + offset, 
-                                          write_record->GetRecord().data + index.cols[j].offset, 
-                                          index.cols[j].len);
-                                    offset += index.cols[j].len;
-                                }
-                                
-                                // 插入索引条目
-                                ih->insert_entry(key, write_record->GetRid(), txn);
-                                delete[] key;
+                        try {
+                            // 恢复记录，确保记录数据有效
+                            if (!write_record->GetRecord().data) {
+                                std::cerr << "记录数据为空，无法恢复记录" << std::endl;
+                                break;
                             }
+                            
+                            fh->insert_record(write_record->GetRid(), write_record->GetRecord().data);
+                            std::cout << "[DEBUG] 恢复删除的记录: RID=(" 
+                                      << write_record->GetRid().page_no << "," 
+                                      << write_record->GetRid().slot_no << ")" << std::endl;
+                            
+                            // 恢复索引
+                            for (auto& index : table_meta.indexes) {
+                                try {
+                                    std::string index_name = sm_manager_->get_ix_manager()->get_index_name(table_name, index.cols);
+                                    if (sm_manager_->ihs_.find(index_name) == sm_manager_->ihs_.end() || !sm_manager_->ihs_.at(index_name)) {
+                                        std::cerr << "索引不存在或无效: " << index_name << std::endl;
+                                        continue;
+                                    }
+                                    auto ih = sm_manager_->ihs_.at(index_name).get();
+                                    
+                                    // 使用智能指针管理索引键内存
+                                    std::unique_ptr<char[]> key_ptr(new char[index.col_tot_len]);
+                                    char* key = key_ptr.get();
+                                    memset(key, 0, index.col_tot_len); // 初始化内存
+                                    
+                                    // 安全构建索引键
+                                    bool key_valid = true;
+                                    int offset = 0;
+                                    for (size_t j = 0; j < index.col_num; j++) {
+                                        // 检查索引列是否在记录范围内
+                                        if (index.cols[j].offset >= write_record->GetRecord().size || 
+                                            index.cols[j].offset + index.cols[j].len > write_record->GetRecord().size) {
+                                            std::cerr << "索引列超出记录范围: 表=" << table_name 
+                                                      << ", 列偏移=" << index.cols[j].offset 
+                                                      << ", 列长度=" << index.cols[j].len 
+                                                      << ", 记录大小=" << write_record->GetRecord().size << std::endl;
+                                            key_valid = false;
+                                            break;
+                                        }
+                                        
+                                        // 复制索引键数据
+                                        memcpy(key + offset, 
+                                               write_record->GetRecord().data + index.cols[j].offset, 
+                                               index.cols[j].len);
+                                        offset += index.cols[j].len;
+                                    }
+                                    
+                                    // 只有在键有效时才插入索引
+                                    if (key_valid) {
+                                        ih->insert_entry(key, write_record->GetRid(), txn);
+                                        std::cout << "[DEBUG] 恢复索引项: 表=" << table_name 
+                                                  << ", 索引=" << index_name << std::endl;
+                                    }
+                                } catch (std::exception& e) {
+                                    std::cerr << "恢复索引项异常: " << e.what() << std::endl;
+                                    // 继续处理其他索引
+                                } catch (...) {
+                                    std::cerr << "恢复索引项未知异常" << std::endl;
+                                }
+                            }
+                        } catch (std::exception& e) {
+                            std::cerr << "恢复记录异常: " << e.what() << std::endl;
+                        } catch (...) {
+                            std::cerr << "恢复记录未知异常" << std::endl;
                         }
                         break;
                     }
                     
                     case WType::UPDATE_TUPLE: {
                         // 对于UPDATE，原始记录包含更新前的数据
-                        Context update_context(lock_manager_, log_manager, txn);
-                        
-                        // 先获取当前记录以便更新索引
-                        RmRecord current_record = *fh->get_record(write_record->GetRid(), &update_context);
-                        
-                        // 更新索引 - 先删除当前值对应的索引，再插入原始值对应的索引
-                        for (auto& index : table_meta.indexes) {
-                            std::string index_name = sm_manager_->get_ix_manager()->get_index_name(table_name, index.cols);
-                            if (sm_manager_->ihs_.find(index_name) != sm_manager_->ihs_.end()) {
-                                auto ih = sm_manager_->ihs_.at(index_name).get();
-                                
-                                // 构建当前记录的键
-                                char* current_key = new char[index.col_tot_len];
-                                int offset = 0;
-                                for (size_t j = 0; j < index.col_num; j++) {
-                                    memcpy(current_key + offset, 
-                                          current_record.data + index.cols[j].offset, 
-                                          index.cols[j].len);
-                                    offset += index.cols[j].len;
+                        try {
+                            // 1. 创建操作上下文
+                            Context update_context(lock_manager_, log_manager, txn);
+                            
+                            // 2. 安全获取当前记录
+                            std::unique_ptr<RmRecord> current_record_ptr;
+                            try {
+                                current_record_ptr = fh->get_record(write_record->GetRid(), &update_context);
+                                if (!current_record_ptr) {
+                                    std::cerr << "无法获取当前记录: " << write_record->GetRid().page_no 
+                                              << "," << write_record->GetRid().slot_no << std::endl;
+                                    continue;
                                 }
-                                
-                                // 构建原始记录的键
-                                char* original_key = new char[index.col_tot_len];
-                                offset = 0;
-                                for (size_t j = 0; j < index.col_num; j++) {
-                                    memcpy(original_key + offset, 
-                                          write_record->GetRecord().data + index.cols[j].offset, 
-                                          index.cols[j].len);
-                                    offset += index.cols[j].len;
-                                }
-                                
-                                // 删除当前键并插入原始键
-                                ih->delete_entry(current_key, txn);
-                                ih->insert_entry(original_key, write_record->GetRid(), txn);
-                                
-                                delete[] current_key;
-                                delete[] original_key;
+                            } catch (std::exception& e) {
+                                std::cerr << "获取当前记录失败: " << e.what() << std::endl;
+                                continue;
                             }
+                            
+                            // 3. 处理每个索引
+                            for (auto& index : table_meta.indexes) {
+                                try {
+                                    std::string index_name = sm_manager_->get_ix_manager()->get_index_name(table_name, index.cols);
+                                    if (sm_manager_->ihs_.find(index_name) == sm_manager_->ihs_.end() ||
+                                        !sm_manager_->ihs_.at(index_name)) {
+                                        continue;
+                                    }
+                                    auto ih = sm_manager_->ihs_.at(index_name).get();
+                                    
+                                    // 4. 使用智能指针管理索引键内存
+                                    std::unique_ptr<char[]> current_key_ptr(new char[index.col_tot_len]);
+                                    std::unique_ptr<char[]> original_key_ptr(new char[index.col_tot_len]);
+                                    char* current_key = current_key_ptr.get();
+                                    char* original_key = original_key_ptr.get();
+                                    
+                                    // 5. 初始化内存
+                                    memset(current_key, 0, index.col_tot_len);
+                                    memset(original_key, 0, index.col_tot_len);
+                                    
+                                    // 6. 安全构建索引键
+                                    bool keys_valid = true;
+                                    int offset = 0;
+                                    
+                                    // 构建当前记录的键
+                                    for (size_t j = 0; j < index.col_num && keys_valid; j++) {
+                                        if (index.cols[j].offset >= current_record_ptr->size || 
+                                            index.cols[j].offset + index.cols[j].len > current_record_ptr->size) {
+                                            keys_valid = false;
+                                            break;
+                                        }
+                                        
+                                        memcpy(current_key + offset, 
+                                               current_record_ptr->data + index.cols[j].offset, 
+                                               index.cols[j].len);
+                                        offset += index.cols[j].len;
+                                    }
+                                    
+                                    // 构建原始记录的键
+                                    offset = 0;
+                                    for (size_t j = 0; j < index.col_num && keys_valid; j++) {
+                                        if (index.cols[j].offset >= write_record->GetRecord().size || 
+                                            index.cols[j].offset + index.cols[j].len > write_record->GetRecord().size) {
+                                            keys_valid = false;
+                                            break;
+                                        }
+                                        
+                                        memcpy(original_key + offset, 
+                                               write_record->GetRecord().data + index.cols[j].offset, 
+                                               index.cols[j].len);
+                                        offset += index.cols[j].len;
+                                    }
+                                    
+                                    // 7. 只有在键有效时才执行索引操作
+                                    if (keys_valid) {
+                                        ih->delete_entry(current_key, txn);
+                                        ih->insert_entry(original_key, write_record->GetRid(), txn);
+                                        std::cout << "[DEBUG] 更新索引项: 表=" << table_name 
+                                                  << ", 索引=" << index_name << std::endl;
+                                    }
+                                } catch (std::exception& e) {
+                                    std::cerr << "更新索引异常: " << e.what() << std::endl;
+                                }
+                            }
+                            
+                            // 8. 更新记录
+                            fh->update_record(write_record->GetRid(), write_record->GetRecord().data, &update_context);
+                            std::cout << "[DEBUG] 成功回滚更新记录: " << write_record->GetRid().page_no 
+                                      << "," << write_record->GetRid().slot_no << std::endl;
+                                      
+                        } catch (std::exception& e) {
+                            std::cerr << "回滚更新记录异常: " << e.what() << std::endl;
                         }
-                        
-                        // 恢复记录
-                        fh->update_record(write_record->GetRid(), write_record->GetRecord().data, &update_context);
                         break;
                     }
                 }
