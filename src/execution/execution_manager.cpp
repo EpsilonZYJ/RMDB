@@ -115,7 +115,6 @@ void QlManager::run_cmd_utility(std::shared_ptr<Plan> plan, txn_id_t *txn_id, Co
             {
                 if (context->txn_ != nullptr) {
                     txn_mgr_->commit(context->txn_, context->log_mgr_);
-                    *txn_id = INVALID_TXN_ID;
                 }
                 break;
             }    
@@ -123,7 +122,6 @@ void QlManager::run_cmd_utility(std::shared_ptr<Plan> plan, txn_id_t *txn_id, Co
             {
                 if (context->txn_ != nullptr) {
                     txn_mgr_->abort(context->txn_, context->log_mgr_);
-                    *txn_id = INVALID_TXN_ID;  // 重置事务ID
                 }
                 break;
             }    

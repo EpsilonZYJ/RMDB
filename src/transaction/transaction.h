@@ -55,18 +55,20 @@ struct UndoLog {
 
 
 class Transaction {
-   public:
-    explicit Transaction(txn_id_t txn_id, IsolationLevel isolation_level = IsolationLevel::SERIALIZABLE)
-        : state_(TransactionState::DEFAULT), isolation_level_(isolation_level), txn_id_(txn_id) {
+   public:    explicit Transaction(txn_id_t txn_id, IsolationLevel isolation_level = IsolationLevel::SERIALIZABLE)
+        : state_(TransactionState::DEFAULT), 
+          isolation_level_(isolation_level), 
+          txn_id_(txn_id),
+          txn_mode_(false),  // 默认为隐式事务
+          thread_id_(std::this_thread::get_id()),
+          prev_lsn_(INVALID_LSN),
+          start_ts_(INVALID_TS),
+          read_ts_(0),
+          commit_ts_(INVALID_TS) {
         write_set_ = std::make_shared<std::deque<WriteRecord *>>();
         lock_set_ = std::make_shared<std::unordered_set<LockDataId>>();
         index_latch_page_set_ = std::make_shared<std::deque<Page *>>();
         index_deleted_page_set_ = std::make_shared<std::deque<Page*>>();
-        prev_lsn_ = INVALID_LSN;
-        thread_id_ = std::this_thread::get_id();
-
-         // [MVCC 新增成员]
-        timestamp_t commit_ts_{INVALID_TS};  // 事务提交时间戳
     }
 
     ~Transaction() = default;

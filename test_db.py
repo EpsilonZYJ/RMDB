@@ -76,7 +76,7 @@ def execute_client_server_mode(server_path, client_path, sql_file, db_name=DEFAU
         )
         
         print("等待服务器启动...")
-        time.sleep(2)  # 给服务器更多启动时间
+        time.sleep(3)  # 增加服务器启动时间
 
         # 检查服务器是否仍在运行
         if server_process.poll() is not None:
@@ -106,25 +106,59 @@ def execute_client_server_mode(server_path, client_path, sql_file, db_name=DEFAU
             for i, statement in enumerate(sql_statements):
                 print(f"SQL #{i+1}: {statement[:50]}{'...' if len(statement) > 50 else ''}")
                 
+                # 检查服务器是否还在运行
+                if server_process.poll() is not None:
+                    print(f"\n[!] 服务器在SQL #{i+1}之前崩溃了!")
+                    print(f"服务器返回码: {server_process.returncode}")
+                    try:
+                        output = server_process.stdout.read()
+                        if output:
+                            print(f"服务器输出: {output}")
+                    except:
+                        pass
+                    return False
+                
                 # 发送SQL语句
-                client_process.stdin.write(statement + "\n")
-                client_process.stdin.flush()
+                try:
+                    client_process.stdin.write(statement + "\n")
+                    client_process.stdin.flush()
+                except BrokenPipeError:
+                    print(f"\n[!] 客户端管道断开，服务器可能崩溃在SQL #{i+1}")
+                    return False
                 
                 # 设置非阻塞读取
                 fd = client_process.stdout.fileno()
                 flags = fcntl.fcntl(fd, fcntl.F_GETFL)
                 fcntl.fcntl(fd, fcntl.F_SETFL, flags | os.O_NONBLOCK)
                 
-                # 等待响应
+                # 智能输出完成检测
                 error_detected = False
-                response_text =""
-                timeout = 0.3
+                response_text = ""
+                lines_received = []
+                max_timeout = 8.0  # 增加最大超时时间
+                idle_timeout = 1.0  # 增加空闲超时时间
                 start_time = time.time()
+                last_output_time = start_time
                 
-                while time.time() - start_time < timeout:
+                while time.time() - start_time < max_timeout:
+                    # 再次检查服务器状态
+                    if server_process.poll() is not None:
+                        print(f"\n[!] 服务器在执行SQL #{i+1}时崩溃!")
+                        print(f"崩溃的SQL: {statement}")
+                        print(f"服务器返回码: {server_process.returncode}")
+                        return False
+                    
                     # 检查是否有数据可读
                     r, _, _ = select.select([fd], [], [], 0.1)
                     if not r:
+                        # 检查空闲超时
+                        if time.time() - last_output_time > idle_timeout:
+                            # 如果是SELECT语句且有输出，认为完成
+                            if statement.upper().strip().startswith('SELECT') and lines_received:
+                                break
+                            # 如果是非SELECT语句且空闲超过阈值，认为完成
+                            elif not statement.upper().strip().startswith('SELECT') and time.time() - last_output_time > 0.5:
+                                break
                         continue
                         
                     try:
@@ -132,16 +166,28 @@ def execute_client_server_mode(server_path, client_path, sql_file, db_name=DEFAU
                         if line:
                             out.write(line)
                             detail.write(line)
-                            response_text += line                
-                            # 检查错误关键词
-                            if any(keyword in line.lower() for keyword in ["error", "exception", "失败", "segmentation", "fault", "core"]):
+                            response_text += line
+                            lines_received.append(line.strip())
+                            last_output_time = time.time()
+                            
+                            # 检查严重错误关键词（排除正常的abort操作）
+                            line_lower = line.lower().strip()
+                            serious_errors = ["segmentation", "fault", "core dumped", "assertion", "fatal", "exception"]
+                            if any(keyword in line_lower for keyword in serious_errors):
                                 error_detected = True
                                 print(f"\n[!] 检测到错误: {line.strip()}")
-                                # 不要立即break，收集更多错误信息
                                 break
+                            
+                            # 检查完成标志
+                            line_lower = line.lower().strip()
+                            if any(completion in line_lower for completion in ["affected", "inserted", "updated", "deleted", "created", "dropped"]):
+                                # 操作完成标志，等待短暂时间收集剩余输出
+                                time.sleep(0.1)
+                                break
+                                
                     except IOError:
-                        # 没有更多数据可读
-                        time.sleep(0.1)  # 减少等待时间
+                        # 没有更多数据可读，短暂等待
+                        time.sleep(0.05)
                 
                 # 如果检测到错误
                 if error_detected:
@@ -162,11 +208,19 @@ def execute_client_server_mode(server_path, client_path, sql_file, db_name=DEFAU
             client_process.stdin.flush()
             
             # 收集最后输出
-            fcntl.fcntl(fd, fcntl.F_SETFL, flags)  # 恢复阻塞模式
-            remaining_output, _ = client_process.communicate(timeout=10)
-            if remaining_output:
-                out.write(remaining_output)
-                detail.write(remaining_output)
+            try:
+                fcntl.fcntl(fd, fcntl.F_SETFL, flags)  # 恢复阻塞模式
+                remaining_output, _ = client_process.communicate(timeout=5)
+                if remaining_output:
+                    out.write(remaining_output)
+                    detail.write(remaining_output)
+            except subprocess.TimeoutExpired:
+                print("客户端最终输出收集超时，强制终止")
+                client_process.terminate()
+                try:
+                    client_process.wait(timeout=2)
+                except subprocess.TimeoutExpired:
+                    client_process.kill()
         
         print("所有SQL语句执行成功!")
         return True

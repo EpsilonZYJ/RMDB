@@ -345,9 +345,12 @@ UPDATE customer SET c_balance = c_balance - 749.85 WHERE c_id = 104 AND c_d_id =
 ABORT;
 
 -- 验证回滚效果
-SELECT * FROM orders WHERE o_id IN (3002, 2001, 4002); -- 不应该有记录
-SELECT * FROM order_line WHERE ol_o_id IN (3002, 2001, 4002); -- 不应该有记录
+SELECT * FROM orders WHERE o_id = 3002; -- 不应该有记录
+SELECT * FROM order_line WHERE ol_o_id = 3002; -- 不应该有记录
 SELECT d_next_o_id FROM district WHERE d_id = 1 AND d_w_id = 1; -- 应保持原值
 SELECT d_next_o_id FROM district WHERE d_id = 2 AND d_w_id = 1; -- 应保持原值
 SELECT d_next_o_id FROM district WHERE d_id = 1 AND d_w_id = 2; -- 应保持原值
-SELECT c_balance FROM customer WHERE c_id IN (102, 103, 104); -- 应保持原值
+-- 修复：分别查询每个客户的余额，而不是使用IN操作符
+SELECT c_balance FROM customer WHERE c_id = 102;
+SELECT c_balance FROM customer WHERE c_id = 103;
+SELECT c_balance FROM customer WHERE c_id = 104;

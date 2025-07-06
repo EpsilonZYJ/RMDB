@@ -321,14 +321,15 @@ int IxNodeHandle::remove(const char *key) {
 IxIndexHandle::IxIndexHandle(DiskManager *disk_manager, BufferPoolManager *buffer_pool_manager, int fd)
     : disk_manager_(disk_manager), buffer_pool_manager_(buffer_pool_manager), fd_(fd) {
     // init file_hdr_
-    disk_manager_->read_page(fd, IX_FILE_HDR_PAGE, (char *)&file_hdr_, sizeof(file_hdr_));
-    char* buf = new char[PAGE_SIZE];
-    memset(buf, 0, PAGE_SIZE);
-    disk_manager_->read_page(fd, IX_FILE_HDR_PAGE, buf, PAGE_SIZE);
+    std::unique_ptr<char[]> buf(new char[PAGE_SIZE]);
+    memset(buf.get(), 0, PAGE_SIZE);
+    // 读取文件头页面
+    disk_manager_->read_page(fd, IX_FILE_HDR_PAGE, buf.get(), PAGE_SIZE);
+    // 创建并反序列化文件头
     file_hdr_ = new IxFileHdr();
-    file_hdr_->deserialize(buf);
-    
-    // disk_manager管理的fd对应的文件中，设置从file_hdr_->num_pages开始分配page_no
+    file_hdr_->deserialize(buf.get());
+    // buf自动释放，无需手动delete
+    // 设置页面分配起始位置
     int now_page_no = disk_manager_->get_fd2pageno(fd);
     disk_manager_->set_fd2pageno(fd, now_page_no + 1);
 }
@@ -976,17 +977,15 @@ Iid IxIndexHandle::leaf_begin() const {
 IxNodeHandle *IxIndexHandle::fetch_node(int page_no) const {
 
     if(page_no == IX_NO_PAGE || page_no < 0) {
-        return nullptr;  // 如果page_no无效，返回nullptr
+        return nullptr;
     }
 
     Page *page = buffer_pool_manager_->fetch_page(PageId{fd_, page_no});
-
     if(page == nullptr)
         return nullptr;
 
     IxNodeHandle *node = new IxNodeHandle(file_hdr_, page);
-    
-    return node;
+    return node;  
 }
 
 /**

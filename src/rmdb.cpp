@@ -71,21 +71,27 @@ void SetTransaction(txn_id_t *txn_id, Context *context, bool is_begin_stmt = fal
         return;
     }
     // 非BEGIN语句的正常处理
-    try {
-        context->txn_ = txn_manager->get_transaction(*txn_id);
-        if(context->txn_ == nullptr || 
-           context->txn_->get_state() == TransactionState::COMMITTED ||
-           context->txn_->get_state() == TransactionState::ABORTED) {
+    if (context->txn_ == nullptr) {
+        std::cout << "警告: context->txn_为空，重新获取事务" << std::endl;
+        try {
+            context->txn_ = txn_manager->get_transaction(*txn_id);
+        } catch (std::exception& e) {
+            std::cout << "找不到事务ID " << *txn_id << "，创建新事务" << std::endl;
+            context->txn_ = txn_manager->begin(nullptr, context->log_mgr_);
+            *txn_id = context->txn_->get_transaction_id();
+            context->txn_->set_txn_mode(false);
+            return;
+        }
+    }
+    // 只有在指针有效时才检查状态
+    if (context->txn_ != nullptr) {
+        TransactionState state = context->txn_->get_state();
+        if (state == TransactionState::COMMITTED || state == TransactionState::ABORTED) {
+            std::cout << "当前事务已结束，创建新事务" << std::endl;
             context->txn_ = txn_manager->begin(nullptr, context->log_mgr_);
             *txn_id = context->txn_->get_transaction_id();
             context->txn_->set_txn_mode(false);
         }
-    } catch (std::exception& e) {
-        // 处理查找不到事务的情况
-        std::cout << "警告: 找不到事务ID " << *txn_id << "，创建新事务" << std::endl;
-        context->txn_ = txn_manager->begin(nullptr, context->log_mgr_);
-        *txn_id = context->txn_->get_transaction_id();
-        context->txn_->set_txn_mode(false);
     }
 }
 
@@ -208,11 +214,24 @@ void *client_handler(void *sock_fd) {
             break;
         }
 
-        if (strcmp(data_recv, "abort;") == 0 || strcmp(data_recv, "commit;") == 0) {
-            txn_id = INVALID_TXN_ID;
-            if (session_context) {
-                session_context->txn_ = nullptr;  // 清理事务指针
+        // 分别处理COMMIT和ABORT，确保完整的大小写支持
+        if (strcmp(data_recv, "commit;") == 0 || strcmp(data_recv, "COMMIT;") == 0) {
+            std::cout << "检测到COMMIT语句，准备清理事务状态" << std::endl;
+            // 统一在这里处理COMMIT后的事务清理
+            if (session_context && session_context->txn_) {
+                std::cout << "清理已提交的事务: " << session_context->txn_->get_transaction_id() << std::endl;
+                session_context->txn_ = nullptr;  // 事务对象已在commit中被删除
             }
+            txn_id = INVALID_TXN_ID;
+        } 
+        else if (strcmp(data_recv, "abort;") == 0 || strcmp(data_recv, "ABORT;") == 0) {
+            std::cout << "检测到ABORT语句，准备清理事务状态" << std::endl;
+            // 统一在这里处理ABORT后的事务清理  
+            if (session_context && session_context->txn_) {
+                std::cout << "清理已回滚的事务: " << session_context->txn_->get_transaction_id() << std::endl;
+                session_context->txn_ = nullptr;  // 事务对象已在abort中被删除
+            }
+            txn_id = INVALID_TXN_ID;
         }
     }
 

@@ -189,6 +189,18 @@ class IxIndexHandle {
 
    public:
     IxIndexHandle(DiskManager *disk_manager, BufferPoolManager *buffer_pool_manager, int fd);
+    void release_node_handle(IxNodeHandle *node) {
+        if (node) {
+            buffer_pool_manager_->unpin_page(node->get_page_id(), false);
+            delete node;
+        }
+    }
+    ~IxIndexHandle() {
+        if (file_hdr_) {
+            delete file_hdr_;
+            file_hdr_ = nullptr;
+        }
+    }
 
     // for search
     bool get_value(const char *key, std::vector<Rid> *result, Transaction *transaction);
