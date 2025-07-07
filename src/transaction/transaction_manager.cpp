@@ -20,13 +20,7 @@ std::unordered_map<txn_id_t, Transaction *> TransactionManager::txn_map = {};
  * @param {Transaction*} txn 事务指针，空指针代表需要创建新事务，否则开始已有事务
  * @param {LogManager*} log_manager 日志管理器指针
  */
-Transaction * TransactionManager::begin(Transaction* txn, LogManager* log_manager) {
-    // Todo:
-    // 1. 判断传入事务参数是否为空指针
-    // 2. 如果为空指针，创建新事务
-    // 3. 把开始事务加入到全局事务表中
-    // 4. 返回当前事务指针
-    // 如果需要支持MVCC请在上述过程中添加代码
+ Transaction * TransactionManager::begin(Transaction* txn, LogManager* log_manager) {
     // 判断传入事务参数是否为空指针
     if (txn != nullptr) {
         // 如果不为空，开始已有事务
@@ -41,11 +35,13 @@ Transaction * TransactionManager::begin(Transaction* txn, LogManager* log_manage
             return txn;
         }
     }
+    
     txn_id_t txn_id = next_txn_id_++;
     std::cout << "[DEBUG] BEGIN: 创建新事务，txn_id=" << txn_id << std::endl;
     Transaction* new_txn = new Transaction(txn_id);
     new_txn->set_state(TransactionState::GROWING);
-    new_txn->set_txn_mode(true);  // 默认显式事务
+    new_txn->set_txn_mode(false);  // ✅ 修复：默认设为隐式事务
+    
     {
         std::unique_lock<std::mutex> lock(latch_);
         txn_map[txn_id] = new_txn;
@@ -53,10 +49,10 @@ Transaction * TransactionManager::begin(Transaction* txn, LogManager* log_manage
     
     // 写日志
     if (log_manager != nullptr) {
-            BeginLogRecord log_record(txn_id);
-            log_record.prev_lsn_ = INVALID_LSN;  
-            lsn_t lsn = log_manager->add_log_to_buffer(&log_record); 
-            new_txn->set_prev_lsn(lsn);
+        BeginLogRecord log_record(txn_id);
+        log_record.prev_lsn_ = INVALID_LSN;  
+        lsn_t lsn = log_manager->add_log_to_buffer(&log_record); 
+        new_txn->set_prev_lsn(lsn);
     }
     return new_txn;
 }
@@ -116,14 +112,10 @@ void TransactionManager::commit(Transaction* txn, LogManager* log_manager) {
  * @param {Transaction *} txn 需要回滚的事务
  * @param {LogManager} *log_manager 日志管理器指针
  */
-void TransactionManager::abort(Transaction * txn, LogManager *log_manager) {
-    // Todo:
-    // 1. 回滚所有写操作
-    // 2. 释放所有锁
-    // 3. 清空事务相关资源，eg.锁集
-    // 4. 把事务日志刷入磁盘中
-    // 5. 更新事务状态
+ void TransactionManager::abort(Transaction * txn, LogManager *log_manager) {
     if (txn == nullptr) return;
+    
+    std::cout << "开始回滚事务: " << txn->get_transaction_id() << std::endl;
     
     // 写回滚日志
     if (log_manager != nullptr) {
@@ -134,115 +126,71 @@ void TransactionManager::abort(Transaction * txn, LogManager *log_manager) {
     }
     
     // 回滚所有写操作 - 使用LIFO顺序
-    Context context(lock_manager_, log_manager, txn);
     auto write_set = txn->get_write_set();
     while (!write_set->empty()) {
         WriteRecord *write_record = write_set->back();  
         write_set->pop_back();                          
+        
+        try {
             std::string tab_name = write_record->GetTableName();
             
             // 检查表是否存在
             if (sm_manager_->fhs_.find(tab_name) == sm_manager_->fhs_.end()) {
+                std::cout << "警告：表 " << tab_name << " 不存在，跳过回滚" << std::endl;
                 delete write_record;
                 continue;
             }
             
-            auto& tab = sm_manager_->db_.get_table(tab_name);
             auto fh = sm_manager_->fhs_.at(tab_name).get();
             WType type = write_record->GetWriteType();
             
-            // 先处理DELETE_TUPLE的数据恢复
-            if (type == WType::DELETE_TUPLE) {
-                fh->insert_record(write_record->GetRid(), write_record->GetRecord().data);
-            }
+            std::cout << "回滚操作: 表=" << tab_name 
+                      << ", 类型=" << static_cast<int>(type)
+                      << ", RID=(" << write_record->GetRid().page_no 
+                      << "," << write_record->GetRid().slot_no << ")" << std::endl;
             
-            // 处理索引回滚
-            for (auto &index : tab.indexes) {
-                    std::string index_name = sm_manager_->get_ix_manager()->get_index_name(tab_name, index.cols);
-                    if (sm_manager_->ihs_.find(index_name) == sm_manager_->ihs_.end()) {
-                        continue;
-                    }
-                    auto ih = sm_manager_->ihs_.at(index_name).get();
-                    
-                    // 使用智能指针管理内存
-                    std::unique_ptr<char[]> key_ptr(new char[index.col_tot_len]);
-                    char *key = key_ptr.get();
-                    memset(key, 0, index.col_tot_len);
-                    
-                    int offset = 0;
-                    char* record = write_record->GetRecord().data;
-                    std::unique_ptr<RmRecord> rec;
-                    
-                    // 获取正确的记录数据
-                    if (type == WType::INSERT_TUPLE || type == WType::UPDATE_TUPLE) {
-                        rec = fh->get_record(write_record->GetRid(), &context);
-                        record = rec->data;
-                    }
-                    
-                    // 构建索引键
-                    bool key_valid = true;
-                    for (size_t j = 0; j < (size_t)index.col_num && key_valid; ++j) {
-                        if (index.cols[j].offset + index.cols[j].len <= write_record->GetRecord().size) {
-                            memcpy(key + offset, record + index.cols[j].offset, index.cols[j].len);
-                            offset += index.cols[j].len;
-                        } else {
-                            key_valid = false;
-                        }
-                    }
-                    
-                    if (!key_valid) continue;
-                    
-                    // 处理不同类型的索引操作
-                    switch (type) {
-                    case WType::INSERT_TUPLE:
-                        ih->delete_entry(key, txn);
-                        break;
-                    case WType::DELETE_TUPLE:
-                        ih->insert_entry(key, write_record->GetRid(), txn);
-                        break;
-                    case WType::UPDATE_TUPLE:
-                        {
-                            // 删除新索引
-                            ih->delete_entry(key, txn);
-                            
-                            // 重建旧索引键
-                            std::unique_ptr<char[]> old_key_ptr(new char[index.col_tot_len]);
-                            char* old_key = old_key_ptr.get();
-                            memset(old_key, 0, index.col_tot_len);
-                            
-                            char* old_rec = write_record->GetRecord().data;
-                            offset = 0;
-                            bool old_key_valid = true;
-                            for (size_t j = 0; j < (size_t)index.col_num && old_key_valid; ++j) {
-                                if (index.cols[j].offset + index.cols[j].len <= write_record->GetRecord().size) {
-                                    memcpy(old_key + offset, old_rec + index.cols[j].offset, index.cols[j].len);
-                                    offset += index.cols[j].len;
-                                } else {
-                                    old_key_valid = false;
-                                }
-                            }
-                            
-                            if (old_key_valid) {
-                                ih->insert_entry(old_key, write_record->GetRid(), txn);
-                            }
-                        }
-                        break;
-                    default:
-                        break;
-                    }
-            }
-            
-            // 处理数据表回滚
             switch (type) {
-            case WType::INSERT_TUPLE:
-                fh->delete_record(write_record->GetRid(), nullptr);
-                break;
-            case WType::UPDATE_TUPLE:
-                fh->update_record(write_record->GetRid(), write_record->GetRecord().data, nullptr);
-                break;
-            default:
-                break;
+                case WType::INSERT_TUPLE:
+                    // 回滚INSERT：删除记录
+                    fh->delete_record(write_record->GetRid(), nullptr);
+                    break;
+                    
+                case WType::DELETE_TUPLE:
+                    // 回滚DELETE：重新插入记录
+                    fh->insert_record(write_record->GetRid(), write_record->GetRecord().data);
+                    break;
+                    
+                case WType::UPDATE_TUPLE:
+                    // 回滚UPDATE：恢复原记录
+                    fh->update_record(write_record->GetRid(), write_record->GetRecord().data, nullptr);
+                    break;
+                    
+                default:
+                    break;
             }
+            
+            // ✅ 简化的索引回滚 - 重建所有索引
+            if (sm_manager_->db_.is_table(tab_name)) {
+                auto& tab = sm_manager_->db_.get_table(tab_name);
+                for (auto& index : tab.indexes) {
+                    try {
+                        std::vector<std::string> index_cols;
+                        for (auto& col : index.cols) {
+                            index_cols.push_back(col.name);
+                        }
+                        // 重建索引（简单粗暴但有效）
+                        sm_manager_->drop_index(tab_name, index.cols, nullptr);
+                        sm_manager_->create_index(tab_name, index_cols, nullptr);
+                        std::cout << "重建索引: " << tab_name << std::endl;
+                    } catch (const std::exception& e) {
+                        std::cout << "重建索引失败: " << e.what() << std::endl;
+                    }
+                }
+            }
+            
+        } catch (const std::exception& e) {
+            std::cout << "回滚操作失败: " << e.what() << std::endl;
+        }
         
         delete write_record;
     }
@@ -266,7 +214,8 @@ void TransactionManager::abort(Transaction * txn, LogManager *log_manager) {
         std::unique_lock<std::mutex> lock(latch_);
         txn_map.erase(txn->get_transaction_id());
     }
-
+    
+    std::cout << "事务回滚完成: " << txn->get_transaction_id() << std::endl;
 }
 
 

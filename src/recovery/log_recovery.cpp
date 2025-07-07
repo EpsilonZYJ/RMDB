@@ -49,6 +49,7 @@ See the Mulan PSL v2 for more details. */
     }
     
     // ✅ 扫描日志（如果没有检查点就从头开始）
+    // ✅ 扫描日志（如果没有检查点就从头开始）
     std::vector<LogRecord*> log_records;
     if (checkpoint_lsn == INVALID_LSN) {
         log_records = log_manager_->scan_log_from_lsn();  // 从头开始
@@ -58,11 +59,12 @@ See the Mulan PSL v2 for more details. */
     
     std::cout << "从日志中读取了 " << log_records.size() << " 条记录" << std::endl;
     
-    // ✅ 修复：收集事务最终状态
+    // ✅ 修复：完整扫描确定最终事务状态
     std::unordered_set<txn_id_t> committed_txns;
     std::unordered_set<txn_id_t> aborted_txns;
+    std::unordered_map<txn_id_t, lsn_t> final_active_txns;  // 最终活跃的事务
     
-    // 第一遍扫描：确定事务状态和构建活跃事务表
+    // **一遍扫描确定所有事务的最终状态**
     for (auto* record : log_records) {
         std::cout << "日志记录: 类型=" << static_cast<int>(record->log_type_) 
                   << ", 事务ID=" << record->log_tid_ 
@@ -72,30 +74,30 @@ See the Mulan PSL v2 for more details. */
         
         switch (record->log_type_) {
             case LogType::begin:
-                active_txn_table_[txn_id] = record->lsn_;
+                final_active_txns[txn_id] = record->lsn_;
                 std::cout << "发现开始事务: " << txn_id << std::endl;
                 break;
                 
             case LogType::commit:
-                active_txn_table_.erase(txn_id);
-                committed_txns.insert(txn_id);
-                aborted_txns.erase(txn_id);  // 防止状态冲突
+                final_active_txns.erase(txn_id);  // 从活跃表移除
+                committed_txns.insert(txn_id);    // 加入提交表
+                aborted_txns.erase(txn_id);       // 防止状态冲突
                 std::cout << "发现已提交事务: " << txn_id << std::endl;
                 break;
                 
             case LogType::ABORT:
-                active_txn_table_.erase(txn_id);
-                aborted_txns.insert(txn_id);
-                committed_txns.erase(txn_id);  // 防止状态冲突
+                final_active_txns.erase(txn_id);  // 从活跃表移除
+                aborted_txns.insert(txn_id);      // 加入中止表
+                committed_txns.erase(txn_id);     // 防止状态冲突
                 std::cout << "发现已中止事务: " << txn_id << std::endl;
                 break;
                 
             case LogType::INSERT:
             case LogType::UPDATE:
             case LogType::DELETE:
-                // 更新活跃事务的最新LSN
-                if (active_txn_table_.find(txn_id) != active_txn_table_.end()) {
-                    active_txn_table_[txn_id] = record->lsn_;
+                // 更新活跃事务的最新LSN（如果事务仍然活跃）
+                if (final_active_txns.find(txn_id) != final_active_txns.end()) {
+                    final_active_txns[txn_id] = record->lsn_;
                 }
                 std::cout << "处理数据修改日志: 类型=" << static_cast<int>(record->log_type_) 
                           << ", 事务ID=" << txn_id 
@@ -107,7 +109,10 @@ See the Mulan PSL v2 for more details. */
         }
     }
     
-    // ✅ 第二遍扫描：只为已提交或活跃事务构建脏页表
+    // ✅ 现在final_active_txns包含真正活跃的事务
+    active_txn_table_ = final_active_txns;
+    
+    // ✅ 第二遍扫描：只为已提交或最终活跃事务构建脏页表
     for (auto* record : log_records) {
         if (record->log_type_ == LogType::INSERT || 
             record->log_type_ == LogType::UPDATE || 
@@ -115,15 +120,15 @@ See the Mulan PSL v2 for more details. */
             
             txn_id_t txn_id = record->log_tid_;
             
-            // ✅ 关键修复：检查事务状态
+            // ✅ 关键修复：使用最终状态检查
             bool should_add_to_dirty_pages = false;
             
             if (committed_txns.find(txn_id) != committed_txns.end()) {
                 // 已提交事务，需要重做
                 should_add_to_dirty_pages = true;
                 std::cout << "已提交事务的操作: 事务" << txn_id << ", LSN=" << record->lsn_ << std::endl;
-            } else if (active_txn_table_.find(txn_id) != active_txn_table_.end()) {
-                // 仍然活跃的事务，也需要重做（稍后会被UNDO）
+            } else if (final_active_txns.find(txn_id) != final_active_txns.end()) {
+                // 最终仍然活跃的事务，也需要重做（稍后会被UNDO）
                 should_add_to_dirty_pages = true;
                 std::cout << "活跃事务的操作: 事务" << txn_id << ", LSN=" << record->lsn_ << std::endl;
             } else if (aborted_txns.find(txn_id) != aborted_txns.end()) {
