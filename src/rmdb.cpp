@@ -346,9 +346,21 @@ int main(int argc, char **argv) {
         // Open database
         sm_manager->open_db(db_name);
         // recovery database
-        recovery->analyze();
-        //recovery->redo();
-        //recovery->undo();
+        std::cout << "开始数据库恢复..." << std::endl;
+    
+        // 🔄 检查是否有检查点
+        lsn_t checkpoint_lsn = log_manager->get_last_checkpoint_lsn();
+        
+        if (checkpoint_lsn != INVALID_LSN) {
+            std::cout << "发现检查点LSN: " << checkpoint_lsn << "，使用检查点恢复" << std::endl;
+            recovery->recover_from_checkpoint();
+        } else {
+            std::cout << "未发现检查点，使用完整恢复" << std::endl;
+            recovery->analyze();
+            // analyze()内部已调用redo()和undo()，不需要重复调用
+        }
+        
+        std::cout << "数据库恢复完成" << std::endl;
         
         // 开启服务端，开始接受客户端连接
         start_server();

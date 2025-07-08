@@ -222,137 +222,235 @@ See the Mulan PSL v2 for more details. */
  * @description: 从最后一个检查点恢复
  */
  void RecoveryManager::recover_from_checkpoint() {
-        std::cout << "从检查点开始恢复..." << std::endl;
-        
-        // 获取最后一个检查点的LSN
-        lsn_t checkpoint_lsn = log_manager_->get_last_checkpoint_lsn();
-        if (checkpoint_lsn == INVALID_LSN) {
-            throw std::runtime_error("无效的检查点LSN");
+    std::cout << "从检查点开始恢复..." << std::endl;
+    
+    // 打开所有表
+    std::vector<std::string> tables;
+    sm_manager_->get_all_tables(tables);
+    
+    for (const auto& table_name : tables) {
+        if (sm_manager_->fhs_.find(table_name) == sm_manager_->fhs_.end()) {
+            try {
+                sm_manager_->fhs_[table_name] = sm_manager_->open_table_file(table_name);
+                std::cout << "恢复前打开表: " << table_name << std::endl;
+            } catch (const std::exception& e) {
+                std::cerr << "打开表失败: " << table_name << " - " << e.what() << std::endl;
+            }
+        }
+    }
+    
+    lsn_t checkpoint_lsn = log_manager_->get_last_checkpoint_lsn();
+    if (checkpoint_lsn == INVALID_LSN) {
+        throw std::runtime_error("无效的检查点LSN");
+    }
+    
+    // 🔄 第一步：读取检查点记录，获取活跃事务 → undo_list（严格按照题目要求）
+    std::unordered_set<txn_id_t> undo_list;
+    std::unordered_set<txn_id_t> redo_list; // 初始为空
+    
+    try {
+        LogRecord* checkpoint_record = log_manager_->read_log_record(checkpoint_lsn);
+        if (!checkpoint_record || checkpoint_record->log_type_ != LogType::CHECKPOINT) {
+            throw std::runtime_error("LSN对应的记录不是检查点记录");
         }
         
-        // 读取检查点记录
-        LogRecord* checkpoint_record = nullptr;
-        try {
-            checkpoint_record = log_manager_->read_log_record(checkpoint_lsn);
-            if (checkpoint_record->log_type_ != LogType::CHECKPOINT) {
-                throw std::runtime_error("LSN对应的记录不是检查点记录");
-            }
-            
-            // 从检查点获取活跃事务列表
-            CheckpointLogRecord* checkpoint = dynamic_cast<CheckpointLogRecord*>(checkpoint_record);
-            active_txn_table_.clear();
-            // 获取活跃事务的方法名
-            std::vector<txn_id_t> active_txns = checkpoint->get_active_txns();
-            // 将检查点时的活跃事务加入ATT
-            for (auto txn_id : active_txns) {
-                active_txn_table_[txn_id] = INVALID_LSN; // 初始化为无效LSN，稍后会更新
-                std::cout << "从检查点添加活跃事务: " << txn_id << std::endl;
-            }
-            
-            delete checkpoint_record;
-        } catch (const std::exception& e) {
-            if (checkpoint_record) delete checkpoint_record;
-            std::cerr << "读取检查点记录失败: " << e.what() << std::endl;
-            throw;
+        CheckpointLogRecord* checkpoint = dynamic_cast<CheckpointLogRecord*>(checkpoint_record);
+        std::vector<txn_id_t> active_txns = checkpoint->get_active_txns();
+        
+        // 将检查点时的活跃事务加入undo_list（题目要求的步骤1）
+        for (auto txn_id : active_txns) {
+            undo_list.insert(txn_id);
+            active_txn_table_[txn_id] = INVALID_LSN;
+            std::cout << "从检查点添加到undo_list: 事务" << txn_id << std::endl;
         }
         
-        // 从检查点开始扫描日志
-        std::vector<LogRecord*> log_records = log_manager_->scan_log_from_lsn(checkpoint_lsn);
+        delete checkpoint_record;
+    } catch (const std::exception& e) {
+        std::cerr << "读取检查点记录失败: " << e.what() << std::endl;
+        throw;
+    }
+    
+    // 🔄 第二步：从检查点开始扫描日志（题目要求的步骤2）
+    std::vector<LogRecord*> log_records = log_manager_->scan_log_from_lsn(checkpoint_lsn + 1);
+    
+    for (auto* record : log_records) {
+        txn_id_t txn_id = record->log_tid_;
         
-        // redo_list记录需要重做的事务，初始为空
-        std::unordered_set<txn_id_t> redo_list;
-        
-        // 分析日志记录
-        for (auto* record : log_records) {
-            txn_id_t txn_id = record->log_tid_;
-            
-            switch (record->log_type_) {
-                case LogType::begin:
-                    // 新事务开始，加入ATT
-                    active_txn_table_[txn_id] = record->lsn_;
-                    break;
-                case LogType::commit:
-                    // 事务提交，从ATT移除，加入redo_list
-                    active_txn_table_.erase(txn_id);
+        switch (record->log_type_) {
+            case LogType::begin:
+                // 新开始的事务加入undo_list
+                undo_list.insert(txn_id);
+                active_txn_table_[txn_id] = record->lsn_;
+                std::cout << "新事务加入undo_list: " << txn_id << std::endl;
+                break;
+                
+            case LogType::commit:
+                // 事务提交：从undo_list移除，加入redo_list
+                if (undo_list.find(txn_id) != undo_list.end()) {
+                    undo_list.erase(txn_id);
                     redo_list.insert(txn_id);
-                    break;   
-                case LogType::ABORT:
-                    // 事务中止，从ATT移除
-                    active_txn_table_.erase(txn_id);
-                    break;
-                case LogType::UPDATE:
-                case LogType::INSERT:
-                case LogType::DELETE:
-                // 更新ATT中的LSN
+                    std::cout << "事务" << txn_id << "提交: 移到redo_list" << std::endl;
+                }
+                active_txn_table_.erase(txn_id);
+                break;
+                
+            case LogType::ABORT:
+                undo_list.erase(txn_id);
+                active_txn_table_.erase(txn_id);
+                break;
+                
+            case LogType::UPDATE:
+            case LogType::INSERT:
+            case LogType::DELETE:
+                // 更新活跃事务表
                 if (active_txn_table_.find(txn_id) != active_txn_table_.end()) {
-                        active_txn_table_[txn_id] = record->lsn_;
-                }      
-                // 更新脏页表
-                {  
-                        Rid rid;
-                        bool has_valid_rid = false;
-                        std::string table_name;
-                        // 根据日志类型获取对应的rid
-                        if (record->log_type_ == LogType::INSERT) {
+                    active_txn_table_[txn_id] = record->lsn_;
+                }
+                
+                // 只为redo_list中的事务构建脏页表（关键修复点）
+                if (redo_list.find(txn_id) != redo_list.end()) {
+                    Rid rid;
+                    std::string table_name;
+                    bool has_valid_rid = false;
+                    
+                    // 提取记录信息
+                    if (record->log_type_ == LogType::INSERT) {
                         InsertLogRecord* insert_log = dynamic_cast<InsertLogRecord*>(record);
                         if (insert_log) {
-                                rid = insert_log->rid_;
-                                table_name = insert_log->table_name_;
-                                has_valid_rid = true;
+                            rid = insert_log->rid_;
+                            table_name = insert_log->table_name_;
+                            has_valid_rid = true;
                         }
-                        } else if (record->log_type_ == LogType::UPDATE) {
+                    } else if (record->log_type_ == LogType::UPDATE) {
                         UpdateLogRecord* update_log = dynamic_cast<UpdateLogRecord*>(record);
                         if (update_log) {
-                                rid = update_log->rid_;
-                                table_name = update_log->table_name_;
-                                has_valid_rid = true;
+                            rid = update_log->rid_;
+                            table_name = update_log->table_name_;
+                            has_valid_rid = true;
                         }
-                        } else if (record->log_type_ == LogType::DELETE) {
+                    } else if (record->log_type_ == LogType::DELETE) {
                         DeleteLogRecord* delete_log = dynamic_cast<DeleteLogRecord*>(record);
                         if (delete_log) {
-                                rid = delete_log->rid_;
-                                table_name = delete_log->table_name_;
-                                has_valid_rid = true;
+                            rid = delete_log->rid_;
+                            table_name = delete_log->table_name_;
+                            has_valid_rid = true;
                         }
-                        }
-                        
-                        if (has_valid_rid && rid.page_no != INVALID_PAGE_ID) {
-                        // 检查表是否存在
-                        if (sm_manager_->fhs_.find(table_name) == sm_manager_->fhs_.end()) {
-                                std::cerr << "警告: 表 " << table_name << " 不存在或未打开" << std::endl;
-                                continue;
-                        }
-                        PageId page_id;
-                        page_id.fd = sm_manager_->fhs_[table_name]->GetFd();  // 获取文件描述符
-                        page_id.page_no = rid.page_no;
-                        
-                        if (dirty_page_table_.find(page_id) == dirty_page_table_.end() ||
+                    }
+                    
+                    // 更新脏页表
+                    if (has_valid_rid && rid.page_no != INVALID_PAGE_ID) {
+                        if (sm_manager_->fhs_.find(table_name) != sm_manager_->fhs_.end()) {
+                            PageId page_id;
+                            page_id.fd = sm_manager_->fhs_[table_name]->GetFd();
+                            page_id.page_no = rid.page_no;
+                            
+                            if (dirty_page_table_.find(page_id) == dirty_page_table_.end() ||
                                 dirty_page_table_[page_id] > record->lsn_) {
                                 dirty_page_table_[page_id] = record->lsn_;
+                            }
                         }
-                        }
+                    }
                 }
                 break;
-                    
-                default:
-                    // 忽略其他类型的日志记录
-                    break;
+                
+            default:
+                break;
+        }
+    }
+    
+    std::cout << "分析完成 - undo_list: " << undo_list.size() 
+              << ", redo_list: " << redo_list.size() 
+              << ", 脏页表大小: " << dirty_page_table_.size() << std::endl;
+    
+    // 🔄 第三步：先执行REDO，再执行UNDO（题目要求的步骤3）
+    
+    // (1) 对redo_list中的事务执行REDO
+    std::cout << "开始REDO已提交事务操作，共" << redo_list.size() << "个事务" << std::endl;
+    for (auto* record : log_records) {
+        txn_id_t txn_id = record->log_tid_;
+        
+        // 只对redo_list中的事务执行REDO
+        if (redo_list.find(txn_id) != redo_list.end()) {
+            if (record->log_type_ == LogType::INSERT ||
+                record->log_type_ == LogType::UPDATE ||
+                record->log_type_ == LogType::DELETE) {
+                
+                // 检查是否需要重做（基于脏页表）
+                bool should_redo = false;
+                PageId page_id;
+                
+                // 获取页面ID
+                if (record->log_type_ == LogType::INSERT) {
+                    InsertLogRecord* insert_log = dynamic_cast<InsertLogRecord*>(record);
+                    if (insert_log) {
+                        page_id.fd = sm_manager_->fhs_[insert_log->table_name_]->GetFd();
+                        page_id.page_no = insert_log->rid_.page_no;
+                        should_redo = true;
+                    }
+                } else if (record->log_type_ == LogType::UPDATE) {
+                    UpdateLogRecord* update_log = dynamic_cast<UpdateLogRecord*>(record);
+                    if (update_log) {
+                        page_id.fd = sm_manager_->fhs_[update_log->table_name_]->GetFd();
+                        page_id.page_no = update_log->rid_.page_no;
+                        should_redo = true;
+                    }
+                } else if (record->log_type_ == LogType::DELETE) {
+                    DeleteLogRecord* delete_log = dynamic_cast<DeleteLogRecord*>(record);
+                    if (delete_log) {
+                        page_id.fd = sm_manager_->fhs_[delete_log->table_name_]->GetFd();
+                        page_id.page_no = delete_log->rid_.page_no;
+                        should_redo = true;
+                    }
+                }
+                
+                // 如果需要重做且页面在脏页表中
+                if (should_redo && dirty_page_table_.find(page_id) != dirty_page_table_.end()) {
+                    // 检查LSN是否大于等于脏页表中的LSN
+                    if (record->lsn_ >= dirty_page_table_[page_id]) {
+                        std::cout << "重做事务 " << txn_id << " 的操作, LSN=" << record->lsn_ << std::endl;
+                        redo_log_record(record);
+                    }
+                }
             }
         }
-        std::cout << "开始REDO阶段，需要重做的事务数: " << redo_list.size() << std::endl;
-        redo();
-        std::cout << "开始UNDO阶段，需要撤销的事务数: " << active_txn_table_.size() << std::endl;
-        undo();
-        // 清理日志记录
-        for (auto* record : log_records) {
-            delete record;
-        }
-        // 恢复完成后清空脏页表和活跃事务表
-        active_txn_table_.clear();
-        dirty_page_table_.clear();
-        //truncate_log_after_recovery();//日志截断
-        std::cout << "从检查点恢复完成" << std::endl;
     }
+    
+    // (2) 对undo_list中的事务执行UNDO
+    std::cout << "开始UNDO未提交事务操作，共" << undo_list.size() << "个事务" << std::endl;
+    for (auto txn_id : undo_list) {
+        if (active_txn_table_.find(txn_id) != active_txn_table_.end()) {
+            lsn_t lsn = active_txn_table_[txn_id];
+            if (lsn != INVALID_LSN) {
+                // 按LSN倒序执行UNDO
+                while (lsn != INVALID_LSN) {
+                    LogRecord* record = log_manager_->read_log_record(lsn);
+                    if (!record) break;
+                    
+                    if (record->log_type_ == LogType::INSERT ||
+                        record->log_type_ == LogType::UPDATE ||
+                        record->log_type_ == LogType::DELETE) {
+                        std::cout << "撤销事务 " << txn_id << " 的操作, LSN=" << lsn << std::endl;
+                        undo_log_record(record);
+                    }
+                    
+                    lsn = record->prev_lsn_;
+                    delete record;
+                }
+            }
+        }
+    }
+    
+    // 清理日志记录
+    for (auto* record : log_records) {
+        delete record;
+    }
+    
+    // 清空表
+    active_txn_table_.clear();
+    dirty_page_table_.clear();
+    
+    std::cout << "基于检查点的恢复完成" << std::endl;
+}
 
 /**
  * @description: 重做所有未落盘的操作
@@ -768,3 +866,4 @@ LogRecord* RecoveryManager::create_log_record_by_type(LogType type) {
             return new UpdateLogRecord();
     }
 }
+

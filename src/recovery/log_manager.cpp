@@ -47,49 +47,59 @@ void LogManager::flush_log_to_disk() {
  * @param {BufferPoolManager*} buffer_pool_manager 缓冲池管理器
  */
  void LogManager::create_static_checkpoint(TransactionManager* txn_manager, BufferPoolManager* buffer_pool_manager, SmManager* sm_manager) {
-        std::cout << "开始创建静态检查点..." << std::endl;    
-        // 停止接收新事务和正在运行的事务
+    std::cout << "开始创建静态检查点..." << std::endl;    
+    try {
+        // 步骤1: 停止接收新事务和正在运行的事务
         txn_manager->pause_transactions();
         std::cout << "已暂停所有事务处理" << std::endl;
-        try {
-            // 将日志缓冲区内容写入磁盘
-            flush_log_to_disk();
-            std::cout << "已将日志缓冲区刷新到磁盘" << std::endl;
-            // 获取当前所有活跃事务列表
-            std::vector<txn_id_t> active_txns = txn_manager->get_active_transactions();
-            std::cout << "当前活跃事务数量: " << active_txns.size() << std::endl;
-            // 在日志文件中写入检查点记录
-            CheckpointLogRecord checkpoint_record(active_txns);
-            lsn_t checkpoint_lsn = add_log_to_buffer(&checkpoint_record);
-            flush_log_to_disk();  // 确保检查点记录被写入磁盘
-            std::cout << "已写入检查点记录，LSN: " << checkpoint_lsn << std::endl; 
-            // 将当前缓冲池中的所有脏页写入磁盘
-                // 遍历所有表文件，刷新每个文件的页面
-                for (const auto& [table_name, file_handle] : sm_manager->fhs_) {
-                        int fd = file_handle->GetFd(); // 获取文件描述符
-                        buffer_pool_manager->flush_all_pages(fd);
-                        std::cout << "已刷新表 " << table_name << " 的所有页面" << std::endl;
-                }
-            
-            // 将检查点记录的LSN写入重启文件
-            std::ofstream restart_file(RESTART_FILE_NAME);
-            if (!restart_file.is_open()) {
-                throw std::runtime_error("无法创建重启文件: " + RESTART_FILE_NAME);
+        
+        // 步骤2: 将日志缓冲区内容写入磁盘
+        flush_log_to_disk();
+        std::cout << "已将日志缓冲区刷新到磁盘" << std::endl;
+        
+        // 获取当前所有活跃事务
+        std::vector<txn_id_t> active_txns = txn_manager->get_active_transactions();
+        
+        // 步骤3: 写入检查点记录
+        CheckpointLogRecord checkpoint_record(active_txns);
+        lsn_t checkpoint_lsn = add_log_to_buffer(&checkpoint_record);
+        flush_log_to_disk();
+        std::cout << "已写入检查点记录，LSN: " << checkpoint_lsn << std::endl;
+        
+        // 步骤4: 将当前数据库缓冲区中的内容写到数据库
+        std::vector<std::string> tables;
+        sm_manager->get_all_tables(tables);
+        
+        for (const auto& table_name : tables) {
+            auto it = sm_manager->fhs_.find(table_name);
+            if (it != sm_manager->fhs_.end()) {
+                int fd = it->second->GetFd();
+                std::cout << "刷新表 " << table_name << " (fd=" << fd << ") 的所有页面" << std::endl;
+                buffer_pool_manager->flush_all_pages(fd);
             }
-            restart_file << checkpoint_lsn;
-            restart_file.close();
-            std::cout << "已将检查点LSN写入重启文件: " << checkpoint_lsn << std::endl;
-            
-            // 恢复事务处理
-            txn_manager->resume_transactions();
-            std::cout << "静态检查点创建完成，已恢复事务处理" << std::endl;
-        } catch (const std::exception& e) {
-            // 出错时恢复事务处理
-            txn_manager->resume_transactions();
-            std::cerr << "创建检查点失败: " << e.what() << std::endl;
-            throw;
         }
+        
+        // 步骤5: 将检查点记录的LSN写入重启文件
+        std::cout << "将检查点LSN " << checkpoint_lsn << " 写入重启文件" << std::endl;
+        FILE* restart_file = fopen(RESTART_FILE_NAME.c_str(), "w");
+        if (restart_file) {
+            fprintf(restart_file, "%ld", checkpoint_lsn);
+            fclose(restart_file);
+        } else {
+            std::cerr << "无法创建重启文件: " << RESTART_FILE_NAME << std::endl;
+        }
+        
+        // 恢复事务处理
+        txn_manager->resume_transactions();
+        std::cout << "静态检查点创建完成，已恢复事务处理" << std::endl;
+    } catch (const std::exception& e) {
+        std::cerr << "创建检查点失败: " << e.what() << std::endl;
+        txn_manager->resume_transactions();
+    } catch (...) {
+        std::cerr << "创建检查点时发生未知错误" << std::endl;
+        txn_manager->resume_transactions();
     }
+}
     
     /**
      * @description: 获取最后一个检查点的LSN

@@ -40,7 +40,7 @@ public:
     
     // 根据类型创建日志记录对象
     LogRecord* create_log_record_by_type(LogType type);
-
+    void build_dirty_page_table_for_record(LogRecord* record);
     void analyze();
     void redo();
     void undo();
