@@ -65,16 +65,6 @@ void TransactionManager::commit(Transaction* txn, LogManager* log_manager) {
         delete *it;
         it = txn->get_write_set()->erase(it);
     }
-    // for(auto it = txn->get_lock_set()->begin(); it != txn->get_lock_set()->end();)
-    // {
-    //     if(it->type_ == LockDataType::RECORD)
-    //     {
-    //         lock_manager_->unlock(txn, *it);
-    //         it = txn->get_lock_set()->erase(it);
-    //     }
-    //     else
-    //         it++;
-    // }
     for(auto it = txn->get_lock_set()->begin(); it != txn->get_lock_set()->end();)
     {
         lock_manager_->unlock(txn, *it);

@@ -150,8 +150,7 @@ void SmManager::show_tables(Context* context) {
     for (auto &entry : db_.tabs_) {
         auto &tab = entry.second;
         printer.print_record({tab.name}, context);
-        outfile << "| " << tab.name << " |\n";
-    }
+        outfile << "| " << tab.name << " |\n";    }
     printer.print_separator(context);
     outfile.close();
 }
@@ -173,8 +172,7 @@ void SmManager::desc_table(const std::string& tab_name, Context* context) {
     // Print fields
     for (auto &col : tab.cols) {
         std::vector<std::string> field_info = {col.name, coltype2str(col.type), col.index ? "YES" : "NO"};
-        printer.print_record(field_info, context);
-    }
+        printer.print_record(field_info, context);    }
     // Print footer
     printer.print_separator(context);
 }
