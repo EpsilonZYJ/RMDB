@@ -13,7 +13,7 @@ INSERT INTO test_txn VALUES (2, 'test2');
 ABORT;
 SELECT * FROM test_txn;
 
-CREATE TABLE index_test (id INT, name CHAR(10), score FLOAT);
+CREATE TABLE index_test (id INT,name CHAR(10), score FLOAT);
 CREATE INDEX index_test (id);
 
 -- TEST 4.1: 索引表插入提交
