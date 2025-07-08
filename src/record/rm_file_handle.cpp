@@ -41,20 +41,21 @@ Rid RmFileHandle::insert_record(char* buf, Context* context) {
     // 3. 将buf复制到空闲slot位置
     // 4. 更新page_handle.page_hdr中的数据结构
     // 注意考虑插入一条记录后页面已满的情况，需要更新file_hdr_.first_free_page_no
-    if(context) context->lock_mgr_->lock_exclusive_on_table(context->txn_, fd_);
     RmPageHandle page_handle = create_page_handle();
-    int slot_no = Bitmap::first_bit(0, page_handle.bitmap, file_hdr_.num_records_per_page);//空闲槽
-    if(slot_no == file_hdr_.num_records_per_page) throw InternalError("No free slot in page");//没有空闲槽
+    int slot_no = Bitmap::first_bit(0, page_handle.bitmap, file_hdr_.num_records_per_page);
+    if(slot_no == file_hdr_.num_records_per_page) throw InternalError("No free slot in page");
     char* slot = page_handle.get_slot(slot_no);
-    memcpy(slot, buf, file_hdr_.record_size);//拷贝数据
+    memcpy(slot, buf, file_hdr_.record_size);
     Bitmap::set(page_handle.bitmap, slot_no);
-    page_handle.page_hdr->num_records++;//更新页头
+    page_handle.page_hdr->num_records++;
     if (page_handle.page_hdr->num_records == file_hdr_.num_records_per_page) {
         file_hdr_.first_free_page_no = page_handle.page_hdr->next_free_page_no;
         page_handle.page_hdr->next_free_page_no = RM_NO_PAGE;
-    }//如果页面满了，更新空闲页面链表
+    }
     PageId page_id = page_handle.page->get_page_id();
     buffer_pool_manager_->unpin_page(page_id, true);
+    
+    printf("DEBUG: insert_record finished\n");
     return Rid{page_id.page_no, slot_no};
 }   
 

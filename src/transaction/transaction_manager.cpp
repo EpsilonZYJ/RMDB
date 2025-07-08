@@ -49,26 +49,36 @@ Transaction * TransactionManager::begin(Transaction* txn, LogManager* log_manage
  * @param {Transaction*} txn 需要提交的事务
  * @param {LogManager*} log_manager 日志管理器指针
  */
-void TransactionManager::commit(Transaction* txn, LogManager* log_manager) {
+ void TransactionManager::commit(Transaction* txn, LogManager* log_manager) {
     // Todo:
     // 1. 如果存在未提交的写操作，提交所有的写操作
     // 2. 释放所有锁
     // 3. 释放事务相关资源，eg.锁集
     // 4. 把事务日志刷入磁盘中
     // 5. 更新事务状态
+    if (txn == nullptr) {
+        return;
+    }
     CommitLogRecord log_record(txn->get_transaction_id());
     log_record.prev_lsn_ = txn->get_prev_lsn();
     lsn_t curr_lsn = log_manager->add_log_to_buffer(&log_record);
     txn->set_prev_lsn(curr_lsn);
+    
     for(auto it = txn->get_write_set()->begin(); it != txn->get_write_set()->end();)
     {
         delete *it;
         it = txn->get_write_set()->erase(it);
     }
-    for(auto it = txn->get_lock_set()->begin(); it != txn->get_lock_set()->end();)
-    {
-        lock_manager_->unlock(txn, *it);
-        it = txn->get_lock_set()->erase(it);
+
+    auto lock_set = txn->get_lock_set();
+    while (!lock_set->empty()) {
+        auto it = lock_set->begin();
+        LockDataId lock_id = *it;       
+        if (!lock_manager_->unlock(txn, lock_id)) {
+            break;
+        }
+        
+        // unlock 方法内部会从 lock_set 中移除，所以这里不需要手动 erase
     }
     log_manager->flush_log_to_disk();
     txn->set_state(TransactionState::COMMITTED);
@@ -146,7 +156,6 @@ void TransactionManager::commit(Transaction* txn, LogManager* log_manager) {
                         
                     case WType::UPDATE_TUPLE:
                     {
-                        // ✅ 修复：添加大括号包围变量声明
                         ih->delete_entry(key, txn);
                         char* old_rec = write_record->GetRecord().data;
                         offset = 0;
@@ -190,9 +199,13 @@ void TransactionManager::commit(Transaction* txn, LogManager* log_manager) {
     }
     
     // 释放锁
-    for(auto it = txn->get_lock_set()->begin(); it != txn->get_lock_set()->end();) {
-        lock_manager_->unlock(txn, *it);
-        it = txn->get_lock_set()->erase(it);
+ auto lock_set = txn->get_lock_set();
+ while (!lock_set->empty()) {
+     auto it = lock_set->begin();
+     LockDataId lock_id = *it;     
+     if (!lock_manager_->unlock(txn, lock_id)) {
+         break;
+     }
     }
     
     log_manager->flush_log_to_disk();

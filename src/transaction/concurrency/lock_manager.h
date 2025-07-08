@@ -43,23 +43,46 @@ class LockManager {
     };
 
 public:
-    bool unlock_all(Transaction* txn) {
-        if (txn == nullptr) return false;
+bool unlock_all(Transaction* txn) {
+    if (txn == nullptr) return false;
         
-        bool success = true;
-        auto lock_set = *(txn->get_lock_set());
-        
-        for (const auto& lock_id : lock_set) {
-            // 直接复用现有的unlock方法
-            if (!unlock(txn, lock_id)) {
-                success = false;
-            }
-        }
-        
-        // 清空事务的锁集合
-        txn->get_lock_set()->clear();
-        return success;
+    printf("DEBUG: unlock_all called, txn_id=%d\n", txn->get_transaction_id());
+    
+    // 获取事务锁集合
+    auto lock_set = txn->get_lock_set();
+    if (lock_set == nullptr) {
+        printf("DEBUG: lock_set is null\n");
+        return true;
     }
+    
+    printf("DEBUG: lock_set size=%zu\n", lock_set->size());
+    
+    if (lock_set->empty()) {
+        printf("DEBUG: no locks to release\n");
+        return true;
+    }
+    
+    std::vector<LockDataId> locks_to_release;
+    locks_to_release.reserve(lock_set->size());
+    
+    for (const auto& lock_id : *lock_set) {
+        locks_to_release.push_back(lock_id);
+    }
+    
+    printf("DEBUG: created copy with %zu locks\n", locks_to_release.size());
+    
+    bool success = true;
+    for (size_t i = 0; i < locks_to_release.size(); ++i) {
+        printf("DEBUG: unlocking lock %zu/%zu\n", i + 1, locks_to_release.size());
+        if (!unlock(txn, locks_to_release[i])) {
+            printf("DEBUG: failed to unlock lock %zu\n", i + 1);
+            success = false;
+        }
+    }
+    
+    printf("DEBUG: unlock_all finished, success=%d\n", success);
+    return success;
+}
     LockManager() {}
 
     ~LockManager() {}
@@ -79,6 +102,17 @@ public:
     bool unlock(Transaction* txn, LockDataId lock_data_id);
 
 private:
-    std::mutex latch_;      // 用于锁表的并发
-    std::unordered_map<LockDataId, LockRequestQueue> lock_table_;   // 全局锁表
+std::mutex latch_;
+std::unordered_map<LockDataId, LockRequestQueue> lock_table_;
+
+// 辅助方法
+bool is_compatible(LockMode mode1, LockMode mode2);
+bool can_grant_lock(const LockRequestQueue& queue, LockMode mode, txn_id_t txn_id);
+void update_group_lock_mode(LockRequestQueue& queue);
+
+// 不获取全局锁的内部方法
+bool lock_IS_on_table_internal(Transaction* txn, int tab_fd);
+bool lock_IX_on_table_internal(Transaction* txn, int tab_fd);
+bool lock_shared_on_table_internal(Transaction* txn, int tab_fd);
+bool lock_exclusive_on_table_internal(Transaction* txn, int tab_fd);
 };
