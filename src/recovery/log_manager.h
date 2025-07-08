@@ -192,8 +192,6 @@ public:
         log_tot_len_ += sizeof(int);
         log_tot_len_ += insert_value_.size;
         log_tot_len_ += sizeof(Rid);
-        
-        // 直接赋值，string会自动管理内存
         table_name_ = table_name;
         table_name_size_ = table_name.length();
         log_tot_len_ += sizeof(size_t) + table_name_size_;
@@ -228,7 +226,6 @@ public:
         table_name_ = std::string(src + offset, table_name_size_);
     }
 
-    // 删除析构函数中的手动内存管理
     ~InsertLogRecord() = default;
 
     void format_print() override {
@@ -367,14 +364,11 @@ class DeleteLogRecord: public LogRecord {
         log_tot_len_ += sizeof(int);
         log_tot_len_ += deleted_value_.size;
         log_tot_len_ += sizeof(Rid);
-        
-        // 直接赋值，string会自动管理内存
         table_name_ = table_name;
         table_name_size_ = table_name.length();
         log_tot_len_ += sizeof(size_t) + table_name_size_;
     }
     
-    // 删除析构函数中的手动内存管理
     ~DeleteLogRecord() = default;
 
     // 把delete日志记录序列化到dest中
@@ -449,13 +443,10 @@ class UpdateLogRecord: public LogRecord {
         log_tot_len_ += old_value_.size;
         log_tot_len_ += new_value_.size;
         log_tot_len_ += sizeof(Rid);
-        
-        // 直接赋值，string会自动管理内存
         table_name_ = table_name;
         table_name_size_ = table_name.length();
         log_tot_len_ += sizeof(size_t) + table_name_size_;
-        
-        // 添加表达式相关字段的大小
+
         log_tot_len_ += sizeof(bool) + sizeof(char) + sizeof(size_t);
     }
 
@@ -537,24 +528,19 @@ class UpdateLogRecord: public LogRecord {
         table_name_size_ = *reinterpret_cast<const size_t*>(src + offset);
         offset += sizeof(size_t);
         
-        // 使用string构造函数
         table_name_ = std::string(src + offset, table_name_size_);
         offset += table_name_size_;
         
-        // 添加下面代码以读取表达式相关字段
-        if (offset < log_tot_len_) {  // 兼容旧日志格式
+        if (offset < log_tot_len_) { 
             // 读取是否为表达式更新
             is_expr_update_ = *reinterpret_cast<const bool*>(src + offset);
             offset += sizeof(bool);
-            
             // 读取操作符
             op_type_ = *reinterpret_cast<const char*>(src + offset);
             offset += sizeof(char);
-            
             // 读取引用列名
             ref_col_name_size_ = *reinterpret_cast<const size_t*>(src + offset);
             offset += sizeof(size_t);
-            
             if (ref_col_name_size_ > 0) {
                 ref_col_name_ = std::string(src + offset, ref_col_name_size_);
             }
