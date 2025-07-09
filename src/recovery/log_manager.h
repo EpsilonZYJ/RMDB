@@ -305,6 +305,11 @@ class CheckpointLogRecord: public LogRecord {
             // 读取活跃事务数量
             active_txns_size_ = *reinterpret_cast<const size_t*>(src + offset);
             offset += sizeof(size_t);
+            // 释放旧内存
+            if (active_txns_) {
+                delete[] active_txns_;
+                active_txns_ = nullptr;
+            }
             
             // 读取活跃事务ID列表
             if (active_txns_size_ > 0) {
@@ -330,7 +335,10 @@ class CheckpointLogRecord: public LogRecord {
         std::vector<txn_id_t> get_active_txns() const {
             std::vector<txn_id_t> txns;
             if (active_txns_size_ > 0 && active_txns_) {
-                txns.assign(active_txns_, active_txns_ + active_txns_size_);
+                for (size_t i = 0; i < active_txns_size_; i++) {
+                    txn_id_t txn_id = active_txns_[i];
+                    txns.push_back(txn_id); // 添加这行!
+                }
             }
             return txns;
         }
@@ -607,6 +615,7 @@ public:
      lsn_t get_current_lsn() { return global_lsn_; }
      std::vector<LogRecord*> scan_log_from_lsn(lsn_t start_lsn = INVALID_LSN);
      bool truncate_log(lsn_t truncate_lsn);
+     std::vector<LogRecord*> scan_log_from_lsn(lsn_t start_lsn, lsn_t end_lsn);
      lsn_t create_checkpoint(const std::vector<txn_id_t>& active_txns);
 private:    
     std::atomic<lsn_t> global_lsn_{0};  // 全局lsn，递增，用于为每条记录分发lsn

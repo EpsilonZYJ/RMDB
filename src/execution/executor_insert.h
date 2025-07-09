@@ -119,6 +119,7 @@ class InsertExecutor : public AbstractExecutor {
                 );
                 // 追加日志记录
                 context_->log_mgr_->add_log_to_buffer(log_record);  
+                context_->log_mgr_->flush_log_to_disk();
                 // 释放日志记录内存
                 delete log_record;
                 

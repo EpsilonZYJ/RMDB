@@ -65,7 +65,7 @@ class Portal
         if (auto create_checkpoint = std::dynamic_pointer_cast<CreateCheckpointPlan>(plan)) {
             // 使用正确的构造函数创建 PortalStmt
             return std::make_shared<PortalStmt>(
-                PORTAL_CMD_UTILITY,          // 使用命令工具类型
+                PORTAL_MULTI_QUERY,          // 使用命令工具类型
                 std::vector<TabCol>(),       // 无选择列
                 std::unique_ptr<AbstractExecutor>(),  // 无执行器
                 plan                         // 检查点计划
@@ -204,6 +204,7 @@ class Portal
                 throw InternalError("Unexpected field type");
             }
         }
+        std::cout << "DEBUG: Portal::run - 执行完成" << std::endl;
     }
 
     // 清空资源

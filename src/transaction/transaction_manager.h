@@ -109,12 +109,14 @@ public:
         std::unique_lock<std::mutex> lock(latch_);
         std::vector<txn_id_t> active_txns;
         
-        for (const auto& [txn_id, txn] : txn_map) {
-            if (txn->get_state() == TransactionState::GROWING) {
-                active_txns.push_back(txn_id);
+        for (auto &pair : txn_map) {
+            Transaction *txn = pair.second;
+            if (txn && txn->get_state() != TransactionState::COMMITTED && 
+                txn->get_state() != TransactionState::ABORTED&&txn->get_txn_mode()) {
+                active_txns.push_back(txn->get_transaction_id());
             }
         }
-        
+        std::cout << "收集到 " << active_txns.size() << " 个活跃事务" << std::endl;
         return active_txns;
     }
 

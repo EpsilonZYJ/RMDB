@@ -24,6 +24,7 @@ See the Mulan PSL v2 for more details. */
 #include "portal.h"
 #include "analyze/analyze.h"
 #include <iostream>
+#include <cctype>
 #define SOCK_PORT 8765
 #define MAX_CONN_LIMIT 8
 
@@ -58,40 +59,61 @@ void sigint_handler(int signo) {
 
 // 判断当前正在执行的是显式事务还是单条SQL语句的事务，并更新事务ID
 void SetTransaction(txn_id_t *txn_id, Context *context, bool is_begin_stmt = false) {
-    std::cout << "DEBUG: SetTransaction - 当前事务ID: " << *txn_id << std::endl;
-    
-    if (*txn_id == INVALID_TXN_ID) {
-        // 创建新事务
+    if (is_begin_stmt) {
+        // 显式事务begin，分配新ID并绑定到session
+        std::cout<<"DEBUG: 开始显式事务"<<std::endl;
         context->txn_ = txn_manager->begin(nullptr, context->log_mgr_);
-        *txn_id = context->txn_->get_transaction_id(); 
-        // 只有BEGIN语句才设置为显式事务
-        context->txn_->set_txn_mode(is_begin_stmt);
-        std::cout << "创建" << (is_begin_stmt ? "显式" : "隐式") 
-                << "事务: " << *txn_id << std::endl;
+        *txn_id = context->txn_->get_transaction_id();
+        context->txn_->set_txn_mode(true); // 显式事务
         return;
     }
-    // 非BEGIN语句的正常处理
-    if (context->txn_ == nullptr) {
-        std::cout << "警告: context->txn_为空，重新获取事务" << std::endl;
-        try {
-            context->txn_ = txn_manager->get_transaction(*txn_id);
-        } catch (std::exception& e) {
-            std::cout << "找不到事务ID " << *txn_id << "，创建新事务" << std::endl;
-            context->txn_ = txn_manager->begin(nullptr, context->log_mgr_);
-            *txn_id = context->txn_->get_transaction_id();
-            context->txn_->set_txn_mode(false);
-            return;
-        }
+    // 非begin语句
+    if (*txn_id == INVALID_TXN_ID) {
+        // 隐式事务，每条语句分配新ID
+        context->txn_ = txn_manager->begin(nullptr, context->log_mgr_);
+        *txn_id = context->txn_->get_transaction_id();
+        context->txn_->set_txn_mode(false); // 隐式事务
+        return;
     }
-    // 只有在指针有效时才检查状态
-    if (context->txn_ != nullptr) {
-        TransactionState state = context->txn_->get_state();
-        if (state == TransactionState::COMMITTED || state == TransactionState::ABORTED) {
-            std::cout << "当前事务已结束，创建新事务" << std::endl;
-            context->txn_ = txn_manager->begin(nullptr, context->log_mgr_);
-            *txn_id = context->txn_->get_transaction_id();
-            context->txn_->set_txn_mode(false);
+    // 显式事务块内，复用当前ID
+    if (context->txn_ == nullptr) {
+        context->txn_ = txn_manager->get_transaction(*txn_id);
+    }
+    // 如果事务已结束，自动开启隐式事务
+    if (context->txn_ && (context->txn_->get_state() == TransactionState::COMMITTED ||
+                          context->txn_->get_state() == TransactionState::ABORTED)) {
+        context->txn_ = txn_manager->begin(nullptr, context->log_mgr_);
+        *txn_id = context->txn_->get_transaction_id();
+        context->txn_->set_txn_mode(false);
+    }
+}
+
+void clean_sql_command(char* str) {
+    if (str == nullptr || *str == '\0') return;
+    char* start = str;
+    while (std::isspace(static_cast<unsigned char>(*start))) {
+        start++;
+    }
+    if (start != str) {
+        char* dst = str;
+        while (*start != '\0') {
+            *dst++ = *start++;
         }
+        *dst = '\0'; }
+    char* semicolon_ptr = strchr(str, ';');
+    if (semicolon_ptr != nullptr) {
+        char* end = semicolon_ptr + 1; // 包括分号
+        *end = '\0'; // 截断分号后的内容
+    }
+    char* end = str;
+    char* last_valid = str;
+    while (*end != '\0') {
+        if (!std::isspace(static_cast<unsigned char>(*end))) {
+            last_valid = end;
+        }
+        end++;}
+    if (*(last_valid + 1) != '\0') {
+        *(last_valid + 1) = '\0';
     }
 }
 
@@ -139,7 +161,7 @@ void *client_handler(void *sock_fd) {
 
         memset(data_send, '\0', BUFFER_LENGTH);
         offset = 0;
-
+        clean_sql_command(data_recv);
         if (!session_context) {
             session_context = new Context(lock_manager.get(), log_manager.get(), nullptr, data_send, &offset);
         } else {
@@ -147,8 +169,12 @@ void *client_handler(void *sock_fd) {
             session_context->offset_ = &offset;
         }
         std::cout << "DEBUG: 使用Context对象: " << session_context << std::endl;
-
+        std::cout<<"data_recv: "<<data_recv<<std::endl;
+        std::cout<<strlen(data_recv)<<std::endl;
+        if (strcmp(data_recv, "begin;") == 0) std::cout<<"相等"<<std::endl;
+        if (strcmp(data_recv, "begin;") != 0) std::cout<<"不相等"<<std::endl;
         if (strcmp(data_recv, "begin;") == 0 || strcmp(data_recv, "BEGIN;") == 0) {
+            std::cout<<"检测到显式事务BEGIN语句，准备开启新事务" << std::endl;
             SetTransaction(&txn_id, session_context, true);
         } else {
             SetTransaction(&txn_id, session_context);

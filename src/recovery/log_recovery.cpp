@@ -271,6 +271,7 @@ See the Mulan PSL v2 for more details. */
     }
     
     // 🔄 第二步：从检查点开始扫描日志（题目要求的步骤2）
+    
     std::vector<LogRecord*> log_records = log_manager_->scan_log_from_lsn(checkpoint_lsn + 1);
     
     for (auto* record : log_records) {
@@ -307,7 +308,7 @@ See the Mulan PSL v2 for more details. */
                     active_txn_table_[txn_id] = record->lsn_;
                 }
                 
-                // 只为redo_list中的事务构建脏页表（关键修复点）
+                // 只为redo_list中的事务构建脏页表
                 if (redo_list.find(txn_id) != redo_list.end()) {
                     Rid rid;
                     std::string table_name;
@@ -357,7 +358,31 @@ See the Mulan PSL v2 for more details. */
                 break;
         }
     }
-    
+
+    std::vector<LogRecord*> logs_before_ckpt = log_manager_->scan_log_from_lsn(0, checkpoint_lsn);
+    // 3. 对于active_txn_table_中仍为INVALID_LSN的事务，向前扫描日志补全
+    for (auto& [txn_id, lsn] : active_txn_table_) {
+        if (lsn == INVALID_LSN) {
+            // 向前扫描日志，找到该事务的最后一条操作日志
+            lsn_t last_lsn = INVALID_LSN;
+            for (auto* record : logs_before_ckpt) {
+                if (record->log_tid_ == txn_id &&
+                    (record->log_type_ == LogType::INSERT ||
+                    record->log_type_ == LogType::UPDATE ||
+                    record->log_type_ == LogType::DELETE ||
+                    record->log_type_ == LogType::begin)) {
+                    last_lsn = record->lsn_;
+                }
+            }
+            if (last_lsn != INVALID_LSN) {
+                active_txn_table_[txn_id] = last_lsn;
+                std::cout << "补全事务" << txn_id << " 的最后LSN为: " << last_lsn << std::endl;
+            }
+            // 清理
+            for (auto* record : logs_before_ckpt) delete record;
+        }
+    }
+
     std::cout << "分析完成 - undo_list: " << undo_list.size() 
               << ", redo_list: " << redo_list.size() 
               << ", 脏页表大小: " << dirty_page_table_.size() << std::endl;
@@ -368,49 +393,12 @@ See the Mulan PSL v2 for more details. */
     std::cout << "开始REDO已提交事务操作，共" << redo_list.size() << "个事务" << std::endl;
     for (auto* record : log_records) {
         txn_id_t txn_id = record->log_tid_;
-        
-        // 只对redo_list中的事务执行REDO
         if (redo_list.find(txn_id) != redo_list.end()) {
             if (record->log_type_ == LogType::INSERT ||
                 record->log_type_ == LogType::UPDATE ||
                 record->log_type_ == LogType::DELETE) {
-                
-                // 检查是否需要重做（基于脏页表）
-                bool should_redo = false;
-                PageId page_id;
-                
-                // 获取页面ID
-                if (record->log_type_ == LogType::INSERT) {
-                    InsertLogRecord* insert_log = dynamic_cast<InsertLogRecord*>(record);
-                    if (insert_log) {
-                        page_id.fd = sm_manager_->fhs_[insert_log->table_name_]->GetFd();
-                        page_id.page_no = insert_log->rid_.page_no;
-                        should_redo = true;
-                    }
-                } else if (record->log_type_ == LogType::UPDATE) {
-                    UpdateLogRecord* update_log = dynamic_cast<UpdateLogRecord*>(record);
-                    if (update_log) {
-                        page_id.fd = sm_manager_->fhs_[update_log->table_name_]->GetFd();
-                        page_id.page_no = update_log->rid_.page_no;
-                        should_redo = true;
-                    }
-                } else if (record->log_type_ == LogType::DELETE) {
-                    DeleteLogRecord* delete_log = dynamic_cast<DeleteLogRecord*>(record);
-                    if (delete_log) {
-                        page_id.fd = sm_manager_->fhs_[delete_log->table_name_]->GetFd();
-                        page_id.page_no = delete_log->rid_.page_no;
-                        should_redo = true;
-                    }
-                }
-                
-                // 如果需要重做且页面在脏页表中
-                if (should_redo && dirty_page_table_.find(page_id) != dirty_page_table_.end()) {
-                    // 检查LSN是否大于等于脏页表中的LSN
-                    if (record->lsn_ >= dirty_page_table_[page_id]) {
-                        std::cout << "重做事务 " << txn_id << " 的操作, LSN=" << record->lsn_ << std::endl;
-                        redo_log_record(record);
-                    }
-                }
+                std::cout << "重做事务 " << txn_id << " 的操作, LSN=" << record->lsn_ << std::endl;
+                redo_log_record(record);
             }
         }
     }
@@ -418,9 +406,12 @@ See the Mulan PSL v2 for more details. */
     // (2) 对undo_list中的事务执行UNDO
     std::cout << "开始UNDO未提交事务操作，共" << undo_list.size() << "个事务" << std::endl;
     for (auto txn_id : undo_list) {
+        std::cout << "撤销事务 " << txn_id << " 的操作" << std::endl;
         if (active_txn_table_.find(txn_id) != active_txn_table_.end()) {
+            std::cout << "事务 " << txn_id << " 仍然活跃，执行UNDO" << std::endl;
             lsn_t lsn = active_txn_table_[txn_id];
             if (lsn != INVALID_LSN) {
+                std::cout << "事务 " << txn_id << " 的最后LSN: " << lsn << std::endl;
                 // 按LSN倒序执行UNDO
                 while (lsn != INVALID_LSN) {
                     LogRecord* record = log_manager_->read_log_record(lsn);
@@ -533,7 +524,6 @@ See the Mulan PSL v2 for more details. */
             }
         }
         
-        // 原来的重做逻辑
         Rid rid;
         bool has_valid_rid = false;
         std::string table_name; 
@@ -665,126 +655,346 @@ void RecoveryManager::undo() {
  * @param {LogRecord*} log_record 日志记录
  */
  void RecoveryManager::redo_log_record(LogRecord* log_record) {
-        if (!log_record) return;
+    if (!log_record) return;
     
     try {
         switch (log_record->log_type_) {
-                case LogType::INSERT: {
-                    InsertLogRecord* insert_log = dynamic_cast<InsertLogRecord*>(log_record);
-                    if (insert_log) {
-                        // 获取表和RID信息
-                        std::string table_name = insert_log->table_name_; // 直接使用成员变量
-                        Rid rid = insert_log->rid_;  
-                        RmFileHandle* file_handle = sm_manager_->fhs_[table_name].get();
-                        if (file_handle) {
-                            file_handle->insert_record(rid, insert_log->insert_value_.data);
-                            std::cout << "重做INSERT: table=" << table_name << std::endl;
-                        }
+            case LogType::INSERT: {
+                InsertLogRecord* insert_log = dynamic_cast<InsertLogRecord*>(log_record);
+                if (insert_log) {
+                    // 获取表和RID信息
+                    std::string table_name = insert_log->table_name_;
+                    Rid rid = insert_log->rid_;
+                    
+                    // 检查表是否存在
+                    if (sm_manager_->fhs_.find(table_name) == sm_manager_->fhs_.end()) {
+                        std::cerr << "表不存在: " << table_name << std::endl;
+                        return;
                     }
-                    break;
-                }
-                
-                case LogType::UPDATE: {
-                    UpdateLogRecord* update_log = dynamic_cast<UpdateLogRecord*>(log_record);
-                    if (update_log) {
-                        // 获取表和RID信息
-                        std::string table_name = update_log->table_name_;
-                        Rid rid = update_log->rid_;
-                        RmFileHandle* file_handle = sm_manager_->fhs_[table_name].get();
-                        if (file_handle) {
-                            file_handle->update_record(rid, update_log->new_value_.data, nullptr);
-                            std::cout << "重做UPDATE: table=" << table_name 
-                                << ", rid=(" << rid.page_no << "," << rid.slot_no << ")" << std::endl;
+                    
+                    RmFileHandle* file_handle = sm_manager_->fhs_[table_name].get();
+                    if (file_handle) {
+                        // 重做插入记录
+                        file_handle->insert_record(rid, insert_log->insert_value_.data);
+                        
+                        // 🔄 更新索引
+                        TabMeta& tab_meta = sm_manager_->db_.get_table(table_name);
+                        for (auto& index : tab_meta.indexes) {
+                            std::string index_name = sm_manager_->get_ix_manager()->get_index_name(table_name, index.cols);
+                            auto ih = sm_manager_->ihs_.at(index_name).get();
+                            
+                            // 构建索引键
+                            char* key = new char[index.col_tot_len];
+                            int offset = 0;
+                            for (size_t i = 0; i < index.cols.size(); i++) {
+                                memcpy(key + offset, 
+                                       insert_log->insert_value_.data + index.cols[i].offset, 
+                                       index.cols[i].len);
+                                offset += index.cols[i].len;
+                            }
+                            
+                            // 插入索引项
+                            ih->insert_entry(key, rid, nullptr);
+                            delete[] key;
                         }
+                        
+                        std::cout << "重做INSERT: 表=" << table_name 
+                                  << ", RID=(" << rid.page_no << "," << rid.slot_no << ")" << std::endl;
                     }
-                    break;
                 }
-                
-                case LogType::DELETE: {
-                    DeleteLogRecord* delete_log = dynamic_cast<DeleteLogRecord*>(log_record);
-                    if (delete_log) {
-                        // 获取表和RID信息
-                        std::string table_name = delete_log->table_name_;
-                        Rid rid = delete_log->rid_;
-                        RmFileHandle* file_handle = sm_manager_->fhs_[table_name].get();
-                        if (file_handle) {
-                            file_handle->delete_record(rid, nullptr);
-                            std::cout << "重做DELETE: table=" << table_name 
-                                << ", rid=(" << rid.page_no << "," << rid.slot_no << ")" << std::endl;
+                break;
+            }
+            
+            case LogType::DELETE: {
+                DeleteLogRecord* delete_log = dynamic_cast<DeleteLogRecord*>(log_record);
+                if (delete_log) {
+                    // 获取表和RID信息
+                    std::string table_name = delete_log->table_name_;
+                    Rid rid = delete_log->rid_;
+                    
+                    // 检查表是否存在
+                    if (sm_manager_->fhs_.find(table_name) == sm_manager_->fhs_.end()) {
+                        std::cerr << "表不存在: " << table_name << std::endl;
+                        return;
+                    }
+                    
+                    RmFileHandle* file_handle = sm_manager_->fhs_[table_name].get();
+                    if (file_handle) {
+                        // 🔄 先删除索引
+                        TabMeta& tab_meta = sm_manager_->db_.get_table(table_name);
+                        for (auto& index : tab_meta.indexes) {
+                            std::string index_name = sm_manager_->get_ix_manager()->get_index_name(table_name, index.cols);
+                            auto ih = sm_manager_->ihs_.at(index_name).get();
+                            
+                            // 构建索引键
+                            char* key = new char[index.col_tot_len];
+                            int offset = 0;
+                            for (size_t i = 0; i < index.cols.size(); i++) {
+                                memcpy(key + offset, 
+                                       delete_log->deleted_value_.data + index.cols[i].offset, 
+                                       index.cols[i].len);
+                                offset += index.cols[i].len;
+                            }
+                            
+                            // 删除索引项
+                            ih->delete_entry(key, nullptr);
+                            delete[] key;
                         }
+                        
+                        // 删除记录
+                        file_handle->delete_record(rid, nullptr);
+                        std::cout << "重做DELETE: 表=" << table_name 
+                                  << ", RID=(" << rid.page_no << "," << rid.slot_no << ")" << std::endl;
                     }
-                    break;
                 }
-                
-                default:
-                    // 忽略其他类型的日志记录
-                    break;
+                break;
+            }
+            
+            case LogType::UPDATE: {
+                UpdateLogRecord* update_log = dynamic_cast<UpdateLogRecord*>(log_record);
+                if (update_log) {
+                    // 获取表和RID信息
+                    std::string table_name = update_log->table_name_;
+                    Rid rid = update_log->rid_;
+                    
+                    // 检查表是否存在
+                    if (sm_manager_->fhs_.find(table_name) == sm_manager_->fhs_.end()) {
+                        std::cerr << "表不存在: " << table_name << std::endl;
+                        return;
+                    }
+                    
+                    RmFileHandle* file_handle = sm_manager_->fhs_[table_name].get();
+                    if (file_handle) {
+                        // 🔄 更新索引
+                        TabMeta& tab_meta = sm_manager_->db_.get_table(table_name);
+                        for (auto& index : tab_meta.indexes) {
+                            std::string index_name = sm_manager_->get_ix_manager()->get_index_name(table_name, index.cols);
+                            auto ih = sm_manager_->ihs_.at(index_name).get();
+                            
+                            // 构建旧索引键
+                            char* old_key = new char[index.col_tot_len];
+                            int offset = 0;
+                            for (size_t i = 0; i < index.cols.size(); i++) {
+                                memcpy(old_key + offset, 
+                                       update_log->old_value_.data + index.cols[i].offset, 
+                                       index.cols[i].len);
+                                offset += index.cols[i].len;
+                            }
+                            
+                            // 删除旧索引
+                            ih->delete_entry(old_key, nullptr);
+                            delete[] old_key;
+                            
+                            // 构建新索引键
+                            char* new_key = new char[index.col_tot_len];
+                            offset = 0;
+                            for (size_t i = 0; i < index.cols.size(); i++) {
+                                memcpy(new_key + offset, 
+                                       update_log->new_value_.data + index.cols[i].offset, 
+                                       index.cols[i].len);
+                                offset += index.cols[i].len;
+                            }
+                            
+                            // 插入新索引
+                            ih->insert_entry(new_key, rid, nullptr);
+                            delete[] new_key;
+                        }
+                        
+                        // 更新记录
+                        file_handle->update_record(rid, update_log->new_value_.data, nullptr);
+                        std::cout << "重做UPDATE: 表=" << table_name 
+                                  << ", RID=(" << rid.page_no << "," << rid.slot_no << ")" << std::endl;
+                    }
+                }
+                break;
+            }
+            
+            default:
+                // 忽略其他类型的日志记录
+                break;
         }
     } catch (const std::exception& e) {
         std::cerr << "重做操作失败: " << e.what() << std::endl;
     }
-    }
+}
     
-    /**
-     * @description: 撤销单个日志记录
-     * @param {LogRecord*} log_record 日志记录
-     */
-    void RecoveryManager::undo_log_record(LogRecord* log_record) {
-        if (!log_record) return;
-    
-        try {
-            // 在处理前验证日志类型有效性
-            if (static_cast<int>(log_record->log_type_) < 0 || 
-                static_cast<int>(log_record->log_type_) > static_cast<int>(LogType::CHECKPOINT)) {
-                std::cerr << "错误: UNDO阶段遇到无效的日志类型: " << static_cast<int>(log_record->log_type_) << std::endl;
-                return;  // 跳过此记录
-            }
-            
-            switch (log_record->log_type_) {
-                case LogType::INSERT: {
-                    InsertLogRecord* insert_record = dynamic_cast<InsertLogRecord*>(log_record);
-                    std::string tab_name(insert_record->table_name_);
-                    auto fh = sm_manager_->fhs_.at(tab_name).get();
-                    fh->delete_record(insert_record->rid_, nullptr);
-                    std::cout << "撤销INSERT: table=" << tab_name << ", rid=(" 
-                            << insert_record->rid_.page_no << "," << insert_record->rid_.slot_no << ")" << std::endl;
-                    break;
+/**
+    * @description: 撤销单个日志记录
+    * @param {LogRecord*} log_record 日志记录
+    */
+void RecoveryManager::undo_log_record(LogRecord* log_record) {
+if (!log_record) return;
+
+try {
+    switch (log_record->log_type_) {
+        case LogType::INSERT: {
+            InsertLogRecord* insert_log = dynamic_cast<InsertLogRecord*>(log_record);
+            if (insert_log) {
+                // 获取表和RID信息
+                std::string table_name = insert_log->table_name_;
+                Rid rid = insert_log->rid_;
+                
+                // 检查表是否存在
+                if (sm_manager_->fhs_.find(table_name) == sm_manager_->fhs_.end()) {
+                    std::cerr << "表不存在: " << table_name << std::endl;
+                    return;
                 }
-                case LogType::DELETE: {
-                    DeleteLogRecord* delete_record = dynamic_cast<DeleteLogRecord*>(log_record);
-                    std::string tab_name(delete_record->table_name_);
-                    auto fh = sm_manager_->fhs_.at(tab_name).get();
-                    fh->insert_record(delete_record->rid_, delete_record->deleted_value_.data);
-                    std::cout << "撤销DELETE: table=" << tab_name << ", rid=(" 
-                            << delete_record->rid_.page_no << "," << delete_record->rid_.slot_no << ")" << std::endl;
-                    break;
-                }
-                case LogType::UPDATE: {
-                    UpdateLogRecord* update_record = dynamic_cast<UpdateLogRecord*>(log_record);
-                    std::string tab_name(update_record->table_name_);
-                    auto fh = sm_manager_->fhs_.at(tab_name).get();
-                    
-                    // 表达式更新与普通更新的UNDO操作相同，都是恢复旧记录
-                    fh->update_record(update_record->rid_, update_record->old_value_.data, nullptr);
-                    
-                    std::cout << "撤销UPDATE: table=" << tab_name << ", rid=(" 
-                            << update_record->rid_.page_no << "," << update_record->rid_.slot_no << ")";
-                    
-                    // 添加表达式信息输出（帮助调试）
-                    if (update_record->is_expr_update_) {
-                        std::cout << " [表达式更新: " << update_record->op_type_ << "]";
+                
+                RmFileHandle* file_handle = sm_manager_->fhs_[table_name].get();
+                if (file_handle) {
+                    // 🔄 先删除索引
+                    TabMeta& tab_meta = sm_manager_->db_.get_table(table_name);
+                    for (auto& index : tab_meta.indexes) {
+                        std::string index_name = sm_manager_->get_ix_manager()->get_index_name(table_name, index.cols);
+                        auto ih = sm_manager_->ihs_.at(index_name).get();
+                        
+                        // 构建索引键
+                        char* key = new char[index.col_tot_len];
+                        int offset = 0;
+                        for (size_t i = 0; i < index.cols.size(); i++) {
+                            memcpy(key + offset, 
+                                   insert_log->insert_value_.data + index.cols[i].offset, 
+                                   index.cols[i].len);
+                            offset += index.cols[i].len;
+                        }
+                        
+                        // 删除索引项
+                        ih->delete_entry(key, nullptr);
+                        delete[] key;
                     }
-                    std::cout << std::endl;
                     
-                    break;
+                    // 删除记录
+                    try {
+                        // 删除记录
+                        file_handle->delete_record(rid, nullptr);
+                        std::cout << "撤销INSERT: 表=" << table_name 
+                                  << ", RID=(" << rid.page_no << "," << rid.slot_no << ")" << std::endl;
+                    } catch (const RecordNotFoundError& e) {
+                        // 记录不存在是正常情况 - 可能数据页未刷盘就崩溃了
+                        std::cout << "撤销INSERT: 记录已不存在，无需删除: 表=" << table_name 
+                                  << ", RID=(" << rid.page_no << "," << rid.slot_no << ")" << std::endl;
+                    } catch (const std::exception& e) {
+                        // 其他错误记录但不中断恢复过程
+                        std::cerr << "撤销INSERT失败(非致命错误): " << e.what() << std::endl;
+                    }
                 }
-            default:
-                break;
+            }
+            break;
         }
-    } catch (const std::exception& e) {
-        std::cerr << "撤销操作失败: " << e.what() << std::endl;
+        
+        case LogType::DELETE: {
+            DeleteLogRecord* delete_log = dynamic_cast<DeleteLogRecord*>(log_record);
+            if (delete_log) {
+                // 获取表和RID信息
+                std::string table_name = delete_log->table_name_;
+                Rid rid = delete_log->rid_;
+                
+                // 检查表是否存在
+                if (sm_manager_->fhs_.find(table_name) == sm_manager_->fhs_.end()) {
+                    std::cerr << "表不存在: " << table_name << std::endl;
+                    return;
+                }
+                
+                RmFileHandle* file_handle = sm_manager_->fhs_[table_name].get();
+                if (file_handle) {
+                    // 插入记录
+                    file_handle->insert_record(rid, delete_log->deleted_value_.data);
+                    
+                    // 🔄 插入索引
+                    TabMeta& tab_meta = sm_manager_->db_.get_table(table_name);
+                    for (auto& index : tab_meta.indexes) {
+                        std::string index_name = sm_manager_->get_ix_manager()->get_index_name(table_name, index.cols);
+                        auto ih = sm_manager_->ihs_.at(index_name).get();
+                        
+                        // 构建索引键
+                        char* key = new char[index.col_tot_len];
+                        int offset = 0;
+                        for (size_t i = 0; i < index.cols.size(); i++) {
+                            memcpy(key + offset, 
+                                   delete_log->deleted_value_.data + index.cols[i].offset, 
+                                   index.cols[i].len);
+                            offset += index.cols[i].len;
+                        }
+                        
+                        // 插入索引项
+                        ih->insert_entry(key, rid, nullptr);
+                        delete[] key;
+                    }
+                    
+                    std::cout << "撤销DELETE: 表=" << table_name 
+                                << ", RID=(" << rid.page_no << "," << rid.slot_no << ")" << std::endl;
+                }
+            }
+            break;
+        }
+        
+        case LogType::UPDATE: {
+            UpdateLogRecord* update_log = dynamic_cast<UpdateLogRecord*>(log_record);
+            if (update_log) {
+                // 获取表和RID信息
+                std::string table_name = update_log->table_name_;
+                Rid rid = update_log->rid_;
+                
+                // 检查表是否存在
+                if (sm_manager_->fhs_.find(table_name) == sm_manager_->fhs_.end()) {
+                    std::cerr << "表不存在: " << table_name << std::endl;
+                    return;
+                }
+                
+                RmFileHandle* file_handle = sm_manager_->fhs_[table_name].get();
+                if (file_handle) {
+                    // 🔄 更新索引
+                    TabMeta& tab_meta = sm_manager_->db_.get_table(table_name);
+                    for (auto& index : tab_meta.indexes) {
+                        std::string index_name = sm_manager_->get_ix_manager()->get_index_name(table_name, index.cols);
+                        auto ih = sm_manager_->ihs_.at(index_name).get();
+                        
+                        // 构建旧索引键
+                        char* new_key = new char[index.col_tot_len];
+                        int offset = 0;
+                        for (size_t i = 0; i < index.cols.size(); i++) {
+                            memcpy(new_key + offset, 
+                                   update_log->new_value_.data + index.cols[i].offset, 
+                                   index.cols[i].len);
+                            offset += index.cols[i].len;
+                        }
+                        
+                        // 删除新索引
+                        ih->delete_entry(new_key, nullptr);
+                        delete[] new_key;
+                        
+                        // 构建旧索引键
+                        char* old_key = new char[index.col_tot_len];
+                        offset = 0;
+                        for (size_t i = 0; i < index.cols.size(); i++) {
+                            memcpy(old_key + offset, 
+                                   update_log->old_value_.data + index.cols[i].offset, 
+                                   index.cols[i].len);
+                            offset += index.cols[i].len;
+                        }
+                        
+                        // 插入旧索引
+                        ih->insert_entry(old_key, rid, nullptr);
+                        delete[] old_key;
+                    }
+                    
+                    // 恢复旧记录
+                    file_handle->update_record(rid, update_log->old_value_.data, nullptr);
+                    std::cout << "撤销UPDATE: 表=" << table_name 
+                                << ", RID=(" << rid.page_no << "," << rid.slot_no << ")" << std::endl;
+                }
+            }
+            break;
+        }
+        
+        default:
+            // 忽略其他类型的日志记录
+            break;
     }
-    }
+} catch (const std::exception& e) {
+    std::cerr << "撤销操作失败: " << e.what() << std::endl;
+}
+}
 
 /**
  * @brief 执行日志截断，在恢复完成后调用

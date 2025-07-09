@@ -35,10 +35,13 @@ lsn_t LogManager::add_log_to_buffer(LogRecord* log_record) {
  * @description: 把日志缓冲区的内容刷到磁盘中，由于目前只设置了一个缓冲区，因此需要阻塞其他日志操作
  */
 void LogManager::flush_log_to_disk() {
-    std::lock_guard<std::recursive_mutex> lock(latch_);  
-    disk_manager_->write_log(log_buffer_.buffer_, log_buffer_.offset_);
-    log_buffer_.offset_ = 0;
-    persist_lsn_ = global_lsn_ - 1;
+    std::lock_guard<std::recursive_mutex> lock(latch_);
+    if (log_buffer_.offset_ > 0) {
+        disk_manager_->write_log(log_buffer_.buffer_, log_buffer_.offset_);
+        log_buffer_.offset_ = 0;
+        persist_lsn_ = global_lsn_ - 1;
+        std::cout << "日志已刷新到磁盘，persist_lsn=" << persist_lsn_ << std::endl;
+    }
 }
 
 /**
@@ -59,7 +62,11 @@ void LogManager::flush_log_to_disk() {
         
         // 获取当前所有活跃事务
         std::vector<txn_id_t> active_txns = txn_manager->get_active_transactions();
-        
+        std::cout << "检查点收集的活跃事务: ";
+        for (auto txn_id : active_txns) {
+            std::cout << txn_id << " ";
+        }
+        std::cout << std::endl;
         // 步骤3: 写入检查点记录
         CheckpointLogRecord checkpoint_record(active_txns);
         lsn_t checkpoint_lsn = add_log_to_buffer(&checkpoint_record);
@@ -71,11 +78,16 @@ void LogManager::flush_log_to_disk() {
         sm_manager->get_all_tables(tables);
         
         for (const auto& table_name : tables) {
-            auto it = sm_manager->fhs_.find(table_name);
-            if (it != sm_manager->fhs_.end()) {
-                int fd = it->second->GetFd();
-                std::cout << "刷新表 " << table_name << " (fd=" << fd << ") 的所有页面" << std::endl;
-                buffer_pool_manager->flush_all_pages(fd);
+            try {
+                auto it = sm_manager->fhs_.find(table_name);
+                if (it != sm_manager->fhs_.end()) {
+                    int fd = it->second->GetFd();
+                    std::cout << "刷新表 " << table_name << " (fd=" << fd << ") 的所有页面" << std::endl;
+                    buffer_pool_manager->flush_all_pages(fd);
+                }
+            } catch (const std::exception& e) {
+                std::cerr << "刷新表 " << table_name << " 的页面失败: " << e.what() << std::endl;
+                // 继续处理其他表，不中断检查点创建过程
             }
         }
         
@@ -403,4 +415,66 @@ lsn_t LogManager::create_checkpoint(const std::vector<txn_id_t>& active_txns) {
         
         //delete checkpoint_record;
         return checkpoint_lsn;
+}
+
+
+std::vector<LogRecord*> LogManager::scan_log_from_lsn(lsn_t start_lsn, lsn_t end_lsn) {
+    std::vector<LogRecord*> log_records;
+
+    // 打开日志文件
+    std::ifstream log_file(LOG_FILE_NAME, std::ios::binary);
+    if (!log_file.is_open()) {
+        std::cerr << "无法打开日志文件: " << LOG_FILE_NAME << std::endl;
+        return log_records;
+    }
+
+    char header_buffer[LOG_HEADER_SIZE];
+    bool found_start = (start_lsn == INVALID_LSN);  // 如果是无效LSN，从头开始扫描
+
+    // 逐条读取日志记录
+    while (log_file.read(header_buffer, LOG_HEADER_SIZE)) {
+        LogType log_type = *reinterpret_cast<const LogType*>(header_buffer + OFFSET_LOG_TYPE);
+        lsn_t curr_lsn = *reinterpret_cast<const lsn_t*>(header_buffer + OFFSET_LSN);
+        uint32_t log_tot_len = *reinterpret_cast<const uint32_t*>(header_buffer + OFFSET_LOG_TOT_LEN);
+
+        // 判断是否在扫描范围内
+        if ((curr_lsn >= start_lsn || found_start) && (curr_lsn < end_lsn)) {
+            found_start = true;
+
+            // 回退文件指针，以便读取完整记录
+            log_file.seekg(-LOG_HEADER_SIZE, std::ios::cur);
+
+            // 分配内存并读取完整日志记录
+            char* log_data = new char[log_tot_len];
+            if (log_file.read(log_data, log_tot_len)) {
+                LogRecord* record = nullptr;
+                switch (log_type) {
+                    case LogType::begin:      record = new BeginLogRecord(); break;
+                    case LogType::commit:     record = new CommitLogRecord(); break;
+                    case LogType::ABORT:      record = new AbortLogRecord(); break;
+                    case LogType::INSERT:     record = new InsertLogRecord(); break;
+                    case LogType::UPDATE:     record = new UpdateLogRecord(); break;
+                    case LogType::DELETE:     record = new DeleteLogRecord(); break;
+                    case LogType::CHECKPOINT: record = new CheckpointLogRecord(); break;
+                    default:
+                        delete[] log_data;
+                        continue;
+                }
+                record->deserialize(log_data);
+                log_records.push_back(record);
+                delete[] log_data;
+            } else {
+                delete[] log_data;
+                break;
+            }
+        } else {
+            // 跳过当前记录
+            log_file.seekg(log_tot_len - LOG_HEADER_SIZE, std::ios::cur);
+        }
+        // 如果已经超过end_lsn，可以提前结束
+        if (curr_lsn >= end_lsn) break;
+    }
+
+    log_file.close();
+    return log_records;
 }

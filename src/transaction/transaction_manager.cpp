@@ -28,10 +28,12 @@ Transaction * TransactionManager::begin(Transaction* txn, LogManager* log_manage
     // 4. 返回当前事务指针
     Transaction* res;
     if(txn != nullptr) {
+        std::cout<<"txn指针不为空"<<std::endl;
         return txn;
     }
     std::unique_lock<std::mutex> lock(latch_);
     res = new Transaction(next_txn_id_);
+    std::cout<<"新开启的事务事务号为"<<next_txn_id_<<std::endl;
     txn_map[next_txn_id_] = res;
     res->set_start_ts(next_timestamp_);
     next_txn_id_++;
@@ -41,6 +43,7 @@ Transaction * TransactionManager::begin(Transaction* txn, LogManager* log_manage
     lsn_t curr_lsn = log_manager->add_log_to_buffer(&log_record);
     res->set_prev_lsn(curr_lsn);
     res->set_state(TransactionState::DEFAULT);
+    log_manager->flush_log_to_disk();
     return res;
 }
 
@@ -82,6 +85,12 @@ Transaction * TransactionManager::begin(Transaction* txn, LogManager* log_manage
     }
     log_manager->flush_log_to_disk();
     txn->set_state(TransactionState::COMMITTED);
+    std::unique_lock<std::mutex> lock(latch_);
+    if (txn_map.find(txn->get_transaction_id()) != txn_map.end()) {
+        delete txn_map[txn->get_transaction_id()];
+        txn_map.erase(txn->get_transaction_id());
+    }
+    lock.unlock();
 }
 
 /**
@@ -199,8 +208,8 @@ Transaction * TransactionManager::begin(Transaction* txn, LogManager* log_manage
     }
     
     // 释放锁
- auto lock_set = txn->get_lock_set();
- while (!lock_set->empty()) {
+    auto lock_set = txn->get_lock_set();
+    while (!lock_set->empty()) {
      auto it = lock_set->begin();
      LockDataId lock_id = *it;     
      if (!lock_manager_->unlock(txn, lock_id)) {
@@ -210,5 +219,11 @@ Transaction * TransactionManager::begin(Transaction* txn, LogManager* log_manage
     
     log_manager->flush_log_to_disk();
     txn->set_state(TransactionState::ABORTED);
+    std::unique_lock<std::mutex> lock(latch_);
+    if (txn_map.find(txn->get_transaction_id()) != txn_map.end()) {
+        delete txn_map[txn->get_transaction_id()];
+        txn_map.erase(txn->get_transaction_id());
+    }
+    lock.unlock();
 }
 

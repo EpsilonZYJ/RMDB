@@ -57,7 +57,7 @@ private:
     LogManager* log_manager_;  // 日志管理器   
     // 重做单个日志记录
     void redo_log_record(LogRecord* log_record);
-    
     // 撤销单个日志记录
     void undo_log_record(LogRecord* log_record);
+    lsn_t get_page_lsn(PageId page_id);
 };
