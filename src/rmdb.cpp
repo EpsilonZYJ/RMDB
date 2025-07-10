@@ -43,7 +43,7 @@ auto optimizer = std::make_unique<Optimizer>(sm_manager.get(), planner.get());
 auto log_manager = std::make_unique<LogManager>(disk_manager.get());
 auto ql_manager = std::make_unique<QlManager>(sm_manager.get(), txn_manager.get(), 
     planner.get(), log_manager.get(), buffer_pool_manager.get());
-auto recovery = std::make_unique<RecoveryManager>(disk_manager.get(), buffer_pool_manager.get(), sm_manager.get(),log_manager.get());
+auto recovery = std::make_unique<RecoveryManager>(disk_manager.get(), buffer_pool_manager.get(), sm_manager.get(),log_manager.get(), txn_manager.get());
 auto portal = std::make_unique<Portal>(sm_manager.get());
 auto analyze = std::make_unique<Analyze>(sm_manager.get());
 pthread_mutex_t *buffer_mutex;
@@ -169,10 +169,6 @@ void *client_handler(void *sock_fd) {
             session_context->offset_ = &offset;
         }
         std::cout << "DEBUG: 使用Context对象: " << session_context << std::endl;
-        std::cout<<"data_recv: "<<data_recv<<std::endl;
-        std::cout<<strlen(data_recv)<<std::endl;
-        if (strcmp(data_recv, "begin;") == 0) std::cout<<"相等"<<std::endl;
-        if (strcmp(data_recv, "begin;") != 0) std::cout<<"不相等"<<std::endl;
         if (strcmp(data_recv, "begin;") == 0 || strcmp(data_recv, "BEGIN;") == 0) {
             std::cout<<"检测到显式事务BEGIN语句，准备开启新事务" << std::endl;
             SetTransaction(&txn_id, session_context, true);
@@ -385,6 +381,7 @@ int main(int argc, char **argv) {
             recovery->analyze();
             // analyze()内部已调用redo()和undo()，不需要重复调用
         }
+
         
         std::cout << "数据库恢复完成" << std::endl;
         

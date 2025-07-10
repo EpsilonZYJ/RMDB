@@ -216,6 +216,19 @@ See the Mulan PSL v2 for more details. */
     dirty_page_table_.clear();
     
     std::cout << "分析阶段完成" << std::endl;
+    lsn_t max_lsn = 0;
+    txn_id_t max_txn_id = 0;
+    std::vector<LogRecord*> all_log_records= log_manager_->scan_log_from_lsn(0);
+    for (auto* record : all_log_records) {
+        if (record->lsn_ > max_lsn) max_lsn = record->lsn_;
+        if (record->log_tid_ > max_txn_id) max_txn_id = record->log_tid_;
+    }
+    // 恢复流程最后，设置新的起始值
+    log_manager_->set_global_lsn(max_lsn + 1);
+    txn_mgr_->set_next_txn_id(max_txn_id + 1);
+
+    std::cout << "恢复后设置global_lsn=" << (max_lsn + 1)
+              << "，next_txn_id=" << (max_txn_id + 1) << std::endl;
 }
 
 /**
@@ -238,6 +251,7 @@ See the Mulan PSL v2 for more details. */
             }
         }
     }
+    
     
     lsn_t checkpoint_lsn = log_manager_->get_last_checkpoint_lsn();
     if (checkpoint_lsn == INVALID_LSN) {
@@ -425,6 +439,12 @@ See the Mulan PSL v2 for more details. */
                     }
                     
                     lsn = record->prev_lsn_;
+                    if(lsn == INVALID_LSN) {
+                        std::cout << "lsn " << lsn << "是无效事务" << std::endl;
+                    }
+                    else {
+                        std::cout << "lsn " << lsn << " 是无效事务 " << lsn << std::endl;
+                    }
                     delete record;
                 }
             }
@@ -441,6 +461,22 @@ See the Mulan PSL v2 for more details. */
     dirty_page_table_.clear();
     
     std::cout << "基于检查点的恢复完成" << std::endl;
+
+    // 扫描所有日志，找到最大LSN和最大txn_id
+    lsn_t max_lsn = 0;
+    txn_id_t max_txn_id = 0;
+    std::vector<LogRecord*> all_log_records= log_manager_->scan_log_from_lsn(0);
+    for (auto* record : all_log_records) {
+        if (record->lsn_ > max_lsn) max_lsn = record->lsn_;
+        if (record->log_tid_ > max_txn_id) max_txn_id = record->log_tid_;
+    }
+    // 恢复流程最后，设置新的起始值
+    log_manager_->set_global_lsn(max_lsn + 1);
+    txn_mgr_->set_next_txn_id(max_txn_id + 1);
+
+    std::cout << "恢复后设置global_lsn=" << (max_lsn + 1)
+              << "，next_txn_id=" << (max_txn_id + 1) << std::endl;
+
 }
 
 /**
@@ -994,57 +1030,6 @@ try {
 } catch (const std::exception& e) {
     std::cerr << "撤销操作失败: " << e.what() << std::endl;
 }
-}
-
-/**
- * @brief 执行日志截断，在恢复完成后调用
- * @param checkpoint_interval 两次检查点之间的间隔（毫秒）
- */
-void RecoveryManager::truncate_log_after_recovery() {
-        // 获取当前系统的最大LSN
-        if (log_manager_ == nullptr) {
-                std::cerr << "错误: log_manager_为空，无法执行日志截断" << std::endl;
-                return;}
-        std::cout<<""<< "开始执行日志截断..." << std::endl;
-        lsn_t current_lsn = log_manager_->get_current_lsn();
-        std::vector<txn_id_t> active_txns;
-        for (const auto& pair : active_txn_table_) {
-            active_txns.push_back(pair.first);
-        }
-        // 添加检查点记录
-        std::cout << "创建检查点记录..." << std::endl;
-        lsn_t checkpoint_lsn = log_manager_->create_checkpoint(active_txns);
-        if (checkpoint_lsn == INVALID_LSN) {
-            std::cerr << "创建检查点失败，不执行日志截断" << std::endl;
-            return;
-        }
-        std::cout << "已创建新检查点，LSN: " << checkpoint_lsn << std::endl;
-        // 获取最小LSN，确保不会截断任何可能需要的日志
-        lsn_t min_lsn = INVALID_LSN;
-        // 如果脏页表非空，获取最小的LSN
-        for (const auto& entry : dirty_page_table_) {
-            if (min_lsn == INVALID_LSN || entry.second < min_lsn) {
-                min_lsn = entry.second;
-            }
-        }
-        // 如果活跃事务表非空，找到最早的LSN
-        for (const auto& entry : active_txn_table_) {
-            if (min_lsn == INVALID_LSN || entry.second < min_lsn) {
-                min_lsn = entry.second;
-            }
-        }
-        // 如果没有找到最小LSN，使用检查点LSN作为截断点
-        lsn_t truncate_lsn = (min_lsn == INVALID_LSN) ? checkpoint_lsn : std::min(min_lsn, checkpoint_lsn);
-        // 执行截断操作
-        std::cout << "开始截断日志: " << std::chrono::system_clock::now().time_since_epoch().count() << std::endl;
-        bool success = log_manager_->truncate_log(truncate_lsn);
-        std::cout << "完成截断日志: " << std::chrono::system_clock::now().time_since_epoch().count() << std::endl;
-        
-        if (success) {
-            std::cout << "日志截断成功，截断点LSN: " << truncate_lsn << std::endl;
-        } else {
-            std::cerr << "日志截断失败" << std::endl;
-        }
 }
 
 LogRecord* RecoveryManager::create_log_record_by_type(LogType type) {

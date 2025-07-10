@@ -262,6 +262,9 @@ class CheckpointLogRecord: public LogRecord {
                 
                 // 更新记录总长度
                 log_tot_len_ += sizeof(size_t) + active_txns_size_ * sizeof(txn_id_t);
+            }else {
+                active_txns_ = nullptr;
+                log_tot_len_ += sizeof(size_t);
             }
         }
         
@@ -315,6 +318,8 @@ class CheckpointLogRecord: public LogRecord {
             if (active_txns_size_ > 0) {
                 active_txns_ = new txn_id_t[active_txns_size_];
                 memcpy(active_txns_, src + offset, active_txns_size_ * sizeof(txn_id_t));
+            }else {
+                active_txns_ = nullptr;
             }
         }
         
@@ -614,9 +619,8 @@ public:
      // 获取当前LSN
      lsn_t get_current_lsn() { return global_lsn_; }
      std::vector<LogRecord*> scan_log_from_lsn(lsn_t start_lsn = INVALID_LSN);
-     bool truncate_log(lsn_t truncate_lsn);
      std::vector<LogRecord*> scan_log_from_lsn(lsn_t start_lsn, lsn_t end_lsn);
-     lsn_t create_checkpoint(const std::vector<txn_id_t>& active_txns);
+     void set_global_lsn(lsn_t lsn) { global_lsn_ = lsn; }
 private:    
     std::atomic<lsn_t> global_lsn_{0};  // 全局lsn，递增，用于为每条记录分发lsn
     std::recursive_mutex latch_;                  // 用于对log_buffer_的互斥访问

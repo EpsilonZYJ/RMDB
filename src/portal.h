@@ -179,7 +179,7 @@ class Portal
             }
             case PORTAL_MULTI_QUERY:
             {
-                ql->run_mutli_query(portal->plan, context);
+                ql->run_mutli_query(portal->plan, context,txn_id);
                 break;
             }
             case PORTAL_CMD_UTILITY:

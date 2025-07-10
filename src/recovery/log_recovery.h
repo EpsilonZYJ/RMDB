@@ -26,11 +26,12 @@ public:
 class RecoveryManager {
 public:
     RecoveryManager(DiskManager* disk_manager, BufferPoolManager* buffer_pool_manager, SmManager* sm_manager
-                    , LogManager* log_manager) {
+                    , LogManager* log_manager,TransactionManager* txn_mgr) {
         disk_manager_ = disk_manager;
         buffer_pool_manager_ = buffer_pool_manager;
         sm_manager_ = sm_manager;
         log_manager_ = log_manager;
+        txn_mgr_ = txn_mgr;
     }
     // 执行基于检查点的恢复
     void recover_from_checkpoint();
@@ -44,7 +45,6 @@ public:
     void analyze();
     void redo();
     void undo();
-    void truncate_log_after_recovery();
 private:
     // 活跃事务表
     std::unordered_map<txn_id_t, lsn_t> active_txn_table_;
@@ -54,7 +54,8 @@ private:
     DiskManager* disk_manager_;                                     // 用来读写文件
     BufferPoolManager* buffer_pool_manager_;                        // 对页面进行读写
     SmManager* sm_manager_;        
-    LogManager* log_manager_;  // 日志管理器   
+    LogManager* log_manager_;  // 日志管理器  
+    TransactionManager* txn_mgr_;  // 事务管理器 
     // 重做单个日志记录
     void redo_log_record(LogRecord* log_record);
     // 撤销单个日志记录
