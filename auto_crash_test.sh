@@ -2,7 +2,7 @@
 
 DB_SERVER="./build/bin/rmdb database"
 DB_CLIENT="./rmdb_client/build/rmdb_client"
-SQL_FILE="test_9.sql"
+SQL_FILE="recover_test.sql"
 TMP_SQL="tmp_block.sql"
 OUT_DIR="crash_test_output"
 LOG_FILE="crash_test_run.log"
