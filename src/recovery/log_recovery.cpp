@@ -7,11 +7,19 @@ THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
 EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
 MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 See the Mulan PSL v2 for more details. */
-
+#include <unordered_map>
 #include "log_recovery.h"
 #include "record/rm_manager.h"
 #include "recovery/log_manager.h"
 #include "system/sm_manager.h"
+
+struct RidHash {
+    size_t operator()(const Rid& rid) const {
+        return std::hash<int>()(rid.page_no) ^ std::hash<int>()(rid.slot_no);
+    }
+};
+std::unordered_map<Rid, lsn_t, RidHash> rid_latest_lsn_;
+
 /**#
  * @description: analyze阶段，需要获得脏页表（DPT）和未完成的事务列表（ATT）
  */
@@ -484,7 +492,7 @@ See the Mulan PSL v2 for more details. */
  */
  void RecoveryManager::redo() {
     std::cout << "执行REDO阶段..." << std::endl;
-    
+    rid_latest_lsn_.clear();
     // 从最小的recLSN开始读取日志
     lsn_t min_rec_lsn = INVALID_LSN;
     for (const auto& [page_id, rec_lsn] : dirty_page_table_) {
@@ -698,9 +706,12 @@ void RecoveryManager::undo() {
             case LogType::INSERT: {
                 InsertLogRecord* insert_log = dynamic_cast<InsertLogRecord*>(log_record);
                 if (insert_log) {
+                    Rid rid = insert_log->rid_;
+                    lsn_t curr_lsn = log_record->lsn_;
+                    // 只允许LSN递增的操作
+                    if (rid_latest_lsn_[rid] > curr_lsn) return;
                     // 获取表和RID信息
                     std::string table_name = insert_log->table_name_;
-                    Rid rid = insert_log->rid_;
                     
                     // 检查表是否存在
                     if (sm_manager_->fhs_.find(table_name) == sm_manager_->fhs_.end()) {
@@ -712,7 +723,7 @@ void RecoveryManager::undo() {
                     if (file_handle) {
                         // 重做插入记录
                         file_handle->insert_record(rid, insert_log->insert_value_.data);
-                        
+                        rid_latest_lsn_[rid] = curr_lsn;                        
                         // 🔄 更新索引
                         TabMeta& tab_meta = sm_manager_->db_.get_table(table_name);
                         for (auto& index : tab_meta.indexes) {
@@ -745,9 +756,10 @@ void RecoveryManager::undo() {
                 DeleteLogRecord* delete_log = dynamic_cast<DeleteLogRecord*>(log_record);
                 if (delete_log) {
                     // 获取表和RID信息
-                    std::string table_name = delete_log->table_name_;
                     Rid rid = delete_log->rid_;
-                    
+                    lsn_t curr_lsn = log_record->lsn_;
+                    if (rid_latest_lsn_[rid] > curr_lsn) return;
+                    std::string table_name = delete_log->table_name_;
                     // 检查表是否存在
                     if (sm_manager_->fhs_.find(table_name) == sm_manager_->fhs_.end()) {
                         std::cerr << "表不存在: " << table_name << std::endl;
@@ -779,6 +791,7 @@ void RecoveryManager::undo() {
                         
                         // 删除记录
                         file_handle->delete_record(rid, nullptr);
+                        rid_latest_lsn_[rid] = curr_lsn;
                         std::cout << "重做DELETE: 表=" << table_name 
                                   << ", RID=(" << rid.page_no << "," << rid.slot_no << ")" << std::endl;
                     }
@@ -792,7 +805,8 @@ void RecoveryManager::undo() {
                     // 获取表和RID信息
                     std::string table_name = update_log->table_name_;
                     Rid rid = update_log->rid_;
-                    
+                    lsn_t curr_lsn = log_record->lsn_;
+                    if (rid_latest_lsn_[rid] > curr_lsn) return;                    
                     // 检查表是否存在
                     if (sm_manager_->fhs_.find(table_name) == sm_manager_->fhs_.end()) {
                         std::cerr << "表不存在: " << table_name << std::endl;
@@ -838,6 +852,7 @@ void RecoveryManager::undo() {
                         
                         // 更新记录
                         file_handle->update_record(rid, update_log->new_value_.data, nullptr);
+                        rid_latest_lsn_[rid] = curr_lsn;
                         std::cout << "重做UPDATE: 表=" << table_name 
                                   << ", RID=(" << rid.page_no << "," << rid.slot_no << ")" << std::endl;
                     }
@@ -866,9 +881,12 @@ try {
         case LogType::INSERT: {
             InsertLogRecord* insert_log = dynamic_cast<InsertLogRecord*>(log_record);
             if (insert_log) {
+                Rid rid = insert_log->rid_;
+                lsn_t curr_lsn = log_record->lsn_;
+                // 只允许LSN递增的操作
+                if (rid_latest_lsn_[rid] > curr_lsn) return;
                 // 获取表和RID信息
                 std::string table_name = insert_log->table_name_;
-                Rid rid = insert_log->rid_;
                 
                 // 检查表是否存在
                 if (sm_manager_->fhs_.find(table_name) == sm_manager_->fhs_.end()) {
@@ -903,6 +921,7 @@ try {
                     try {
                         // 删除记录
                         file_handle->delete_record(rid, nullptr);
+                        rid_latest_lsn_[rid] = curr_lsn;
                         std::cout << "撤销INSERT: 表=" << table_name 
                                   << ", RID=(" << rid.page_no << "," << rid.slot_no << ")" << std::endl;
                     } catch (const RecordNotFoundError& e) {
@@ -924,7 +943,8 @@ try {
                 // 获取表和RID信息
                 std::string table_name = delete_log->table_name_;
                 Rid rid = delete_log->rid_;
-                
+                lsn_t curr_lsn = log_record->lsn_;
+                if (rid_latest_lsn_[rid] > curr_lsn) return;                
                 // 检查表是否存在
                 if (sm_manager_->fhs_.find(table_name) == sm_manager_->fhs_.end()) {
                     std::cerr << "表不存在: " << table_name << std::endl;
@@ -935,7 +955,7 @@ try {
                 if (file_handle) {
                     // 插入记录
                     file_handle->insert_record(rid, delete_log->deleted_value_.data);
-                    
+                    rid_latest_lsn_[rid] = curr_lsn;
                     // 🔄 插入索引
                     TabMeta& tab_meta = sm_manager_->db_.get_table(table_name);
                     for (auto& index : tab_meta.indexes) {
@@ -970,7 +990,8 @@ try {
                 // 获取表和RID信息
                 std::string table_name = update_log->table_name_;
                 Rid rid = update_log->rid_;
-                
+                lsn_t curr_lsn = log_record->lsn_;
+                if (rid_latest_lsn_[rid] > curr_lsn) return;                
                 // 检查表是否存在
                 if (sm_manager_->fhs_.find(table_name) == sm_manager_->fhs_.end()) {
                     std::cerr << "表不存在: " << table_name << std::endl;
@@ -1016,6 +1037,7 @@ try {
                     
                     // 恢复旧记录
                     file_handle->update_record(rid, update_log->old_value_.data, nullptr);
+                    rid_latest_lsn_[rid] = curr_lsn;
                     std::cout << "撤销UPDATE: 表=" << table_name 
                                 << ", RID=(" << rid.page_no << "," << rid.slot_no << ")" << std::endl;
                 }

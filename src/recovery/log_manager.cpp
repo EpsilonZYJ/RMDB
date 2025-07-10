@@ -68,10 +68,29 @@ void LogManager::flush_log_to_disk() {
         }
         std::cout << std::endl;
         // 步骤3: 写入检查点记录
-        CheckpointLogRecord checkpoint_record(active_txns);
-        lsn_t checkpoint_lsn = add_log_to_buffer(&checkpoint_record);
-        flush_log_to_disk();
-        std::cout << "已写入检查点记录，LSN: " << checkpoint_lsn << std::endl;
+        lsn_t checkpoint_lsn= INVALID_LSN;
+        for (auto txn_id : active_txns) {
+            Transaction* txn = txn_manager->get_transaction(txn_id);
+            if (txn) {
+                // 为每个事务单独写一条检查点日志
+                CheckpointLogRecord checkpoint_record(active_txns);
+                checkpoint_record.log_tid_ = txn_id;
+                checkpoint_record.prev_lsn_ = txn->get_prev_lsn();
+                checkpoint_lsn = add_log_to_buffer(&checkpoint_record);
+                txn->set_prev_lsn(checkpoint_lsn);
+                flush_log_to_disk();
+                std::cout << "已写入检查点记录，LSN: " << checkpoint_lsn << " 归属于事务: " << txn_id << std::endl;
+            }
+        }
+        // 如果没有活跃事务，也写一条系统级检查点日志
+        if (active_txns.empty()) {
+            CheckpointLogRecord checkpoint_record(active_txns);
+            checkpoint_record.log_tid_ = INVALID_TXN_ID;
+            checkpoint_record.prev_lsn_ = INVALID_LSN;
+            checkpoint_lsn = add_log_to_buffer(&checkpoint_record);
+            flush_log_to_disk();
+            std::cout << "已写入系统级检查点记录，LSN: " << checkpoint_lsn << std::endl;
+        }
         
         // 步骤4: 将当前数据库缓冲区中的内容写到数据库
         std::vector<std::string> tables;

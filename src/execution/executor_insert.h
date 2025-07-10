@@ -118,7 +118,12 @@ class InsertExecutor : public AbstractExecutor {
                     tab_name_
                 );
                 // 追加日志记录
-                context_->log_mgr_->add_log_to_buffer(log_record);  
+               // 维护prev_lsn链：写日志前设置prev_lsn
+                log_record->prev_lsn_ = context_->txn_->get_prev_lsn();
+                // 写日志，获得当前日志lsn
+                lsn_t curr_lsn = context_->log_mgr_->add_log_to_buffer(log_record);
+                // 写日志后，更新事务的prev_lsn
+                context_->txn_->set_prev_lsn(curr_lsn);
                 context_->log_mgr_->flush_log_to_disk();
                 // 释放日志记录内存
                 delete log_record;
