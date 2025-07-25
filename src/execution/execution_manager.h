@@ -36,6 +36,7 @@ class QlManager {
     LogManager *log_manager_;
     BufferPoolManager *buffer_pool_manager_;
     LockManager *lock_manager_;
+    
    public:
    QlManager(LockManager *lock_manager,SmManager *sm_manager, TransactionManager *txn_mgr, Planner *planner,
     LogManager *log_manager=nullptr, BufferPoolManager *buffer_pool_manager=nullptr) 

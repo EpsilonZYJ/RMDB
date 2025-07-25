@@ -121,11 +121,6 @@ single_op ";"|"("|")"|","|"*"|"="|">"|"<"|"."
 "/" { yylval->sv_char = '/'; return OP_DIVIDE; }
 {single_op} { return yytext[0]; }
 
-    /* id */
-{identifier} {
-    yylval->sv_str = yytext;
-    return IDENTIFIER;
-}
     /* literals */
 {value_int} {
     yylval->sv_int = atoi(yytext);
@@ -142,6 +137,11 @@ single_op ";"|"("|")"|","|"*"|"="|">"|"<"|"."
 ([a-zA-Z0-9_\-./]*[/.][a-zA-Z0-9_\-./]*) {
     yylval->sv_str = yytext;
     return VALUE_PATH;
+}
+    /* id */
+{identifier} {
+    yylval->sv_str = yytext;
+    return IDENTIFIER;
 }
 
     /* EOF */

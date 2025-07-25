@@ -182,7 +182,9 @@ void *client_handler(void *sock_fd) {
         if (yyparse() == 0) {
             if (ast::parse_tree != nullptr) {
                 std::cout << "DEBUG: 解析成功，开始分析语法树" << std::endl;
+                std::cout<<"真服了"<<std::endl;
                 try {
+                    std::cout << "DEBUG: 开始analyze" << std::endl;
                     std::shared_ptr<Query> query = analyze->do_analyze(ast::parse_tree);
                     std::cout << "DEBUG: query->is_load=" << query->is_load << std::endl;
                     yy_delete_buffer(buf);
