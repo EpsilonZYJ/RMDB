@@ -75,6 +75,8 @@ single_op ";"|"("|")"|","|"*"|"="|">"|"<"|"."
 "SET" { return SET; }
 "SELECT" { return SELECT; }
 "EXPLAIN" { return EXPLAIN; }
+"LOAD" { return LOAD; }
+"INTO" { return INTO; }
 "INT" { return INT; }
 "CHAR" { return CHAR; }
 "FLOAT" { return FLOAT; }
@@ -123,6 +125,10 @@ single_op ";"|"("|")"|","|"*"|"="|">"|"<"|"."
 {identifier} {
     yylval->sv_str = yytext;
     return IDENTIFIER;
+}
+([a-zA-Z0-9_./\-]+) {
+    yylval->sv_str = yytext;
+    return VALUE_PATH;
 }
     /* literals */
 {value_int} {

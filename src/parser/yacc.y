@@ -23,8 +23,8 @@ std::vector<std::shared_ptr<ast::JoinExpr>> current_joins;
 // keywords
 %token SHOW TABLES CREATE TABLE DROP DESC INSERT INTO VALUES DELETE FROM ASC ORDER BY
 WHERE UPDATE SET SELECT INT CHAR FLOAT DATE INDEX AND JOIN ON EXIT HELP TXN_BEGIN TXN_COMMIT 
-TXN_ABORT TXN_ROLLBACK ORDER_BY ENABLE_NESTLOOP ENABLE_SORTMERGE EXPLAIN SEMI
-COUNT MAX MIN SUM AVG AS GROUP HAVING LIMIT STATIC_CHECKPOINT
+TXN_ABORT TXN_ROLLBACK ORDER_BY ENABLE_NESTLOOP ENABLE_SORTMERGE EXPLAIN SEMI 
+COUNT MAX MIN SUM AVG AS GROUP HAVING LIMIT STATIC_CHECKPOINT LOAD
 // non-keywords
 %token LEQ NEQ GEQ T_EOF
 
@@ -35,7 +35,7 @@ COUNT MAX MIN SUM AVG AS GROUP HAVING LIMIT STATIC_CHECKPOINT
 %token <sv_date> VALUE_DATE
 %token <sv_bool> VALUE_BOOL
 %token <sv_char> OP_PLUS OP_MINUS OP_TIMES OP_DIVIDE
-
+%token <sv_str> VALUE_PATH
 // specify types for non-terminal symbol
 %type <sv_node> stmt dbStmt ddl dml txnStmt setStmt
 %type <sv_field> field
@@ -61,6 +61,7 @@ COUNT MAX MIN SUM AVG AS GROUP HAVING LIMIT STATIC_CHECKPOINT
 %type <sv_col_extra_info> select_item
 %type <sv_agg_expr> agg_expr
 %type <sv_limit> opt_limit_clause
+%type <sv_str> file_path
 %%
 start:
         stmt ';'
@@ -183,8 +184,17 @@ dml:
         select_stmt->explain = true;
         $$ = select_stmt;
     }
+    | LOAD file_path INTO tbName
+    {
+        $$ = std::make_shared<LoadStmt>($2, $4);
+    }
     ;
-
+file_path:
+    VALUE_STRING
+    { $$ = $1; }
+    | VALUE_PATH
+    { $$ = $1; }
+    ;
 fieldList:
         field
     {

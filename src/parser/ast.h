@@ -69,6 +69,13 @@ struct TxnAbort : public TreeNode {
 struct TxnRollback : public TreeNode {
 };
 
+struct LoadStmt : public TreeNode {
+    std::string file_name;
+    std::string table_name;
+    LoadStmt(const std::string& file, const std::string& table)
+        : file_name(file), table_name(table) {}
+};
+
 struct TypeLen : public TreeNode {
     SvType type;
     int len;

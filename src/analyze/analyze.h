@@ -56,6 +56,9 @@ class Query{
     bool is_explain = false; // 是否为explain语句
     std::map<std::string, std::set<std::string> > table_required_cols;//储存每个表需要的列
     std::map<std::string, std::string> tab_alias_map; // 表名到别名的映射
+    std::string load_file_name;
+    std::string load_table_name;
+    bool is_load = false;
 };
 
 class Analyze

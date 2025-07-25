@@ -101,20 +101,22 @@ extern int yydebug;
     HAVING = 302,                  /* HAVING  */
     LIMIT = 303,                   /* LIMIT  */
     STATIC_CHECKPOINT = 304,       /* STATIC_CHECKPOINT  */
-    LEQ = 305,                     /* LEQ  */
-    NEQ = 306,                     /* NEQ  */
-    GEQ = 307,                     /* GEQ  */
-    T_EOF = 308,                   /* T_EOF  */
-    IDENTIFIER = 309,              /* IDENTIFIER  */
-    VALUE_STRING = 310,            /* VALUE_STRING  */
-    VALUE_INT = 311,               /* VALUE_INT  */
-    VALUE_FLOAT = 312,             /* VALUE_FLOAT  */
-    VALUE_DATE = 313,              /* VALUE_DATE  */
-    VALUE_BOOL = 314,              /* VALUE_BOOL  */
-    OP_PLUS = 315,                 /* OP_PLUS  */
-    OP_MINUS = 316,                /* OP_MINUS  */
-    OP_TIMES = 317,                /* OP_TIMES  */
-    OP_DIVIDE = 318                /* OP_DIVIDE  */
+    LOAD = 305,                    /* LOAD  */
+    LEQ = 306,                     /* LEQ  */
+    NEQ = 307,                     /* NEQ  */
+    GEQ = 308,                     /* GEQ  */
+    T_EOF = 309,                   /* T_EOF  */
+    IDENTIFIER = 310,              /* IDENTIFIER  */
+    VALUE_STRING = 311,            /* VALUE_STRING  */
+    VALUE_INT = 312,               /* VALUE_INT  */
+    VALUE_FLOAT = 313,             /* VALUE_FLOAT  */
+    VALUE_DATE = 314,              /* VALUE_DATE  */
+    VALUE_BOOL = 315,              /* VALUE_BOOL  */
+    OP_PLUS = 316,                 /* OP_PLUS  */
+    OP_MINUS = 317,                /* OP_MINUS  */
+    OP_TIMES = 318,                /* OP_TIMES  */
+    OP_DIVIDE = 319,               /* OP_DIVIDE  */
+    VALUE_PATH = 320               /* VALUE_PATH  */
   };
   typedef enum yytokentype yytoken_kind_t;
 #endif

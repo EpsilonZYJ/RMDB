@@ -41,7 +41,7 @@ auto txn_manager = std::make_unique<TransactionManager>(lock_manager.get(), sm_m
 auto planner = std::make_unique<Planner>(sm_manager.get());
 auto optimizer = std::make_unique<Optimizer>(sm_manager.get(), planner.get());
 auto log_manager = std::make_unique<LogManager>(disk_manager.get());
-auto ql_manager = std::make_unique<QlManager>(sm_manager.get(), txn_manager.get(), 
+auto ql_manager = std::make_unique<QlManager>(lock_manager.get(),sm_manager.get(), txn_manager.get(), 
     planner.get(), log_manager.get(), buffer_pool_manager.get());
 auto recovery = std::make_unique<RecoveryManager>(disk_manager.get(), buffer_pool_manager.get(), sm_manager.get(),log_manager.get(), txn_manager.get());
 auto portal = std::make_unique<Portal>(sm_manager.get());
@@ -187,7 +187,14 @@ void *client_handler(void *sock_fd) {
                     yy_delete_buffer(buf);
                     finish_analyze = true;
                     pthread_mutex_unlock(buffer_mutex);
-                    
+                    //加载数据的特殊处理
+                    if (query->is_load) {
+                    ql_manager->load_data(query->load_file_name, query->load_table_name, session_context->txn_);
+                    std::string msg = "Load data finished.\n";
+                    memcpy(data_send, msg.c_str(), msg.size());
+                    offset = msg.size();
+                    goto send_result;
+                    }
                     std::shared_ptr<Plan> plan = optimizer->plan_query(query, session_context);
                     std::shared_ptr<PortalStmt> portalStmt = portal->start(plan, session_context);
                     portal->run(portalStmt, ql_manager.get(), &txn_id, session_context);
@@ -231,7 +238,7 @@ void *client_handler(void *sock_fd) {
             yy_delete_buffer(buf);
             pthread_mutex_unlock(buffer_mutex);
         }
-
+        send_result:
         if (write(fd, data_send, offset + 1) == -1) {
             break;
         }

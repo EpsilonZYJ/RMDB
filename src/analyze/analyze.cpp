@@ -19,7 +19,13 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse)
 {
     std::shared_ptr<Query> query = std::make_shared<Query>();//初始化空query
     query->parse = parse;
-    if (auto explain_stmt = std::dynamic_pointer_cast<ast::ExplainStmt>(parse)) {
+   if (auto x = std::dynamic_pointer_cast<ast::LoadStmt>(parse)) {
+        query->is_load = true;
+        query->load_file_name = x->file_name;
+        query->load_table_name = x->table_name;
+        return query;
+    }
+    else if (auto explain_stmt = std::dynamic_pointer_cast<ast::ExplainStmt>(parse)) {
         // 复用 SelectStmt 的处理逻辑
         query->parse = explain_stmt->select;
         // 标记这是 EXPLAIN 查询
