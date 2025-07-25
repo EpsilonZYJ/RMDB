@@ -282,62 +282,79 @@ void QlManager::run_dml(std::unique_ptr<AbstractExecutor> exec){
 }
 
 void QlManager::load_data(const std::string& file_name, const std::string& table_name, Transaction* txn) {
-   std::ifstream fin(file_name);
-if (!fin.is_open()) throw std::runtime_error("无法打开文件: " + file_name);
+//    std::cout << "DEBUG: load_data file_name=" << file_name << ", table_name=" << table_name << std::endl;
+//     std::cout << "DEBUG: lock_manager_=" << lock_manager_ << std::endl;
+//     std::cout << "DEBUG: sm_manager_=" << sm_manager_ << std::endl;
+//     std::cout << "DEBUG: txn_mgr_=" << txn_mgr_ << std::endl;
+//     std::cout << "DEBUG: log_manager_=" << log_manager_ << std::endl;
+//     std::cout << "DEBUG: buffer_pool_manager_=" << buffer_pool_manager_ << std::endl;
+    std::ifstream fin(file_name);
+    if (!fin.is_open()) throw std::runtime_error("无法打开文件: " + file_name);
 
-bool auto_txn = false;
-if (!txn) {
-    txn = txn_mgr_->begin(nullptr, log_manager_);
-    auto_txn = true;
-}
-int cnt = 0;
-Context ctx(lock_manager_, log_manager_, txn, nullptr, nullptr);
-
-TabMeta tab = sm_manager_->db_.get_table(table_name);
-std::string line;
-
-// 跳过表头
-bool first_line = true;
-while (std::getline(fin, line)) {
-    if (line.empty()) continue;
-    if (first_line) { first_line = false; continue; } // 跳过表头
-
-    std::vector<std::string> fields;
-    std::stringstream ss(line);
-    std::string field;
-    while (std::getline(ss, field, ',')) {
-        fields.push_back(field);
+    bool auto_txn = false;
+    if (!txn) {
+        // 如果没有事务，则创建一个自动提交的事务
+        std::cout << "没有事务，创建自动提交事务" << std::endl;
+        txn = txn_mgr_->begin(nullptr, log_manager_);
+        std::cout << "自动提交事务 ID: " << txn->get_transaction_id() << std::endl;
+        auto_txn = true;
     }
-    if (fields.size() != tab.cols.size()) {
-        throw std::runtime_error("字段数不匹配: " + line);
-    }
-    std::vector<Value> values;
-    for (size_t i = 0; i < fields.size(); ++i) {
-        Value v;
-        switch (tab.cols[i].type) {
-            case TYPE_INT:
-                v.set_int(std::stoi(fields[i]));
-                break;
-            case TYPE_FLOAT:
-                v.set_float(std::stof(fields[i]));
-                break;
-            case TYPE_STRING:
-                v.set_str(fields[i]);
-                break;
-            case TYPE_DATE:
-                v.set_date(fields[i]);
-                break;
-            default:
-                throw std::runtime_error("未知字段类型");
+    int cnt = 0;
+    std::cout<<"开始生成context"<< std::endl;
+    Context ctx(lock_manager_, log_manager_, txn, nullptr, nullptr);
+    std::cout<<"context生成成功" << std::endl;
+    TabMeta tab = sm_manager_->db_.get_table(table_name);
+    std::string line;
+
+    // 跳过表头
+    bool first_line = true;
+    while (std::getline(fin, line)) {
+        if (line.empty()) continue;
+        if (first_line) { first_line = false; continue; } // 跳过表头
+
+        std::vector<std::string> fields;
+        std::stringstream ss(line);
+        std::string field;
+        while (std::getline(ss, field, ',')) {
+            fields.push_back(field);
         }
-        values.push_back(v);
+        if (fields.size() != tab.cols.size()) {
+            throw std::runtime_error("字段数不匹配: " + line);
+        }
+        std::vector<Value> values;
+        for (size_t i = 0; i < fields.size(); ++i) {
+            Value v;
+            std::string s;
+            switch (tab.cols[i].type) {
+                case TYPE_INT:
+                    v.set_int(std::stoi(fields[i]));
+                    break;
+                case TYPE_FLOAT:
+                    v.set_float(std::stof(fields[i]));
+                    break;
+                case TYPE_STRING:    
+                    s = fields[i];
+                    while (!s.empty() && (s.back() == '\r' || s.back() == '\n')) s.pop_back();
+                    v.set_str(s);
+                    break;
+                case TYPE_DATE:
+                    s = fields[i];
+                    while (!s.empty() && (s.back() == '\r' || s.back() == '\n')) s.pop_back();
+                    v.set_date(fields[i]);
+                    break;
+                default:
+                    throw std::runtime_error("未知字段类型");
+            }
+            values.push_back(v);
+        }
+        InsertExecutor exec(sm_manager_, table_name, values, &ctx);
+        exec.Next();
+        cnt++;
     }
-    InsertExecutor exec(sm_manager_, table_name, values, &ctx);
-    exec.Next();
-    cnt++;
-}
-if (auto_txn) {
-    txn_mgr_->commit(txn, log_manager_);
-}
-std::cout << "Load " << cnt << " rows into " << table_name << std::endl;
+    std::cout<<"数据加载完毕" << std::endl;
+    if (auto_txn) {
+        txn_mgr_->commit(txn, log_manager_);
+        std::cout<<"commit成功" << std::endl;
+    }
+    std::cout << "Load " << cnt << " rows into " << table_name << std::endl;
 }

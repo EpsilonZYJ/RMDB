@@ -17,6 +17,7 @@ See the Mulan PSL v2 for more details. */
  */
 std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse)
 {
+    std::cout << "DEBUG: do_analyze AST type: " << typeid(*parse).name() << std::endl;
     std::shared_ptr<Query> query = std::make_shared<Query>();//初始化空query
     query->parse = parse;
    if (auto x = std::dynamic_pointer_cast<ast::LoadStmt>(parse)) {

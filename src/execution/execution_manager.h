@@ -39,8 +39,8 @@ class QlManager {
    public:
    QlManager(LockManager *lock_manager,SmManager *sm_manager, TransactionManager *txn_mgr, Planner *planner,
     LogManager *log_manager=nullptr, BufferPoolManager *buffer_pool_manager=nullptr) 
-    : sm_manager_(sm_manager), txn_mgr_(txn_mgr), planner_(planner),
-    log_manager_(log_manager), buffer_pool_manager_(buffer_pool_manager),lock_manager_(lock_manager) {}
+    : lock_manager_(lock_manager),sm_manager_(sm_manager), txn_mgr_(txn_mgr), planner_(planner),
+    log_manager_(log_manager), buffer_pool_manager_(buffer_pool_manager) {}
 
     void run_mutli_query(std::shared_ptr<Plan> plan, Context *context,txn_id_t *txn_id);
     void run_cmd_utility(std::shared_ptr<Plan> plan, txn_id_t *txn_id, Context *context);

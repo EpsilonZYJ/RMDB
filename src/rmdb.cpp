@@ -184,16 +184,20 @@ void *client_handler(void *sock_fd) {
                 std::cout << "DEBUG: 解析成功，开始分析语法树" << std::endl;
                 try {
                     std::shared_ptr<Query> query = analyze->do_analyze(ast::parse_tree);
+                    std::cout << "DEBUG: query->is_load=" << query->is_load << std::endl;
                     yy_delete_buffer(buf);
                     finish_analyze = true;
                     pthread_mutex_unlock(buffer_mutex);
                     //加载数据的特殊处理
                     if (query->is_load) {
+                    std::cout<<"DEBUG: 加载数据" << std::endl;
                     ql_manager->load_data(query->load_file_name, query->load_table_name, session_context->txn_);
+                    std::cout<<"DEBUG: 加载数据完成" << std::endl;
                     std::string msg = "Load data finished.\n";
                     memcpy(data_send, msg.c_str(), msg.size());
                     offset = msg.size();
                     goto send_result;
+                    std::cout<<"没有跳过生成计划" << std::endl;
                     }
                     std::shared_ptr<Plan> plan = optimizer->plan_query(query, session_context);
                     std::shared_ptr<PortalStmt> portalStmt = portal->start(plan, session_context);

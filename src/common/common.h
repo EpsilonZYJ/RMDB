@@ -156,6 +156,13 @@ struct Value {
             *(float *)(raw->data) = float_val;
         } else if (type == TYPE_STRING) {
             if (len < (int)str_val.size()) {
+                std::cout << "字段内容: [" << str_val << "], 长度: " << str_val.size() << std::endl;
+
+                // 十六进制打印
+                std::cout << "十六进制: ";
+                for (size_t i = 0; i < str_val.size(); ++i) {
+                    printf("%02X ", (unsigned char)str_val[i]);
+                }
                 throw StringOverflowError();
             }
             memset(raw->data, 0, len);
@@ -181,6 +188,8 @@ struct Value {
             *(float *)(raw->data) = float_val;
         } else if (type == TYPE_STRING) {
             if (len < (int)str_val.size()) {
+                std::cerr << "右侧： " << str_val<< std::endl;
+                std::cerr << "右侧长度： " << str_val.size() << " > " << len << std::endl;
                 throw StringOverflowError();
             }
             memset(raw->data, 0, len);

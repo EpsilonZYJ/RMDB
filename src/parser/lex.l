@@ -126,10 +126,6 @@ single_op ";"|"("|")"|","|"*"|"="|">"|"<"|"."
     yylval->sv_str = yytext;
     return IDENTIFIER;
 }
-([a-zA-Z0-9_./\-]+) {
-    yylval->sv_str = yytext;
-    return VALUE_PATH;
-}
     /* literals */
 {value_int} {
     yylval->sv_int = atoi(yytext);
@@ -142,6 +138,10 @@ single_op ";"|"("|")"|","|"*"|"="|">"|"<"|"."
 {value_string} {
     yylval->sv_str = std::string(yytext + 1, strlen(yytext) - 2);
     return VALUE_STRING;
+}
+([a-zA-Z0-9_\-./]*[/.][a-zA-Z0-9_\-./]*) {
+    yylval->sv_str = yytext;
+    return VALUE_PATH;
 }
 
     /* EOF */
