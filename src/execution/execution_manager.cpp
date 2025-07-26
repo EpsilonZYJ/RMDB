@@ -46,7 +46,7 @@ const char *help_info = "Supported SQL syntax:\n"
                    "  {* | column [, column ...]}\n";
 
 // 主要负责执行DDL语句
-void QlManager::run_mutli_query(std::shared_ptr<Plan> plan, Context *context,txn_id_t *txn_id){
+void QlManager::run_mutli_query(std::shared_ptr<Plan> plan, Context *context){
     if (auto x = std::dynamic_pointer_cast<CreateCheckpointPlan>(plan)) {
         // 创建静态检查点
         log_manager_->create_static_checkpoint(txn_mgr_, buffer_pool_manager_, sm_manager_);
@@ -78,11 +78,6 @@ void QlManager::run_mutli_query(std::shared_ptr<Plan> plan, Context *context,txn
                 throw InternalError("Unexpected field type");
                 break;  
         }
-    }
-    if (context->txn_ && !context->txn_->get_txn_mode()) {
-        txn_mgr_->commit(context->txn_, context->log_mgr_);
-        context->txn_ = nullptr;
-        if (txn_id) *txn_id = INVALID_TXN_ID;
     }
 }
 

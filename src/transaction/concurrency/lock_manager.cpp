@@ -9,147 +9,47 @@ MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 See the Mulan PSL v2 for more details. */
 
 #include "lock_manager.h"
+#include <algorithm>
 
-bool LockManager::lock_IS_on_table_internal(Transaction* txn, int tab_fd) {
-    if (txn == nullptr) return false;
-    
-    // 注意：这里不获取latch_，调用者负责锁管理
-    
-    LockDataId lock_data_id(tab_fd, LockDataType::TABLE);
-    auto lock_set = txn->get_lock_set();
-    if (lock_set->find(lock_data_id) != lock_set->end()) {
-        return true; // 已经持有锁
+
+inline void LockManager::check_wait_die(const std::shared_ptr<LockRequestQueue>& lock_request_queue, Transaction* txn) {
+    bool wait_die = std::any_of(lock_request_queue->request_queue_.begin(), lock_request_queue->request_queue_.end(), [&](const std::shared_ptr<LockRequest>& lock_request){
+        return lock_request->txn_id_ < txn->get_transaction_id();
+    });
+    if(wait_die)
+    {
+        throw TransactionAbortException(txn->get_transaction_id(), AbortReason::DEADLOCK_PREVENTION);
     }
-    
-    auto& queue = lock_table_[lock_data_id];
-    
-    if (can_grant_lock(queue, LockMode::INTENTION_SHARED, txn->get_transaction_id())) {
-        LockRequest request(txn->get_transaction_id(), LockMode::INTENTION_SHARED);
-        request.granted_ = true;
-        queue.request_queue_.push_back(request);
-        update_group_lock_mode(queue);
-        lock_set->insert(lock_data_id);
-        return true;
-    }
-    
-    return false;
 }
 
-/**
- * 内部方法：不获取全局锁的表级IX锁申请
- */
-bool LockManager::lock_IX_on_table_internal(Transaction* txn, int tab_fd) {
-    if (txn == nullptr) return false;
-    
-    LockDataId lock_data_id(tab_fd, LockDataType::TABLE);
-    auto lock_set = txn->get_lock_set();
-    if (lock_set->find(lock_data_id) != lock_set->end()) {
-        return true;
+inline std::shared_ptr<LockManager::LockRequestQueue> LockManager::get_lock_request_queue(const LockDataId& lock_data_id)
+{
+    std::scoped_lock<std::mutex> lock(latch_);
+    if(lock_table_.find(lock_data_id) == lock_table_.end()) {
+        std::shared_ptr<LockRequestQueue> lock_request_queue = std::make_shared<LockRequestQueue>();
+        lock_table_.emplace(lock_data_id, lock_request_queue);
+        lock_request_queue->group_lock_mode_ = GroupLockMode::NON_LOCK;
     }
-    
-    auto& queue = lock_table_[lock_data_id];
-    
-    if (can_grant_lock(queue, LockMode::INTENTION_EXCLUSIVE, txn->get_transaction_id())) {
-        LockRequest request(txn->get_transaction_id(), LockMode::INTENTION_EXCLUSIVE);
-        request.granted_ = true;
-        queue.request_queue_.push_back(request);
-        update_group_lock_mode(queue);
-        lock_set->insert(lock_data_id);
-        return true;
-    }
-    
-    return false;
+    return lock_table_[lock_data_id];
 }
 
-/**
- * @description: 检查两种锁模式是否兼容
- * @param {LockMode} mode1 锁模式1
- * @param {LockMode} mode2 锁模式2
- * @return {bool} 是否兼容
- */
-bool LockManager::is_compatible(LockMode mode1, LockMode mode2) {
-    // 锁兼容性矩阵
-    //        S    X    IS   IX   SIX
-    // S      ✓    ✗    ✓    ✗    ✗
-    // X      ✗    ✗    ✗    ✗    ✗
-    // IS     ✓    ✗    ✓    ✓    ✓
-    // IX     ✗    ✗    ✓    ✓    ✗
-    // SIX    ✗    ✗    ✓    ✗    ✗
-    
-    if (mode1 == LockMode::SHARED) {
-        return mode2 == LockMode::SHARED || mode2 == LockMode::INTENTION_SHARED;
+bool LockManager::check_and_execute_lock(std::shared_ptr<LockRequestQueue> lock_request_queue, std::shared_ptr<LockRequest> lock_request, Transaction* txn, GroupLockMode lock_mode)
+{
+    std::unique_lock<std::mutex> queue_lock(lock_request_queue->latch_);
+    if(!lock_compatible(lock_request_queue->group_lock_mode_, lock_mode)) {
+        check_wait_die(lock_request_queue, txn);
+        lock_request_queue->request_queue_.emplace_back(lock_request);
+        lock_request_queue->cv_.wait(queue_lock, [&](){
+            return lock_request->granted_;
+        });
     }
-    if (mode1 == LockMode::EXLUCSIVE) {
-        return false; // 排他锁与任何锁都不兼容
-    }
-    if (mode1 == LockMode::INTENTION_SHARED) {
-        return mode2 != LockMode::EXLUCSIVE;
-    }
-    if (mode1 == LockMode::INTENTION_EXCLUSIVE) {
-        return mode2 == LockMode::INTENTION_SHARED || mode2 == LockMode::INTENTION_EXCLUSIVE;
-    }
-    if (mode1 == LockMode::S_IX) {
-        return mode2 == LockMode::INTENTION_SHARED;
-    }
-    return false;
-}
-
-/**
- * @description: 检查事务是否可以获得锁
- * @param {LockRequestQueue&} queue 锁请求队列
- * @param {LockMode} mode 请求的锁模式
- * @param {txn_id_t} txn_id 事务ID
- * @return {bool} 是否可以获得锁
- */
-bool LockManager::can_grant_lock(const LockRequestQueue& queue, LockMode mode, txn_id_t txn_id) {
-    // 检查是否与已授予的锁兼容
-    for (const auto& request : queue.request_queue_) {
-        if (request.granted_ && request.txn_id_ != txn_id) {
-            if (!is_compatible(mode, request.lock_mode_)) {
-                return false;
-            }
-        }
+    else
+    {
+        lock_request->granted_ = true;
+        lock_request_queue->request_queue_.emplace_back(lock_request);
+        lock_request_queue->group_lock_mode_ = lock_mode;
     }
     return true;
-}
-
-/**
- * @description: 更新队列的组锁模式
- * @param {LockRequestQueue&} queue 锁请求队列
- */
-void LockManager::update_group_lock_mode(LockRequestQueue& queue) {
-    GroupLockMode new_mode = GroupLockMode::NON_LOCK;
-    
-    for (const auto& request : queue.request_queue_) {
-        if (request.granted_) {
-            GroupLockMode current_mode = GroupLockMode::NON_LOCK;
-            
-            switch (request.lock_mode_) {
-                case LockMode::SHARED:
-                    current_mode = GroupLockMode::S;
-                    break;
-                case LockMode::EXLUCSIVE:
-                    current_mode = GroupLockMode::X;
-                    break;
-                case LockMode::INTENTION_SHARED:
-                    current_mode = GroupLockMode::IS;
-                    break;
-                case LockMode::INTENTION_EXCLUSIVE:
-                    current_mode = GroupLockMode::IX;
-                    break;
-                case LockMode::S_IX:
-                    current_mode = GroupLockMode::SIX;
-                    break;
-            }
-            
-            // 选择更强的锁模式
-            if (static_cast<int>(current_mode) > static_cast<int>(new_mode)) {
-                new_mode = current_mode;
-            }
-        }
-    }
-    
-    queue.group_lock_mode_ = new_mode;
 }
 
 /**
@@ -160,33 +60,18 @@ void LockManager::update_group_lock_mode(LockRequestQueue& queue) {
  * @param {int} tab_fd
  */
 bool LockManager::lock_shared_on_record(Transaction* txn, const Rid& rid, int tab_fd) {
-    if (txn == nullptr) return false;
-    
-    std::unique_lock<std::mutex> lock(latch_);  // 只获取一次全局锁
-    
-    // 使用内部方法，避免重复获取锁
-    if (!lock_IS_on_table_internal(txn, tab_fd)) {
-        return false;
-    }
-    
-    LockDataId lock_data_id(tab_fd, rid, LockDataType::RECORD);
-    auto lock_set = txn->get_lock_set();
-    if (lock_set->find(lock_data_id) != lock_set->end()) {
+    if(txn->get_lock_set()->find(LockDataId(tab_fd, rid, LockDataType::RECORD)) != txn->get_lock_set()->end())
         return true;
-    }
+    lock_IS_on_table(txn, tab_fd);
+    const LockDataId lock_data_id = LockDataId(tab_fd, rid, LockDataType::RECORD);
+    std::shared_ptr<LockRequestQueue> lock_request_queue = get_lock_request_queue(lock_data_id);
+    std::shared_ptr<LockRequest> lock_request = std::make_shared<LockRequest>(txn->get_transaction_id(), LockMode::SHARED);
     
-    auto& queue = lock_table_[lock_data_id];
-    
-    if (can_grant_lock(queue, LockMode::SHARED, txn->get_transaction_id())) {
-        LockRequest request(txn->get_transaction_id(), LockMode::SHARED);
-        request.granted_ = true;
-        queue.request_queue_.push_back(request);
-        update_group_lock_mode(queue);
-        lock_set->insert(lock_data_id);
-        return true;
-    }
-    
-    return false;
+    // 检查是否有事务已经持有排他锁
+    // 如果有事务持有排他锁，加入等待队列，等待条件变量唤醒
+    check_and_execute_lock(lock_request_queue, lock_request, txn, GroupLockMode::S);
+    txn->get_lock_set()->insert(lock_data_id);
+    return true;
 }
 
 /**
@@ -197,33 +82,16 @@ bool LockManager::lock_shared_on_record(Transaction* txn, const Rid& rid, int ta
  * @param {int} tab_fd 记录所在的表的fd
  */
 bool LockManager::lock_exclusive_on_record(Transaction* txn, const Rid& rid, int tab_fd) {
-    if (txn == nullptr) return false;
-    
-    std::unique_lock<std::mutex> lock(latch_);  // 只获取一次全局锁
-    
-    // 使用内部方法，避免重复获取锁
-    if (!lock_IX_on_table_internal(txn, tab_fd)) {
-        return false;
-    }
-    
-    LockDataId lock_data_id(tab_fd, rid, LockDataType::RECORD);
-    auto lock_set = txn->get_lock_set();
-    if (lock_set->find(lock_data_id) != lock_set->end()) {
-        return true;
-    }
-    
-    auto& queue = lock_table_[lock_data_id];
-    
-    if (can_grant_lock(queue, LockMode::EXLUCSIVE, txn->get_transaction_id())) {
-        LockRequest request(txn->get_transaction_id(), LockMode::EXLUCSIVE);
-        request.granted_ = true;
-        queue.request_queue_.push_back(request);
-        update_group_lock_mode(queue);
-        lock_set->insert(lock_data_id);
-        return true;
-    }
-    
-    return false;
+    if(txn->get_lock_set()->find(LockDataId(tab_fd, rid, LockDataType::RECORD)) != txn->get_lock_set()->end())
+        return upgrade_lock_on_record(txn, rid, tab_fd);
+    lock_IX_on_table(txn, tab_fd);
+    const LockDataId lock_data_id = LockDataId(tab_fd, rid, LockDataType::RECORD);
+    std::shared_ptr<LockRequestQueue> lock_request_queue = get_lock_request_queue(lock_data_id);
+    std::shared_ptr<LockRequest> lock_request = std::make_shared<LockRequest>(txn->get_transaction_id(), LockMode::EXLUCSIVE);
+    // 检查是否有事务已经持有锁
+    check_and_execute_lock(lock_request_queue, lock_request, txn, GroupLockMode::X);
+    txn->get_lock_set()->insert(lock_data_id);
+    return true;
 }
 
 /**
@@ -233,39 +101,17 @@ bool LockManager::lock_exclusive_on_record(Transaction* txn, const Rid& rid, int
  * @param {int} tab_fd 目标表的fd
  */
 bool LockManager::lock_shared_on_table(Transaction* txn, int tab_fd) {
-    if (txn == nullptr) return false;
-    
-    std::unique_lock<std::mutex> lock(latch_);
-    
-    // 构造表锁ID
-    LockDataId lock_data_id(tab_fd, LockDataType::TABLE);
-    
-    // 检查事务是否已经持有该表的锁
-    auto lock_set = txn->get_lock_set();
-    if (lock_set->find(lock_data_id) != lock_set->end()) {
-        return true; // 已经持有锁
-    }
-    
-    // 获取或创建锁请求队列
-    auto& queue = lock_table_[lock_data_id];
-    
-    // 检查是否可以立即获得锁
-    if (can_grant_lock(queue, LockMode::SHARED, txn->get_transaction_id())) {
-        // 创建锁请求并授予
-        LockRequest request(txn->get_transaction_id(), LockMode::SHARED);
-        request.granted_ = true;
-        queue.request_queue_.push_back(request);
-        
-        // 更新组锁模式
-        update_group_lock_mode(queue);
-        
-        // 将锁添加到事务的锁集合中
-        lock_set->insert(lock_data_id);
-        
-        return true;
-    }
-    
-    return false;
+    // std::cout << "txn " << txn->get_transaction_id() << " lock_shared_on_table " << tab_fd << std::endl;
+    if(txn->get_lock_set()->find(LockDataId(tab_fd, LockDataType::TABLE)) != txn->get_lock_set()->end())
+        return upgrade_lock_on_table(txn, tab_fd, LockMode::SHARED);
+    const LockDataId lock_data_id = LockDataId(tab_fd, LockDataType::TABLE);
+    std::shared_ptr<LockRequestQueue> lock_request_queue = get_lock_request_queue(lock_data_id);
+    std::shared_ptr<LockRequest> lock_request = std::make_shared<LockRequest>(txn->get_transaction_id(), LockMode::SHARED);
+    // 检查是否有事务已经持有排他锁
+    // 如果有事务持有排他锁，加入等待队列，等待条件变量唤醒
+    check_and_execute_lock(lock_request_queue, lock_request, txn, GroupLockMode::S);
+    txn->get_lock_set()->insert(lock_data_id);
+    return true;
 }
 
 /**
@@ -274,38 +120,86 @@ bool LockManager::lock_shared_on_table(Transaction* txn, int tab_fd) {
  * @param {Transaction*} txn 要申请锁的事务对象指针
  * @param {int} tab_fd 目标表的fd
  */
- bool LockManager::lock_exclusive_on_table(Transaction* txn, int tab_fd) {
-    if (txn == nullptr) {
-        return false;
+bool LockManager::lock_exclusive_on_table(Transaction* txn, int tab_fd) {
+    if(txn->get_lock_set()->find(LockDataId(tab_fd, LockDataType::TABLE)) != txn->get_lock_set()->end())
+        return upgrade_lock_on_table(txn, tab_fd, LockMode::EXLUCSIVE);
+    // std::cout << "txn " << txn->get_transaction_id() << " lock_exclusive_on_table " << tab_fd << std::endl;
+    const LockDataId lock_data_id = LockDataId(tab_fd, LockDataType::TABLE);
+    std::shared_ptr<LockRequestQueue> lock_request_queue = get_lock_request_queue(lock_data_id);
+    std::shared_ptr<LockRequest> lock_request = std::make_shared<LockRequest>(txn->get_transaction_id(), LockMode::EXLUCSIVE);
+    // 检查是否有事务已经持有锁
+    check_and_execute_lock(lock_request_queue, lock_request, txn, GroupLockMode::X);
+    txn->get_lock_set()->insert(lock_data_id);
+    return true;
+}
+
+bool LockManager::upgrade_lock_on_record(Transaction* txn,const Rid& rid, int tab_fd)
+{
+    const LockDataId lock_data_id = LockDataId(tab_fd, rid, LockDataType::RECORD);
+    std::shared_ptr<LockRequestQueue> lock_request_queue = lock_table_[lock_data_id];
+    std::unique_lock<std::mutex> queue_lock(lock_request_queue->latch_);
+    std::shared_ptr<LockRequest> lock_request;
+    for(auto& tmp : lock_request_queue->request_queue_) {
+        if(tmp->txn_id_ == txn->get_transaction_id()) {
+            lock_request = tmp;
+            break;
+        }
     }
-    std::unique_lock<std::mutex> lock(latch_);
-    
-    // 构造表锁ID
-    LockDataId lock_data_id(tab_fd, LockDataType::TABLE);
-    
-    // 检查事务是否已经持有该表的锁
-    auto lock_set = txn->get_lock_set();
-    if (lock_set == nullptr) {
-        return false;
-    }
-    
-    if (lock_set->find(lock_data_id) != lock_set->end()) {
-        return true; // 已经持有锁
-    }
-    // 获取或创建锁请求队列
-    auto& queue = lock_table_[lock_data_id];
-    // 检查是否可以立即获得锁
-    if (can_grant_lock(queue, LockMode::EXLUCSIVE, txn->get_transaction_id())) {
-        // 创建锁请求并授予
-        LockRequest request(txn->get_transaction_id(), LockMode::EXLUCSIVE);
-        request.granted_ = true;
-        queue.request_queue_.push_back(request);
-        update_group_lock_mode(queue);
-        // 将锁添加到事务的锁集合中
-        lock_set->insert(lock_data_id);
+    if(lock_request->lock_mode_ == LockMode::EXLUCSIVE)
         return true;
+    else
+    {
+        check_wait_die(lock_request_queue, txn);
     }
-    return false;
+    if(lock_request_queue->request_queue_.size() == 1) {
+        lock_request_queue->group_lock_mode_ = GroupLockMode::X;
+        lock_request->granted_ = true;
+        lock_request->lock_mode_ = LockMode::EXLUCSIVE;
+    }
+    else {
+        std::shared_ptr<LockRequest> new_lock_request(new LockRequest(txn->get_transaction_id(), LockMode::EXLUCSIVE));
+        lock_request_queue->upgrade_queue_.emplace_back(new_lock_request);
+        lock_request_queue->cv_.wait(queue_lock, [&](){
+            return new_lock_request->granted_;
+        });
+        lock_request->lock_mode_ = LockMode::EXLUCSIVE;
+        lock_request_queue->upgrade_queue_.remove(new_lock_request);
+    }
+    return true;
+}
+
+bool LockManager::upgrade_lock_on_table(Transaction* txn, int tab_fd, LockMode lock_mode) {
+    const LockDataId lock_data_id = LockDataId(tab_fd, LockDataType::TABLE);
+    std::shared_ptr<LockRequestQueue> lock_request_queue = lock_table_[lock_data_id];
+    std::unique_lock<std::mutex> queue_lock(lock_request_queue->latch_);
+    std::shared_ptr<LockRequest> lock_request;
+    for(auto& tmp : lock_request_queue->request_queue_) {
+        if(tmp->txn_id_ == txn->get_transaction_id()) {
+            lock_request = tmp;
+            break;
+        }
+    }
+    if(get_group_lock_mode(lock_request->lock_mode_) >= get_group_lock_mode(lock_mode))
+        return true;
+    else
+    {
+        check_wait_die(lock_request_queue, txn);
+    }
+    if(lock_request_queue->request_queue_.size() == 1 || lock_compatible(lock_request_queue->group_lock_mode_, get_group_lock_mode(lock_mode))) {
+        lock_request->lock_mode_ = lock_mode;
+        lock_request_queue->group_lock_mode_ = std::max(lock_request_queue->group_lock_mode_, get_group_lock_mode(lock_request->lock_mode_));
+        lock_request->granted_ = true;
+    }
+    else {
+        std::shared_ptr<LockRequest> new_lock_request(new LockRequest(txn->get_transaction_id(), lock_mode));
+        lock_request_queue->upgrade_queue_.emplace_back(new_lock_request);
+        lock_request_queue->cv_.wait(queue_lock, [&](){
+            return new_lock_request->granted_;
+        });
+        lock_request->lock_mode_ = lock_mode;
+        lock_request_queue->upgrade_queue_.remove(new_lock_request);
+    }
+    return true;
 }
 
 /**
@@ -315,10 +209,16 @@ bool LockManager::lock_shared_on_table(Transaction* txn, int tab_fd) {
  * @param {int} tab_fd 目标表的fd
  */
 bool LockManager::lock_IS_on_table(Transaction* txn, int tab_fd) {
-    if (txn == nullptr) return false;
-    
-    std::unique_lock<std::mutex> lock(latch_);
-    return lock_IS_on_table_internal(txn, tab_fd);
+    if(txn->get_lock_set()->find(LockDataId(tab_fd, LockDataType::TABLE)) != txn->get_lock_set()->end())
+        return upgrade_lock_on_table(txn, tab_fd, LockMode::INTENTION_SHARED);
+    const LockDataId lock_data_id = LockDataId(tab_fd, LockDataType::TABLE);
+    std::shared_ptr<LockRequestQueue> lock_request_queue = get_lock_request_queue(lock_data_id);
+    std::shared_ptr<LockRequest> lock_request = std::make_shared<LockRequest>(txn->get_transaction_id(), LockMode::INTENTION_SHARED);
+    // 检查是否有事务已经持有排他锁
+    // 如果有事务持有排他锁，加入等待队列，等待条件变量唤醒
+    check_and_execute_lock(lock_request_queue, lock_request, txn, GroupLockMode::IS);
+    txn->get_lock_set()->insert(lock_data_id);
+    return true;
 }
 
 /**
@@ -328,10 +228,35 @@ bool LockManager::lock_IS_on_table(Transaction* txn, int tab_fd) {
  * @param {int} tab_fd 目标表的fd
  */
 bool LockManager::lock_IX_on_table(Transaction* txn, int tab_fd) {
-    if (txn == nullptr) return false;
-    
-    std::unique_lock<std::mutex> lock(latch_);
-    return lock_IX_on_table_internal(txn, tab_fd);
+    if(txn->get_lock_set()->find(LockDataId(tab_fd, LockDataType::TABLE)) != txn->get_lock_set()->end())
+        return upgrade_lock_on_table(txn, tab_fd, LockMode::INTENTION_EXCLUSIVE);
+    const LockDataId lock_data_id = LockDataId(tab_fd, LockDataType::TABLE);
+    std::shared_ptr<LockRequestQueue> lock_request_queue = get_lock_request_queue(lock_data_id);
+    std::shared_ptr<LockRequest> lock_request = std::make_shared<LockRequest>(txn->get_transaction_id(), LockMode::INTENTION_EXCLUSIVE);
+    // 检查是否有事务已经持有排他锁
+    // 如果有事务持有排他锁，加入等待队列，等待条件变量唤醒
+    check_and_execute_lock(lock_request_queue, lock_request, txn, GroupLockMode::IX);
+    txn->get_lock_set()->insert(lock_data_id);
+    return true;
+}
+
+LockManager::GroupLockMode LockManager::get_group_lock_mode(LockMode lock_mode)
+{
+    switch(lock_mode) {
+        case LockMode::SHARED:
+            return GroupLockMode::S;
+        case LockMode::EXLUCSIVE:
+            return GroupLockMode::X;
+        case LockMode::INTENTION_SHARED:
+            return GroupLockMode::IS;
+        case LockMode::INTENTION_EXCLUSIVE:
+            return GroupLockMode::IX;
+        case LockMode::S_IX:
+            return GroupLockMode::SIX;
+        default:
+            return GroupLockMode::NON_LOCK;
+    }
+
 }
 
 /**
@@ -341,38 +266,65 @@ bool LockManager::lock_IX_on_table(Transaction* txn, int tab_fd) {
  * @param {LockDataId} lock_data_id 要释放的锁ID
  */
 bool LockManager::unlock(Transaction* txn, LockDataId lock_data_id) {
-    if (txn == nullptr) return false;
-    std::unique_lock<std::mutex> lock(latch_);
-    // 检查锁表中是否存在该锁
-    auto it = lock_table_.find(lock_data_id);
-    if (it == lock_table_.end()) {
-        return false; // 锁不存在
+    std::shared_ptr<LockRequestQueue> lock_request_queue;
+    {
+        std::scoped_lock<std::mutex> lock(latch_);
+        if(lock_table_.find(lock_data_id) == lock_table_.end()) {
+            return false;
+        }
+        lock_request_queue = lock_table_[lock_data_id];
     }
-    
-    auto& queue = it->second;
-    txn_id_t txn_id = txn->get_transaction_id();
-    
-    // 在队列中查找并移除该事务的锁请求
-    bool found = false;
-    for (auto req_it = queue.request_queue_.begin(); req_it != queue.request_queue_.end(); ++req_it) {
-        if (req_it->txn_id_ == txn_id && req_it->granted_) {
-            queue.request_queue_.erase(req_it);
-            found = true;
+    std::unique_lock<std::mutex> queue_lock(lock_request_queue->latch_);
+    auto& request_queue = lock_request_queue->request_queue_;
+    for(auto it = request_queue.begin(); it != request_queue.end();it++) {
+        if((*it)->txn_id_ == txn->get_transaction_id()) {
+            it = request_queue.erase(it);
             break;
         }
-    } 
-    if (!found) {
-        return false; // 事务没有持有该锁
     }
-    // 从事务的锁集合中移除
-    auto lock_set = txn->get_lock_set();
-    lock_set->erase(lock_data_id);
-    // 更新组锁模式
-    update_group_lock_mode(queue);
-    // 如果队列为空，从锁表中移除
-    if (queue.request_queue_.empty()) {
-        lock_table_.erase(it);
+    auto first_granted = std::find_if(request_queue.begin(), request_queue.end(), [&](const std::shared_ptr<LockRequest>& lock_request){
+        return lock_request->granted_;
+    });
+    if(request_queue.empty()) {
+        lock_request_queue->group_lock_mode_ = GroupLockMode::NON_LOCK;
     }
-    
+    else if(first_granted == request_queue.end())
+    {
+        // 更新加锁队列的锁模式
+        lock_request_queue->group_lock_mode_ = get_group_lock_mode(request_queue.front()->lock_mode_);
+        // 这里优化一下，X锁的优先级最高，如果有X锁，那么直接将队列中的第一个请求赋予锁
+        // 其他的都需要查找锁相容矩阵
+        if(lock_request_queue->group_lock_mode_ == GroupLockMode::X)
+        {
+            request_queue.front()->granted_ = true;
+        }
+        else
+        {
+            for(auto& lock_request : request_queue) {
+                GroupLockMode curr_mode = get_group_lock_mode(lock_request->lock_mode_);
+                if(lock_compatible(lock_request_queue->group_lock_mode_, curr_mode)) {
+                    lock_request->granted_ = true;
+                    if(curr_mode > lock_request_queue->group_lock_mode_)
+                        lock_request_queue->group_lock_mode_ = curr_mode;
+                }
+            }
+        }
+        lock_request_queue->cv_.notify_all();
+    }
+    else if(!lock_request_queue->upgrade_queue_.empty() && (*first_granted)->txn_id_ == lock_request_queue->upgrade_queue_.front()->txn_id_)
+    {
+        first_granted++;
+        // 查找下一个已经获取锁的请求，如果没有就说明可以升级锁
+        bool other_granted = std::any_of(first_granted, request_queue.end(), [&](const std::shared_ptr<LockRequest>& lock_request){
+            return lock_request->granted_;
+        });
+        if(!other_granted)
+        {
+            auto& upgrade_lock = lock_request_queue->upgrade_queue_.front();
+            lock_request_queue->group_lock_mode_ = get_group_lock_mode(upgrade_lock->lock_mode_);
+            upgrade_lock->granted_ = true;
+            lock_request_queue->cv_.notify_all();
+        }
+    }
     return true;
 }

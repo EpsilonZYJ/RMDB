@@ -23,6 +23,17 @@ class LockManager {
     /* 用于标识加锁队列中排他性最强的锁类型，例如加锁队列中有SHARED和EXLUSIVE两个加锁操作，则该队列的锁模式为X */
     enum class GroupLockMode { NON_LOCK, IS, IX, S, X, SIX};
 
+    bool lock_matrix_[6][6] = {
+                        /* NON_LOCK, IS, IX, S, X, SIX */
+        /* NON_LOCK */  {true, true, true, true, true, true},
+        /* IS */        {true, true, true, true, false, true},
+        /* IX */        {true, true, true, false, false, false},
+        /* S */         {true, true, false, true, false, false},
+        /* X */         {true, false, false, false, false, false},
+        /* SIX */       {true, true, false, false, false, false}
+    };
+
+
     /* 事务的加锁申请 */
     class LockRequest {
     public:
@@ -37,52 +48,15 @@ class LockManager {
     /* 数据项上的加锁队列 */
     class LockRequestQueue {
     public:
-        std::list<LockRequest> request_queue_;  // 加锁队列
+        std::list<std::shared_ptr<LockRequest>> request_queue_;  // 加锁队列
+        std::list<std::shared_ptr<LockRequest>> upgrade_queue_;  // 升级队列
+        std::mutex latch_;     // 用于加锁队列的互斥锁
         std::condition_variable cv_;            // 条件变量，用于唤醒正在等待加锁的申请，在no-wait策略下无需使用
-        GroupLockMode group_lock_mode_ = GroupLockMode::NON_LOCK;   // 加锁队列的锁模式
+        GroupLockMode group_lock_mode_ = GroupLockMode::NON_LOCK;   // 加锁队列的锁模式，即队列中已获取锁的最高级别
+        LockRequestQueue() = default;
     };
 
 public:
-bool unlock_all(Transaction* txn) {
-    if (txn == nullptr) return false;
-        
-    printf("DEBUG: unlock_all called, txn_id=%d\n", txn->get_transaction_id());
-    
-    // 获取事务锁集合
-    auto lock_set = txn->get_lock_set();
-    if (lock_set == nullptr) {
-        printf("DEBUG: lock_set is null\n");
-        return true;
-    }
-    
-    printf("DEBUG: lock_set size=%zu\n", lock_set->size());
-    
-    if (lock_set->empty()) {
-        printf("DEBUG: no locks to release\n");
-        return true;
-    }
-    
-    std::vector<LockDataId> locks_to_release;
-    locks_to_release.reserve(lock_set->size());
-    
-    for (const auto& lock_id : *lock_set) {
-        locks_to_release.push_back(lock_id);
-    }
-    
-    printf("DEBUG: created copy with %zu locks\n", locks_to_release.size());
-    
-    bool success = true;
-    for (size_t i = 0; i < locks_to_release.size(); ++i) {
-        printf("DEBUG: unlocking lock %zu/%zu\n", i + 1, locks_to_release.size());
-        if (!unlock(txn, locks_to_release[i])) {
-            printf("DEBUG: failed to unlock lock %zu\n", i + 1);
-            success = false;
-        }
-    }
-    
-    printf("DEBUG: unlock_all finished, success=%d\n", success);
-    return success;
-}
     LockManager() {}
 
     ~LockManager() {}
@@ -101,18 +75,22 @@ bool unlock_all(Transaction* txn) {
 
     bool unlock(Transaction* txn, LockDataId lock_data_id);
 
+
 private:
-std::mutex latch_;
-std::unordered_map<LockDataId, LockRequestQueue> lock_table_;
+    inline void check_wait_die(const std::shared_ptr<LockRequestQueue>& lock_request_queue, Transaction* txn);
+    inline std::shared_ptr<LockRequestQueue> get_lock_request_queue(const LockDataId& lock_data_id);
+    bool check_and_execute_lock(std::shared_ptr<LockRequestQueue> lock_request_queue, std::shared_ptr<LockRequest> lock_request, Transaction* txn, GroupLockMode lock_mode);
 
-// 辅助方法
-bool is_compatible(LockMode mode1, LockMode mode2);
-bool can_grant_lock(const LockRequestQueue& queue, LockMode mode, txn_id_t txn_id);
-void update_group_lock_mode(LockRequestQueue& queue);
+    bool upgrade_lock_on_table(Transaction* txn, int tab_fd, LockMode lock_mode);
 
-// 不获取全局锁的内部方法
-bool lock_IS_on_table_internal(Transaction* txn, int tab_fd);
-bool lock_IX_on_table_internal(Transaction* txn, int tab_fd);
-bool lock_shared_on_table_internal(Transaction* txn, int tab_fd);
-bool lock_exclusive_on_table_internal(Transaction* txn, int tab_fd);
+    bool upgrade_lock_on_record(Transaction* txn, const Rid& rid, int tab_fd);
+
+    inline bool lock_compatible(GroupLockMode a, GroupLockMode b) {
+        return lock_matrix_[static_cast<int>(a)][static_cast<int>(b)];
+    }
+
+    GroupLockMode get_group_lock_mode(LockMode lock_mode);
+
+    std::mutex latch_;      // 用于锁表的并发
+    std::unordered_map<LockDataId, std::shared_ptr<LockRequestQueue>> lock_table_;   // 全局锁表
 };

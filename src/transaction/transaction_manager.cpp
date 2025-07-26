@@ -1,8 +1,19 @@
+/* Copyright (c) 2023 Renmin University of China
+RMDB is licensed under Mulan PSL v2.
+You can use this software according to the terms and conditions of the Mulan PSL v2.
+You may obtain a copy of Mulan PSL v2 at:
+        http://license.coscl.org.cn/MulanPSL2
+THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+See the Mulan PSL v2 for more details. */
+
 #include "transaction_manager.h"
 #include "record/rm_file_handle.h"
 #include "system/sm_manager.h"
 
 std::unordered_map<txn_id_t, Transaction *> TransactionManager::txn_map = {};
+
 /**
  * @description: 事务的开始方法
  * @return {Transaction*} 开始事务的指针
@@ -63,39 +74,56 @@ void TransactionManager::commit(Transaction* txn, LogManager* log_manager) {
     // 如果需要支持MVCC请在上述过程中添加代码
     
     //事务结束，清理所有写记录
-     if (txn == nullptr) {
-        return;
-    }
-    CommitLogRecord log_record(txn->get_transaction_id());
-    log_record.prev_lsn_ = txn->get_prev_lsn();
-    lsn_t curr_lsn = log_manager->add_log_to_buffer(&log_record);
-    txn->set_prev_lsn(curr_lsn);
-    
-    for(auto it = txn->get_write_set()->begin(); it != txn->get_write_set()->end();)
-    {
-        delete *it;
-        it = txn->get_write_set()->erase(it);
-    }
+    std::cout<< "DEBUG: 1" << std::endl;
+    auto write_set = txn->get_write_set();
+    while (!write_set->empty()) {
+        WriteRecord* record = write_set->front();
 
+        write_set->pop_front();
+        delete record;
+    }
+    std::cout<< "DEBUG: 2" << std::endl;
+    // 释放所有锁
     auto lock_set = txn->get_lock_set();
-    while (!lock_set->empty()) {
-        auto it = lock_set->begin();
-        LockDataId lock_id = *it;       
-        if (!lock_manager_->unlock(txn, lock_id)) {
-            break;
+    for (auto lock_id : *lock_set) {
+        lock_manager_->unlock(txn, lock_id);
+    }
+    std::cout<< "DEBUG: 3" << std::endl;
+    // 释放事务相关资源
+    lock_set->clear();
+    std::cout<< "DEBUG: 4" << std::endl;
+    // 把事务日志刷入磁盘中
+    bool log_success = true;
+    if (log_manager != nullptr) {
+        try {
+            CommitLogRecord log_record(txn->get_transaction_id());
+            std::cout<< "DEBUG: 5" << std::endl;
+            log_record.prev_lsn_ = txn->get_prev_lsn();
+            std::cout<< "DEBUG: 6" << std::endl;
+            lsn_t lsn = log_manager->add_log_to_buffer(&log_record);
+            std::cout<< "DEBUG: 7" << std::endl;
+            txn->set_prev_lsn(lsn);
+            std::cout<< "DEBUG: 8" << std::endl;
+            log_manager->flush_log_to_disk();
+        } catch (const std::exception& e) {
+            std::cerr << "Error: Failed to write commit log: " << e.what() << std::endl;
+            log_success = false;
         }
-        
-        // unlock 方法内部会从 lock_set 中移除，所以这里不需要手动 erase
     }
-    log_manager->flush_log_to_disk();
+    std::cout<< "DEBUG: 9" << std::endl;
+    // 更新事务状态为已提交
     txn->set_state(TransactionState::COMMITTED);
-    std::unique_lock<std::mutex> lock(latch_);
-    if (txn_map.find(txn->get_transaction_id()) != txn_map.end()) {
-        delete txn_map[txn->get_transaction_id()];
+    std::cout<< "DEBUG: 10" << std::endl;
+    // 从事务表中移除
+    if (log_success) {
+        std::unique_lock<std::mutex> lock(latch_);
+        std::cout<< "DEBUG: 11" << std::endl;
         txn_map.erase(txn->get_transaction_id());
+        std::cout<< "DEBUG: 12" << std::endl;
+    } else {
+        // 如果日志失败，保留事务以便后续尝试
+        std::cerr << "Warning: Transaction remains in txn_map due to log failure" << std::endl;
     }
-    lock.unlock();
-
 }
 
 /**
@@ -184,6 +212,3 @@ void TransactionManager::abort(Transaction * txn, LogManager *log_manager) {
          std::cerr << "Warning: Transaction remains in txn_map due to log failure" << std::endl;
      }
 }
-
-
-
