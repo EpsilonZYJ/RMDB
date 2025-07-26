@@ -375,3 +375,65 @@ void SmManager::get_all_tables(std::vector<std::string>& tables) const {
         tables.push_back(pair.first);
     }
 }
+
+void SmManager::load_table(const std::string& file_name, const std::string& tab_name)
+{
+    std::ifstream csv_data(file_name, std::ios::in);
+    auto fh = fhs_[tab_name].get();
+    TabMeta &tab = db_.get_table(tab_name);
+    if (!csv_data.is_open()) {
+        throw InternalError("error opening file");
+    }
+    std::string line;
+    std::string word;
+    std::vector<Value> values(tab.cols.size());
+    getline(csv_data, line);
+    std::istringstream sin;
+
+    // 计算索引 key 的总长度
+    int col_total_len = 0;
+    for (const auto& col : tab.cols) {
+        col_total_len += col.len;
+    }
+    char* key = new char[col_total_len];
+
+    // 读取每一行数据
+    while (getline(csv_data, line)) {
+        sin.clear();
+        sin.str(line);
+        int curr = 0;
+        while (getline(sin, word, ',')) {
+        // 去除末尾的换行符和回车符
+        while (!word.empty() && (word.back() == '\r' || word.back() == '\n')) {
+            word.pop_back();
+        }
+        Value curr_value;
+        curr_value.set_str(word);
+        curr_value.value_cast(tab.cols[curr].type);
+        curr_value.init_raw(tab.cols[curr].len);
+        values[curr] = curr_value;
+        curr++;
+       }
+        // 插入数据
+        RmRecord rec(fh->get_file_hdr().record_size);
+        for (size_t i = 0; i < values.size(); i++) {
+            auto &col = tab.cols[i];
+            auto &val = values[i];
+            memcpy(rec.data + col.offset, val.raw->data, col.len);
+        }
+        Rid rid = fh->insert_record(rec.data, nullptr);
+        // 插入索引
+        for(size_t i = 0; i < tab.indexes.size(); ++i) {
+            auto& index = tab.indexes[i];
+            auto ih = ihs_.at(get_ix_manager()->get_index_name(tab_name, index.cols)).get();
+            int offset = 0;
+            for(size_t j = 0; j < (size_t)index.col_num; ++j) {
+                memcpy(key + offset, rec.data + index.cols[j].offset, index.cols[j].len);
+                offset += index.cols[j].len;
+            }
+            ih->insert_entry(key, rid, nullptr);
+        }
+    }
+    csv_data.close();
+    delete[] key;
+}

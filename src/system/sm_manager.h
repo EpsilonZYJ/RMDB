@@ -83,4 +83,6 @@ public:
     void drop_index(const std::string& tab_name, const std::vector<ColMeta>& col_names, Context* context);
 
     void show_index(std::string &table_name, Context *context);
+
+    void load_table(const std::string& file_name, const std::string& tab_name);
 };
