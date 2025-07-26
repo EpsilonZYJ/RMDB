@@ -89,16 +89,12 @@ public:
      */    
     Transaction* get_transaction(txn_id_t txn_id) {
         if(txn_id == INVALID_TXN_ID) return nullptr;
+        
         std::unique_lock<std::mutex> lock(latch_);
-        auto it = TransactionManager::txn_map.find(txn_id);
-        if(it == TransactionManager::txn_map.end()) {
-            return nullptr;
-        }
-        auto *res = it->second;
+        assert(TransactionManager::txn_map.find(txn_id) != TransactionManager::txn_map.end());
+        auto *res = TransactionManager::txn_map[txn_id];
         lock.unlock();
-
-        if(res == nullptr) return nullptr;
-        // 线程ID检查仍然保留
+        assert(res != nullptr);
         assert(res->get_thread_id() == std::this_thread::get_id());
         return res;
     }

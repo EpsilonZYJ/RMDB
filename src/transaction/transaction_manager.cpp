@@ -3,7 +3,6 @@
 #include "system/sm_manager.h"
 
 std::unordered_map<txn_id_t, Transaction *> TransactionManager::txn_map = {};
-
 /**
  * @description: 事务的开始方法
  * @return {Transaction*} 开始事务的指针
@@ -185,4 +184,6 @@ void TransactionManager::abort(Transaction * txn, LogManager *log_manager) {
          std::cerr << "Warning: Transaction remains in txn_map due to log failure" << std::endl;
      }
 }
+
+
 
