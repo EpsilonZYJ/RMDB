@@ -395,7 +395,7 @@
             if (select_stmt->cols.empty() || 
                 (select_stmt->cols.size() == 1 && select_stmt->cols[0]->col->col_name == "*")) {
                 is_select_star = true;
-                std::cout << "DEBUG: 检测到 SELECT *，跳过投影下推分析" << std::endl;
+                //std::cout << "DEBUG: 检测到 SELECT *，跳过投影下推分析" << std::endl;
             }
         }
         // 为每个表分开跟踪过滤列和输出列
@@ -423,7 +423,7 @@
             // 使用std::find检查表是否存在
             if (std::find(query->tables.begin(), query->tables.end(), table_name) != query->tables.end()) {
                 output_cols_by_table[table_name].insert(col_name);
-                std::cout << "DEBUG: 添加GROUP BY列到投影: " << table_name << "." << col_name << std::endl;
+                //std::cout << "DEBUG: 添加GROUP BY列到投影: " << table_name << "." << col_name << std::endl;
             }
         }
     }
@@ -434,8 +434,7 @@
                 const TabCol& col = query->cols[i];
                 if (!col.tab_name.empty() && !col.col_name.empty()) {
                     output_cols_by_table[col.tab_name].insert(col.col_name);
-                    std::cout << "DEBUG: 添加聚合函数列到投影: " << col.tab_name 
-                            << "." << col.col_name << std::endl;
+                    //std::cout << "DEBUG: 添加聚合函数列到投影: " << col.tab_name << "." << col.col_name << std::endl;
                 }
             }
         }
@@ -446,15 +445,13 @@
             // 处理左侧列
             if (!having_cond.lhs_col.tab_name.empty()) {
                 output_cols_by_table[having_cond.lhs_col.tab_name].insert(having_cond.lhs_col.col_name);
-                std::cout << "DEBUG: 添加HAVING列到投影: " << having_cond.lhs_col.tab_name 
-                        << "." << having_cond.lhs_col.col_name << std::endl;
+                //std::cout << "DEBUG: 添加HAVING列到投影: " << having_cond.lhs_col.tab_name << "." << having_cond.lhs_col.col_name << std::endl;
             }
             
             // 处理右侧列(如果不是常量值)
             if (!having_cond.is_rhs_val && !having_cond.rhs_col.tab_name.empty()) {
                 output_cols_by_table[having_cond.rhs_col.tab_name].insert(having_cond.rhs_col.col_name);
-                std::cout << "DEBUG: 添加HAVING列到投影: " << having_cond.rhs_col.tab_name 
-                        << "." << having_cond.rhs_col.col_name << std::endl;
+                //std::cout << "DEBUG: 添加HAVING列到投影: " << having_cond.rhs_col.tab_name << "." << having_cond.rhs_col.col_name << std::endl;
             }
         }
     }
@@ -572,7 +569,7 @@
                     }
                     if (exact_match) {
                         required_cols_by_table[table].clear(); // 标记为需要所有列
-                        std::cout << "DEBUG: 表 " << table << " 确实需要所有列" << std::endl;
+                        //std::cout << "DEBUG: 表 " << table << " 确实需要所有列" << std::endl;
                     }
                 }
             }
@@ -580,15 +577,15 @@
     }
     
     // 输出调试信息
-    for (const auto& [table, cols] : required_cols_by_table) {
-        std::cout << "DEBUG: 表 " << table << " 最终需要的列: ";
-        if (cols.empty()) {
-            std::cout << "所有列";
-        } else {
-            for (const auto& col : cols) std::cout << col << " ";
-        }
-        std::cout << std::endl;
-    }
+    // for (const auto& [table, cols] : required_cols_by_table) {
+    //     //std::cout << "DEBUG: 表 " << table << " 最终需要的列: ";
+    //     if (cols.empty()) {
+    //         //std::cout << "所有列";
+    //     } else {
+    //         for (const auto& col : cols) std::cout << col << " ";
+    //     }
+    //     std::cout << std::endl;
+    // }
     
     // 保存到Query对象中供后续使用
     query->table_required_cols = required_cols_by_table;
@@ -700,14 +697,14 @@
 
     std::shared_ptr<Plan> Planner::physical_optimization(std::shared_ptr<Query> query, Context *context)
     {
-        std::cout << "DEBUG: physical_optimization 开始" << std::endl;
+        //std::cout << "DEBUG: physical_optimization 开始" << std::endl;
         std::shared_ptr<Plan> plan = make_one_rel(query);
-        std::cout << "DEBUG: make_one_rel 完成" << std::endl;
+        //std::cout << "DEBUG: make_one_rel 完成" << std::endl;
         // 其他物理优化
 
         // 处理orderby
         // plan = generate_sort_plan(query, std::move(plan)); 
-        std::cout << "DEBUG: generate_sort_plan 完成" << std::endl;
+        //std::cout << "DEBUG: generate_sort_plan 完成" << std::endl;
         return plan;
     }
 
@@ -718,10 +715,10 @@
     */
     std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query)
     {
-        std::cout << "DEBUG: make_one_rel 开始" << std::endl;
+        //std::cout << "DEBUG: make_one_rel 开始" << std::endl;
         auto x = std::dynamic_pointer_cast<ast::SelectStmt>(query->parse);
         std::vector<std::string> tables = query->tables;
-        std::cout << "DEBUG: 处理的表数量: " << tables.size() << std::endl;
+        //std::cout << "DEBUG: 处理的表数量: " << tables.size() << std::endl;
         
         bool is_select_star = false;
         if (auto select_stmt = std::dynamic_pointer_cast<ast::SelectStmt>(query->parse)) {
@@ -736,7 +733,7 @@
         for (const auto& cond : query->conds) {
             if (cond.is_semi_join) {
                 has_semi_join = true;
-                std::cout << "DEBUG: 检测到半连接条件，禁用表顺序优化" << std::endl;
+                //std::cout << "DEBUG: 检测到半连接条件，禁用表顺序优化" << std::endl;
                 break;
             }
         }
@@ -746,7 +743,7 @@
                 for (const auto& cond : join_conds) {
                     if (cond.is_semi_join) {
                         has_semi_join = true;
-                        std::cout << "DEBUG: 检测到SEMI JOIN ON条件，禁用表顺序优化" << std::endl;
+                        //std::cout << "DEBUG: 检测到SEMI JOIN ON条件，禁用表顺序优化" << std::endl;
                         break;
                     }
                 }
@@ -762,7 +759,7 @@
         for (size_t i = 0; i < tables.size(); i++) {
             //谓词下推
             auto curr_conds = pop_conds(query->conds, tables[i]);
-            std::cout <<"DEBUG: 谓词下推完成"<< std::endl;
+            //std::cout <<"DEBUG: 谓词下推完成"<< std::endl;
 
             // 检查是否可以使用索引
             std::vector<std::string> index_col_names;
@@ -778,15 +775,15 @@
                 scan_plan = std::make_shared<ScanPlan>(T_IndexScan, sm_manager_, tables[i], 
                     curr_conds, index_col_names);
             }
-            std::cout <<"DEBUG: 创建基本扫描计划完成"<< std::endl;
+            //std::cout <<"DEBUG: 创建基本扫描计划完成"<< std::endl;
             
             //将scan_plan保存到table_scan_executors数组中
             table_scan_executors[i] = scan_plan;
 
             // 获取表的行数
-            std::cout << "DEBUG: 获取表 " << tables[i] << " 的基数" << std::endl;
+            //std::cout << "DEBUG: 获取表 " << tables[i] << " 的基数" << std::endl;
             table_cardinalities[i] = get_table_cardinality(tables[i]);
-            std::cout <<"DEBUG: 获取表基数完成"<< std::endl;
+            //std::cout <<"DEBUG: 获取表基数完成"<< std::endl;
 
             // 应用投影下推：只在以下情况应用：
             // 不是SELECT* 
@@ -820,7 +817,7 @@
                 }
             }
         }
-        std::cout <<"DEBUG: 创建扫描计划完成"<< std::endl;
+        //std::cout <<"DEBUG: 创建扫描计划完成"<< std::endl;
         // 只有一个表，不需要连接
         if (tables.size() == 1) {
             return table_scan_executors[0];
@@ -833,7 +830,7 @@
         
         if (has_semi_join) {
             // 半连接使用原始表顺序，跳过优化
-            std::cout << "DEBUG: 半连接使用原始表顺序" << std::endl;
+            //std::cout << "DEBUG: 半连接使用原始表顺序" << std::endl;
             for (size_t i = 0; i < tables.size(); i++) {
                 join_order.push_back(i);
                 used[i] = true;
@@ -852,7 +849,7 @@
         
         join_order.push_back(min_idx);
         used[min_idx] = true;
-        std::cout <<"DEBUG: 基数最小的表查找完成"<< std::endl;
+        //std::cout <<"DEBUG: 基数最小的表查找完成"<< std::endl;
         // 选择基数第二小的表
         size_t second_min_idx = SIZE_MAX;
         size_t second_min_cardinality = SIZE_MAX;
@@ -880,7 +877,7 @@
                 
                 // 估计加入当前已连接表的结果大小
                 size_t result_size = estimate_join_size(join_order, i, tables, table_cardinalities, query->conds);
-                std::cout <<"DEBUG: 估计加入当前已连接表的大小完成"<< std::endl;
+                //std::cout <<"DEBUG: 估计加入当前已连接表的大小完成"<< std::endl;
                 if (result_size < min_result_size) {
                     min_result_size = result_size;
                     best_idx = i;
@@ -1002,7 +999,7 @@
             for (const auto& cond : join_conds) {
                 if (cond.is_semi_join) {
                     has_semi_join = true;
-                    std::cout << "DEBUG: 检测到SEMI JOIN条件，设置JOIN类型为T_SemiJoin" << std::endl;
+                    //std::cout << "DEBUG: 检测到SEMI JOIN条件，设置JOIN类型为T_SemiJoin" << std::endl;
                     break;
                 }
             }
@@ -1074,7 +1071,7 @@
 }
     }
         }
-        std::cout <<"DEBUG: 构建左深树完成"<< std::endl;
+        //std::cout <<"DEBUG: 构建左深树完成"<< std::endl;
         // 处理剩余条件
         for (auto& cond : query->conds) {
             push_conds(&cond, join_plan);
@@ -1115,13 +1112,13 @@
     */
     std::shared_ptr<Plan> Planner::generate_select_plan(std::shared_ptr<Query> query, Context *context) {
         //逻辑优化
-        std::cout << "DEBUG: generate_select_plan 开始" << std::endl;
-        std::cout << "DEBUG: 开始逻辑优化" << std::endl;
+        //std::cout << "DEBUG: generate_select_plan 开始" << std::endl;
+        //std::cout << "DEBUG: 开始逻辑优化" << std::endl;
         query = logical_optimization(std::move(query), context);
         
         //处理JOIN ON条件，将它们合并到WHERE条件中
         if (!query->join_conds.empty()) {
-            std::cout << "DEBUG: 处理 JOIN ON 条件，数量: " << query->join_conds.size() << std::endl;
+            //std::cout << "DEBUG: 处理 JOIN ON 条件，数量: " << query->join_conds.size() << std::endl;
             for (const auto& join_cond_set : query->join_conds) {
                 for (const auto& cond : join_cond_set) {
                     // 创建带有特殊标记的条件
@@ -1133,7 +1130,7 @@
             // 清空join_conds，防止重复处理
             query->join_conds.clear();
         }
-        std::cout << "DEBUG: 开始物理优化" << std::endl;
+        //std::cout << "DEBUG: 开始物理优化" << std::endl;
 
         //物理优化
         auto sel_cols = query->cols;
@@ -1170,7 +1167,7 @@
         }
 
         // TODO order by在前面physical_optimization已经处理过。难道排序是在聚合函数前面吗？
-        std::cout << "DEBUG: 创建投影计划" << std::endl;
+        //std::cout << "DEBUG: 创建投影计划" << std::endl;
         //检查是否为SELECT*
         bool is_select_star = false;
         if (auto select_stmt = std::dynamic_pointer_cast<ast::SelectStmt>(query->parse)) {
@@ -1290,7 +1287,7 @@
             std::shared_ptr<plannerInfo> root = std::make_shared<plannerInfo>(x);
 
             // 生成select语句的查询执行计划(projection总是在最顶层)
-            std::cout << "DEBUG: 生成select语句的查询执行计划" << std::endl;
+            //std::cout << "DEBUG: 生成select语句的查询执行计划" << std::endl;
             std::map<std::string, std::string> saved_alias_map;
             if (is_explain) {
                 saved_alias_map = query->tab_alias_map;  // 保存副本

@@ -196,8 +196,7 @@ class UpdateExecutor : public AbstractExecutor {
                     context_->log_mgr_->flush_log_to_disk();
                     // 释放日志记录内存
                     delete log_record;  
-                    std::cout << "DEBUG: 已生成UPDATE日志记录，表名: " << tab_name_ 
-                            << ", RID: (" << rid.page_no << "," << rid.slot_no << ")" << std::endl;
+                    //std::cout << "DEBUG: 已生成UPDATE日志记录，表名: " << tab_name_ << ", RID: (" << rid.page_no << "," << rid.slot_no << ")" << std::endl;
                 }
             }
         
@@ -244,10 +243,9 @@ class UpdateExecutor : public AbstractExecutor {
                 WriteRecord* write_record = new WriteRecord(WType::UPDATE_TUPLE, tab_name_, rid, record_copy);
                 context_->txn_->append_write_record(write_record);
                 
-                std::cout << "DEBUG:已将更新写记录添加到事务 " << context_->txn_->get_transaction_id() 
-                        << ", 写集合大小: " << context_->txn_->get_write_set()->size() << std::endl;
+                //std::cout << "DEBUG:已将更新写记录添加到事务 " << context_->txn_->get_transaction_id()<< ", 写集合大小: " << context_->txn_->get_write_set()->size() << std::endl;
             } else {
-                std::cout << "DEBUG:更新操作没有关联有效事务!" << std::endl;
+                //std::cout << "DEBUG:更新操作没有关联有效事务!" << std::endl;
             }
 
             fh_->update_record(rid, new_record.data, context_); // 更新数据文件中的记录

@@ -47,12 +47,12 @@ std::unordered_map<Rid, lsn_t, RidHash> rid_latest_lsn_;
         // 尝试获取最后一个检查点LSN
         checkpoint_lsn = log_manager_->get_last_checkpoint_lsn();
         if (checkpoint_lsn == INVALID_LSN) {
-            std::cout << "未找到检查点，将从头开始恢复" << std::endl;
+            //std::cout << "未找到检查点，将从头开始恢复" << std::endl;
         } else {
-            std::cout << "从检查点LSN " << checkpoint_lsn << " 开始恢复" << std::endl;
+            //std::cout << "从检查点LSN " << checkpoint_lsn << " 开始恢复" << std::endl;
         }
     } catch (const std::exception& e) {
-        std::cout << "获取检查点失败，将从头开始恢复: " << e.what() << std::endl;
+        //std::cout << "获取检查点失败，将从头开始恢复: " << e.what() << std::endl;
         checkpoint_lsn = INVALID_LSN;
     }
     
@@ -65,7 +65,7 @@ std::unordered_map<Rid, lsn_t, RidHash> rid_latest_lsn_;
         log_records = log_manager_->scan_log_from_lsn(checkpoint_lsn);  // 从检查点开始
     }
     
-    std::cout << "从日志中读取了 " << log_records.size() << " 条记录" << std::endl;
+    //std::cout << "从日志中读取了 " << log_records.size() << " 条记录" << std::endl;
     
     // ✅ 修复：完整扫描确定最终事务状态
     std::unordered_set<txn_id_t> committed_txns;
@@ -74,9 +74,7 @@ std::unordered_map<Rid, lsn_t, RidHash> rid_latest_lsn_;
     
     // **一遍扫描确定所有事务的最终状态**
     for (auto* record : log_records) {
-        std::cout << "日志记录: 类型=" << static_cast<int>(record->log_type_) 
-                  << ", 事务ID=" << record->log_tid_ 
-                  << ", LSN=" << record->lsn_ << std::endl;
+        //std::cout << "日志记录: 类型=" << static_cast<int>(record->log_type_) << ", 事务ID=" << record->log_tid_ << ", LSN=" << record->lsn_ << std::endl;
         
         txn_id_t txn_id = record->log_tid_;
         
@@ -107,9 +105,7 @@ std::unordered_map<Rid, lsn_t, RidHash> rid_latest_lsn_;
                 if (final_active_txns.find(txn_id) != final_active_txns.end()) {
                     final_active_txns[txn_id] = record->lsn_;
                 }
-                std::cout << "处理数据修改日志: 类型=" << static_cast<int>(record->log_type_) 
-                          << ", 事务ID=" << txn_id 
-                          << ", LSN=" << record->lsn_ << std::endl;
+                //std::cout << "处理数据修改日志: 类型=" << static_cast<int>(record->log_type_) << ", 事务ID=" << txn_id << ", LSN=" << record->lsn_ << std::endl;
                 break;
                 
             default:
@@ -134,15 +130,15 @@ std::unordered_map<Rid, lsn_t, RidHash> rid_latest_lsn_;
             if (committed_txns.find(txn_id) != committed_txns.end()) {
                 // 已提交事务，需要重做
                 should_add_to_dirty_pages = true;
-                std::cout << "已提交事务的操作: 事务" << txn_id << ", LSN=" << record->lsn_ << std::endl;
+                //std::cout << "已提交事务的操作: 事务" << txn_id << ", LSN=" << record->lsn_ << std::endl;
             } else if (final_active_txns.find(txn_id) != final_active_txns.end()) {
                 // 最终仍然活跃的事务，也需要重做（稍后会被UNDO）
                 should_add_to_dirty_pages = true;
-                std::cout << "活跃事务的操作: 事务" << txn_id << ", LSN=" << record->lsn_ << std::endl;
+                //std::cout << "活跃事务的操作: 事务" << txn_id << ", LSN=" << record->lsn_ << std::endl;
             } else if (aborted_txns.find(txn_id) != aborted_txns.end()) {
                 // ✅ 已中止事务，不加入脏页表
                 should_add_to_dirty_pages = false;
-                std::cout << "跳过已中止事务的操作: 事务" << txn_id << ", LSN=" << record->lsn_ << std::endl;
+                //std::cout << "跳过已中止事务的操作: 事务" << txn_id << ", LSN=" << record->lsn_ << std::endl;
                 continue;  // 直接跳过
             }
             
@@ -161,8 +157,7 @@ std::unordered_map<Rid, lsn_t, RidHash> rid_latest_lsn_;
                     rid = insert_log->rid_;
                     table_name = insert_log->table_name_;
                     has_valid_rid = true;
-                    std::cout << "处理INSERT: 表=" << table_name 
-                              << ", RID=(" << rid.page_no << "," << rid.slot_no << ")" << std::endl;
+                    //std::cout << "处理INSERT: 表=" << table_name << ", RID=(" << rid.page_no << "," << rid.slot_no << ")" << std::endl;
                 }
             } else if (record->log_type_ == LogType::UPDATE) {
                 UpdateLogRecord* update_log = dynamic_cast<UpdateLogRecord*>(record);
@@ -170,8 +165,7 @@ std::unordered_map<Rid, lsn_t, RidHash> rid_latest_lsn_;
                     rid = update_log->rid_;
                     table_name = update_log->table_name_;
                     has_valid_rid = true;
-                    std::cout << "处理UPDATE: 表=" << table_name 
-                              << ", RID=(" << rid.page_no << "," << rid.slot_no << ")" << std::endl;
+                    //std::cout << "处理UPDATE: 表=" << table_name << ", RID=(" << rid.page_no << "," << rid.slot_no << ")" << std::endl;
                 }
             } else if (record->log_type_ == LogType::DELETE) {
                 DeleteLogRecord* delete_log = dynamic_cast<DeleteLogRecord*>(record);
@@ -179,8 +173,7 @@ std::unordered_map<Rid, lsn_t, RidHash> rid_latest_lsn_;
                     rid = delete_log->rid_;
                     table_name = delete_log->table_name_;
                     has_valid_rid = true;
-                    std::cout << "处理DELETE: 表=" << table_name 
-                              << ", RID=(" << rid.page_no << "," << rid.slot_no << ")" << std::endl;
+                    //std::cout << "处理DELETE: 表=" << table_name << ", RID=(" << rid.page_no << "," << rid.slot_no << ")" << std::endl;
                 }
             }
             
@@ -197,18 +190,16 @@ std::unordered_map<Rid, lsn_t, RidHash> rid_latest_lsn_;
                 if (dirty_page_table_.find(page_id) == dirty_page_table_.end() ||
                     dirty_page_table_[page_id] > record->lsn_) {
                     dirty_page_table_[page_id] = record->lsn_;
-                    std::cout << "添加脏页: 表=" << table_name 
-                              << ", 页号=" << rid.page_no 
-                              << ", LSN=" << record->lsn_ << std::endl;
+                    //std::cout << "添加脏页: 表=" << table_name << ", 页号=" << rid.page_no << ", LSN=" << record->lsn_ << std::endl;
                 }
             }
         }
     }
     
-    std::cout << "活跃事务表大小: " << active_txn_table_.size() << std::endl;
-    std::cout << "脏页表大小: " << dirty_page_table_.size() << std::endl;
-    std::cout << "已提交事务数: " << committed_txns.size() << std::endl;
-    std::cout << "已中止事务数: " << aborted_txns.size() << std::endl;
+    //std::cout << "活跃事务表大小: " << active_txn_table_.size() << std::endl;
+    //std::cout << "脏页表大小: " << dirty_page_table_.size() << std::endl;
+    //std::cout << "已提交事务数: " << committed_txns.size() << std::endl;
+    //std::cout << "已中止事务数: " << aborted_txns.size() << std::endl;
     
     // 清理日志记录
     for (auto* record : log_records) {
@@ -223,7 +214,7 @@ std::unordered_map<Rid, lsn_t, RidHash> rid_latest_lsn_;
     active_txn_table_.clear();
     dirty_page_table_.clear();
     
-    std::cout << "分析阶段完成" << std::endl;
+    //std::cout << "分析阶段完成" << std::endl;
     lsn_t max_lsn = 0;
     txn_id_t max_txn_id = 0;
     std::vector<LogRecord*> all_log_records= log_manager_->scan_log_from_lsn(0);
@@ -235,15 +226,14 @@ std::unordered_map<Rid, lsn_t, RidHash> rid_latest_lsn_;
     log_manager_->set_global_lsn(max_lsn + 1);
     txn_mgr_->set_next_txn_id(max_txn_id + 1);
 
-    std::cout << "恢复后设置global_lsn=" << (max_lsn + 1)
-              << "，next_txn_id=" << (max_txn_id + 1) << std::endl;
+    //std::cout << "恢复后设置global_lsn=" << (max_lsn + 1)<< "，next_txn_id=" << (max_txn_id + 1) << std::endl;
 }
 
 /**
  * @description: 从最后一个检查点恢复
  */
  void RecoveryManager::recover_from_checkpoint() {
-    std::cout << "从检查点开始恢复..." << std::endl;
+    //std::cout << "从检查点开始恢复..." << std::endl;
     
     // 打开所有表
     std::vector<std::string> tables;
@@ -283,7 +273,7 @@ std::unordered_map<Rid, lsn_t, RidHash> rid_latest_lsn_;
         for (auto txn_id : active_txns) {
             undo_list.insert(txn_id);
             active_txn_table_[txn_id] = INVALID_LSN;
-            std::cout << "从检查点添加到undo_list: 事务" << txn_id << std::endl;
+            //std::cout << "从检查点添加到undo_list: 事务" << txn_id << std::endl;
         }
         
         delete checkpoint_record;
@@ -304,7 +294,7 @@ std::unordered_map<Rid, lsn_t, RidHash> rid_latest_lsn_;
                 // 新开始的事务加入undo_list
                 undo_list.insert(txn_id);
                 active_txn_table_[txn_id] = record->lsn_;
-                std::cout << "新事务加入undo_list: " << txn_id << std::endl;
+                //std::cout << "新事务加入undo_list: " << txn_id << std::endl;
                 break;
                 
             case LogType::commit:
@@ -312,7 +302,7 @@ std::unordered_map<Rid, lsn_t, RidHash> rid_latest_lsn_;
                 if (undo_list.find(txn_id) != undo_list.end()) {
                     undo_list.erase(txn_id);
                     redo_list.insert(txn_id);
-                    std::cout << "事务" << txn_id << "提交: 移到redo_list" << std::endl;
+                    //std::cout << "事务" << txn_id << "提交: 移到redo_list" << std::endl;
                 }
                 active_txn_table_.erase(txn_id);
                 break;
@@ -398,42 +388,40 @@ std::unordered_map<Rid, lsn_t, RidHash> rid_latest_lsn_;
             }
             if (last_lsn != INVALID_LSN) {
                 active_txn_table_[txn_id] = last_lsn;
-                std::cout << "补全事务" << txn_id << " 的最后LSN为: " << last_lsn << std::endl;
+                //std::cout << "补全事务" << txn_id << " 的最后LSN为: " << last_lsn << std::endl;
             }
             // 清理
             for (auto* record : logs_before_ckpt) delete record;
         }
     }
 
-    std::cout << "分析完成 - undo_list: " << undo_list.size() 
-              << ", redo_list: " << redo_list.size() 
-              << ", 脏页表大小: " << dirty_page_table_.size() << std::endl;
+    //std::cout << "分析完成 - undo_list: " << undo_list.size() << ", redo_list: " << redo_list.size() << ", 脏页表大小: " << dirty_page_table_.size() << std::endl;
     
     // 🔄 第三步：先执行REDO，再执行UNDO（题目要求的步骤3）
     
     // (1) 对redo_list中的事务执行REDO
-    std::cout << "开始REDO已提交事务操作，共" << redo_list.size() << "个事务" << std::endl;
+    //std::cout << "开始REDO已提交事务操作，共" << redo_list.size() << "个事务" << std::endl;
     for (auto* record : log_records) {
         txn_id_t txn_id = record->log_tid_;
         if (redo_list.find(txn_id) != redo_list.end()) {
             if (record->log_type_ == LogType::INSERT ||
                 record->log_type_ == LogType::UPDATE ||
                 record->log_type_ == LogType::DELETE) {
-                std::cout << "重做事务 " << txn_id << " 的操作, LSN=" << record->lsn_ << std::endl;
+                //std::cout << "重做事务 " << txn_id << " 的操作, LSN=" << record->lsn_ << std::endl;
                 redo_log_record(record);
             }
         }
     }
     
     // (2) 对undo_list中的事务执行UNDO
-    std::cout << "开始UNDO未提交事务操作，共" << undo_list.size() << "个事务" << std::endl;
+    //std::cout << "开始UNDO未提交事务操作，共" << undo_list.size() << "个事务" << std::endl;
     for (auto txn_id : undo_list) {
-        std::cout << "撤销事务 " << txn_id << " 的操作" << std::endl;
+        //std::cout << "撤销事务 " << txn_id << " 的操作" << std::endl;
         if (active_txn_table_.find(txn_id) != active_txn_table_.end()) {
-            std::cout << "事务 " << txn_id << " 仍然活跃，执行UNDO" << std::endl;
+            //std::cout << "事务 " << txn_id << " 仍然活跃，执行UNDO" << std::endl;
             lsn_t lsn = active_txn_table_[txn_id];
             if (lsn != INVALID_LSN) {
-                std::cout << "事务 " << txn_id << " 的最后LSN: " << lsn << std::endl;
+                //std::cout << "事务 " << txn_id << " 的最后LSN: " << lsn << std::endl;
                 // 按LSN倒序执行UNDO
                 while (lsn != INVALID_LSN) {
                     LogRecord* record = log_manager_->read_log_record(lsn);
@@ -442,7 +430,7 @@ std::unordered_map<Rid, lsn_t, RidHash> rid_latest_lsn_;
                     if (record->log_type_ == LogType::INSERT ||
                         record->log_type_ == LogType::UPDATE ||
                         record->log_type_ == LogType::DELETE) {
-                        std::cout << "撤销事务 " << txn_id << " 的操作, LSN=" << lsn << std::endl;
+                        //std::cout << "撤销事务 " << txn_id << " 的操作, LSN=" << lsn << std::endl;
                         undo_log_record(record);
                     }
                     
@@ -468,7 +456,7 @@ std::unordered_map<Rid, lsn_t, RidHash> rid_latest_lsn_;
     active_txn_table_.clear();
     dirty_page_table_.clear();
     
-    std::cout << "基于检查点的恢复完成" << std::endl;
+    //td::cout << "基于检查点的恢复完成" << std::endl;
 
     // 扫描所有日志，找到最大LSN和最大txn_id
     lsn_t max_lsn = 0;
@@ -482,8 +470,7 @@ std::unordered_map<Rid, lsn_t, RidHash> rid_latest_lsn_;
     log_manager_->set_global_lsn(max_lsn + 1);
     txn_mgr_->set_next_txn_id(max_txn_id + 1);
 
-    std::cout << "恢复后设置global_lsn=" << (max_lsn + 1)
-              << "，next_txn_id=" << (max_txn_id + 1) << std::endl;
+    //std::cout << "恢复后设置global_lsn=" << (max_lsn + 1)<< "，next_txn_id=" << (max_txn_id + 1) << std::endl;
 
 }
 
@@ -491,7 +478,7 @@ std::unordered_map<Rid, lsn_t, RidHash> rid_latest_lsn_;
  * @description: 重做所有未落盘的操作
  */
  void RecoveryManager::redo() {
-    std::cout << "执行REDO阶段..." << std::endl;
+    //std::cout << "执行REDO阶段..." << std::endl;
     rid_latest_lsn_.clear();
     // 从最小的recLSN开始读取日志
     lsn_t min_rec_lsn = INVALID_LSN;
@@ -503,7 +490,7 @@ std::unordered_map<Rid, lsn_t, RidHash> rid_latest_lsn_;
     
     // 如果没有脏页，直接返回
     if (min_rec_lsn == INVALID_LSN) {
-        std::cout << "没有需要重做的操作" << std::endl;
+        //std::cout << "没有需要重做的操作" << std::endl;
         return;
     }
     
@@ -528,9 +515,9 @@ std::unordered_map<Rid, lsn_t, RidHash> rid_latest_lsn_;
         delete record;
     }
     
-    std::cout << "REDO阶段事务状态统计:" << std::endl;
-    std::cout << "已提交事务数: " << committed_txns.size() << std::endl;
-    std::cout << "已中止事务数: " << aborted_txns.size() << std::endl;
+    //std::cout << "REDO阶段事务状态统计:" << std::endl;
+    //std::cout << "已提交事务数: " << committed_txns.size() << std::endl;
+    //std::cout << "已中止事务数: " << aborted_txns.size() << std::endl;
     
     // 扫描从min_rec_lsn开始的日志
     std::vector<LogRecord*> log_records = log_manager_->scan_log_from_lsn(min_rec_lsn);
@@ -546,9 +533,7 @@ std::unordered_map<Rid, lsn_t, RidHash> rid_latest_lsn_;
             
             // 跳过已中止事务的操作
             if (aborted_txns.find(txn_id) != aborted_txns.end()) {
-                std::cout << "REDO阶段跳过已中止事务的操作: 事务" << txn_id 
-                          << ", LSN=" << record->lsn_ 
-                          << ", 类型=" << static_cast<int>(record->log_type_) << std::endl;
+                //std::cout << "REDO阶段跳过已中止事务的操作: 事务" << txn_id << ", LSN=" << record->lsn_ << ", 类型=" << static_cast<int>(record->log_type_) << std::endl;
                 continue;
             }
             
@@ -556,14 +541,14 @@ std::unordered_map<Rid, lsn_t, RidHash> rid_latest_lsn_;
             bool should_redo = false;
             if (committed_txns.find(txn_id) != committed_txns.end()) {
                 should_redo = true;
-                std::cout << "重做已提交事务的操作: 事务" << txn_id << ", LSN=" << record->lsn_ << std::endl;
+                //std::cout << "重做已提交事务的操作: 事务" << txn_id << ", LSN=" << record->lsn_ << std::endl;
             } else if (active_txn_table_.find(txn_id) != active_txn_table_.end()) {
                 should_redo = true;
-                std::cout << "重做活跃事务的操作: 事务" << txn_id << ", LSN=" << record->lsn_ << std::endl;
+                //std::cout << "重做活跃事务的操作: 事务" << txn_id << ", LSN=" << record->lsn_ << std::endl;
             }
             
             if (!should_redo) {
-                std::cout << "跳过未知状态事务的操作: 事务" << txn_id << ", LSN=" << record->lsn_ << std::endl;
+                //std::cout << "跳过未知状态事务的操作: 事务" << txn_id << ", LSN=" << record->lsn_ << std::endl;
                 continue;
             }
         }
@@ -610,9 +595,7 @@ std::unordered_map<Rid, lsn_t, RidHash> rid_latest_lsn_;
             Page* page = buffer_pool_manager_->fetch_page(page_id);
             if (page && page->get_page_lsn() < record->lsn_) {
                 // 重做操作
-                std::cout << "执行REDO: 事务" << record->log_tid_ 
-                          << ", LSN=" << record->lsn_ 
-                          << ", 类型=" << static_cast<int>(record->log_type_) << std::endl;
+                //std::cout << "执行REDO: 事务" << record->log_tid_ << ", LSN=" << record->lsn_ << ", 类型=" << static_cast<int>(record->log_type_) << std::endl;
                 redo_log_record(record);
                 // 更新页面LSN
                 page->set_page_lsn(record->lsn_);
@@ -625,18 +608,18 @@ std::unordered_map<Rid, lsn_t, RidHash> rid_latest_lsn_;
     for (auto* record : log_records) {
         delete record;
     }
-    std::cout << "REDO阶段完成" << std::endl;
+    //std::cout << "REDO阶段完成" << std::endl;
 }
 
 /**
  * @description: 回滚未完成的事务
  */
 void RecoveryManager::undo() {
-        std::cout << "执行UNDO阶段..." << std::endl;
+        //std::cout << "执行UNDO阶段..." << std::endl;
 
         // 如果没有未完成的事务，直接返回
         if (active_txn_table_.empty()) {
-            std::cout << "没有需要撤销的事务" << std::endl;
+            //std::cout << "没有需要撤销的事务" << std::endl;
             return;
         }
         // 构建每个事务的最后一个LSN映射
@@ -691,7 +674,7 @@ void RecoveryManager::undo() {
             delete record;
         }
         
-        std::cout << "UNDO阶段完成" << std::endl;
+        //std::cout << "UNDO阶段完成" << std::endl;
 }
 
 /**
@@ -745,8 +728,7 @@ void RecoveryManager::undo() {
                             delete[] key;
                         }
                         
-                        std::cout << "重做INSERT: 表=" << table_name 
-                                  << ", RID=(" << rid.page_no << "," << rid.slot_no << ")" << std::endl;
+                        //std::cout << "重做INSERT: 表=" << table_name << ", RID=(" << rid.page_no << "," << rid.slot_no << ")" << std::endl;
                     }
                 }
                 break;
@@ -792,8 +774,7 @@ void RecoveryManager::undo() {
                         // 删除记录
                         file_handle->delete_record(rid, nullptr);
                         rid_latest_lsn_[rid] = curr_lsn;
-                        std::cout << "重做DELETE: 表=" << table_name 
-                                  << ", RID=(" << rid.page_no << "," << rid.slot_no << ")" << std::endl;
+                        //std::cout << "重做DELETE: 表=" << table_name << ", RID=(" << rid.page_no << "," << rid.slot_no << ")" << std::endl;
                     }
                 }
                 break;
@@ -853,8 +834,7 @@ void RecoveryManager::undo() {
                         // 更新记录
                         file_handle->update_record(rid, update_log->new_value_.data, nullptr);
                         rid_latest_lsn_[rid] = curr_lsn;
-                        std::cout << "重做UPDATE: 表=" << table_name 
-                                  << ", RID=(" << rid.page_no << "," << rid.slot_no << ")" << std::endl;
+                       // std::cout << "重做UPDATE: 表=" << table_name << ", RID=(" << rid.page_no << "," << rid.slot_no << ")" << std::endl;
                     }
                 }
                 break;
@@ -922,12 +902,10 @@ try {
                         // 删除记录
                         file_handle->delete_record(rid, nullptr);
                         rid_latest_lsn_[rid] = curr_lsn;
-                        std::cout << "撤销INSERT: 表=" << table_name 
-                                  << ", RID=(" << rid.page_no << "," << rid.slot_no << ")" << std::endl;
+                        //std::cout << "撤销INSERT: 表=" << table_name << ", RID=(" << rid.page_no << "," << rid.slot_no << ")" << std::endl;
                     } catch (const RecordNotFoundError& e) {
                         // 记录不存在是正常情况 - 可能数据页未刷盘就崩溃了
-                        std::cout << "撤销INSERT: 记录已不存在，无需删除: 表=" << table_name 
-                                  << ", RID=(" << rid.page_no << "," << rid.slot_no << ")" << std::endl;
+                        //std::cout << "撤销INSERT: 记录已不存在，无需删除: 表=" << table_name << ", RID=(" << rid.page_no << "," << rid.slot_no << ")" << std::endl;
                     } catch (const std::exception& e) {
                         // 其他错误记录但不中断恢复过程
                         std::cerr << "撤销INSERT失败(非致命错误): " << e.what() << std::endl;
@@ -977,8 +955,7 @@ try {
                         delete[] key;
                     }
                     
-                    std::cout << "撤销DELETE: 表=" << table_name 
-                                << ", RID=(" << rid.page_no << "," << rid.slot_no << ")" << std::endl;
+                    //std::cout << "撤销DELETE: 表=" << table_name << ", RID=(" << rid.page_no << "," << rid.slot_no << ")" << std::endl;
                 }
             }
             break;
@@ -1038,8 +1015,7 @@ try {
                     // 恢复旧记录
                     file_handle->update_record(rid, update_log->old_value_.data, nullptr);
                     rid_latest_lsn_[rid] = curr_lsn;
-                    std::cout << "撤销UPDATE: 表=" << table_name 
-                                << ", RID=(" << rid.page_no << "," << rid.slot_no << ")" << std::endl;
+                    //std::cout << "撤销UPDATE: 表=" << table_name << ", RID=(" << rid.page_no << "," << rid.slot_no << ")" << std::endl;
                 }
             }
             break;

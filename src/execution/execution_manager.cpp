@@ -112,7 +112,7 @@ void QlManager::run_cmd_utility(std::shared_ptr<Plan> plan, txn_id_t *txn_id, Co
                 if (context->txn_ != nullptr) {
                     context->txn_->set_txn_mode(true);
                     *txn_id = context->txn_->get_transaction_id();
-                    std::cout << "设置事务为显式模式: ID=" << *txn_id << std::endl;
+                    //std::cout << "设置事务为显式模式: ID=" << *txn_id << std::endl;
                 }
                 break;
             }  
@@ -172,7 +172,7 @@ void QlManager::run_cmd_utility(std::shared_ptr<Plan> plan, txn_id_t *txn_id, Co
 // 执行select语句，select语句的输出除了需要返回客户端外，还需要写入output.txt文件中
 void QlManager::select_from(std::unique_ptr<AbstractExecutor> executorTreeRoot, std::vector<TabCol> sel_cols, 
                             Context *context) {
-    std::cout<<"DEBUG: select_from 开始" << std::endl;
+    //std::cout<<"DEBUG: select_from 开始" << std::endl;
     // 检查是否为EXPLAIN执行器
     if (dynamic_cast<ExplainExecutor*>(executorTreeRoot.get())) {
         // 特殊处理EXPLAIN结果
@@ -195,7 +195,7 @@ void QlManager::select_from(std::unique_ptr<AbstractExecutor> executorTreeRoot, 
     std::vector<std::string> captions;
     captions.reserve(sel_cols.size());
     for (auto &sel_col : sel_cols) {
-        std::cout << "DEBUG: select_from sel_col.col_name: " << sel_col.col_name << std::endl;
+        //std::cout << "DEBUG: select_from sel_col.col_name: " << sel_col.col_name << std::endl;
         captions.push_back(sel_col.col_name);
     }
 
@@ -253,7 +253,7 @@ void QlManager::select_from(std::unique_ptr<AbstractExecutor> executorTreeRoot, 
     rec_printer.print_separator(context);
     // Print record count into buffer
     RecordPrinter::print_record_count(num_rec, context);
-    std::cout<<"DEBUG: select_from 结束" << std::endl;
+    //std::cout<<"DEBUG: select_from 结束" << std::endl;
 }
 
 // 执行DML语句
@@ -263,12 +263,12 @@ void QlManager::run_dml(std::unique_ptr<AbstractExecutor> exec){
     // 添加自动提交逻辑
     if (exec->context_ && exec->context_->txn_ && !exec->context_->txn_->get_txn_mode()) {
         // 只有在非显式事务模式下才自动提交
-        std::cout << "自动提交隐式事务: " << exec->context_->txn_->get_transaction_id() << std::endl;
+        //std::cout << "自动提交隐式事务: " << exec->context_->txn_->get_transaction_id() << std::endl;
         
         // 使用事务管理器正确提交，而不是手动创建日志
         try {
             txn_mgr_->commit(exec->context_->txn_, exec->context_->log_mgr_);
-            std::cout << "隐式事务提交成功" << std::endl;
+            //std::cout << "隐式事务提交成功" << std::endl;
         } catch (const std::exception& e) {
             std::cerr << "隐式事务提交失败: " << e.what() << std::endl;
             // 提交失败时尝试回滚
@@ -282,27 +282,21 @@ void QlManager::run_dml(std::unique_ptr<AbstractExecutor> exec){
 }
 
 void QlManager::load_data(const std::string& file_name, const std::string& table_name, Transaction* txn) {
-//    std::cout << "DEBUG: load_data file_name=" << file_name << ", table_name=" << table_name << std::endl;
-//     std::cout << "DEBUG: lock_manager_=" << lock_manager_ << std::endl;
-//     std::cout << "DEBUG: sm_manager_=" << sm_manager_ << std::endl;
-//     std::cout << "DEBUG: txn_mgr_=" << txn_mgr_ << std::endl;
-//     std::cout << "DEBUG: log_manager_=" << log_manager_ << std::endl;
-//     std::cout << "DEBUG: buffer_pool_manager_=" << buffer_pool_manager_ << std::endl;
     std::ifstream fin(file_name);
     if (!fin.is_open()) throw std::runtime_error("无法打开文件: " + file_name);
 
     bool auto_txn = false;
     if (!txn) {
         // 如果没有事务，则创建一个自动提交的事务
-        std::cout << "没有事务，创建自动提交事务" << std::endl;
+        //std::cout << "没有事务，创建自动提交事务" << std::endl;
         txn = txn_mgr_->begin(nullptr, log_manager_);
-        std::cout << "自动提交事务 ID: " << txn->get_transaction_id() << std::endl;
+        //std::cout << "自动提交事务 ID: " << txn->get_transaction_id() << std::endl;
         auto_txn = true;
     }
     int cnt = 0;
-    std::cout<<"开始生成context"<< std::endl;
+    //std::cout<<"开始生成context"<< std::endl;
     Context ctx(lock_manager_, log_manager_, txn, nullptr, nullptr);
-    std::cout<<"context生成成功" << std::endl;
+    //std::cout<<"context生成成功" << std::endl;
     TabMeta tab = sm_manager_->db_.get_table(table_name);
     std::string line;
 
@@ -351,10 +345,10 @@ void QlManager::load_data(const std::string& file_name, const std::string& table
         exec.Next();
         cnt++;
     }
-    std::cout<<"数据加载完毕" << std::endl;
+    //std::cout<<"数据加载完毕" << std::endl;
     if (auto_txn) {
         txn_mgr_->commit(txn, log_manager_);
-        std::cout<<"commit成功" << std::endl;
+        //std::cout<<"commit成功" << std::endl;
     }
-    std::cout << "Load " << cnt << " rows into " << table_name << std::endl;
+    //std::cout << "Load " << cnt << " rows into " << table_name << std::endl;
 }

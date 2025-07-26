@@ -17,7 +17,7 @@ See the Mulan PSL v2 for more details. */
  */
 std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse)
 {
-    std::cout << "DEBUG: do_analyze AST type: " << typeid(*parse).name() << std::endl;
+    //std::cout << "DEBUG: do_analyze AST type: " << typeid(*parse).name() << std::endl;
     std::shared_ptr<Query> query = std::make_shared<Query>();//初始化空query
     query->parse = parse;
    if (auto x = std::dynamic_pointer_cast<ast::LoadStmt>(parse)) {
@@ -95,7 +95,7 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse)
                     cond.is_join_cond = true;  //标记为JOIN
                     if (join_expr->type == SEMI_JOIN) {
                         cond.is_semi_join = true;  //标记为SEMI JOIN
-                        std::cout << "DEBUG: 检测到SEMI JOIN条件" << std::endl;
+                        //std::cout << "DEBUG: 检测到SEMI JOIN条件" << std::endl;
                     }
                 }
                 query->join_conds.push_back(join_conds);
@@ -111,7 +111,7 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse)
     else if (auto x = std::dynamic_pointer_cast<ast::SelectStmt>(parse))//select语句
     {
         /* 大致处理顺序： 表名-->聚合函数类型-->where-->group by-->sort/having */
-        std::cout << "DEBUG: Processing SelectStmt, explain=" << x->explain << std::endl;
+        //std::cout << "DEBUG: Processing SelectStmt, explain=" << x->explain << std::endl;
         // 从SelectStmt中传递explain标志到Query对象
         query->is_explain = x->explain;
         // 处理表名
@@ -445,7 +445,7 @@ TabCol Analyze::check_column(const std::vector<ColMeta> &all_cols, TabCol target
     for (const auto& [table, alias] : tab_alias_map) {
         if (alias == target.tab_name) {
             real_tab_name = table;
-            std::cout << "DEBUG: 将别名 '" << target.tab_name << "' 转换为表名 '" << real_tab_name << "'" << std::endl;
+            //std::cout << "DEBUG: 将别名 '" << target.tab_name << "' 转换为表名 '" << real_tab_name << "'" << std::endl;
             break;
         }
     }
@@ -492,9 +492,7 @@ TabCol Analyze::check_column(const std::vector<ColMeta> &all_cols, TabCol target
         /** TODO: Make sure target column exists */
         bool found = false;
         for (auto &col : all_cols) {
-            std::cout << "DEBUG: 检查列 " << col.tab_name << "." << col.name 
-                      << " 是否与目标列 " << target.tab_name << "." << target.col_name 
-                      << " 匹配" << std::endl;
+            //std::cout << "DEBUG: 检查列 " << col.tab_name << "." << col.name << " 是否与目标列 " << target.tab_name << "." << target.col_name << " 匹配" << std::endl;
             if (col.tab_name == target.tab_name && col.name == target.col_name) {
                 found = true;
                 break;
@@ -505,7 +503,7 @@ TabCol Analyze::check_column(const std::vector<ColMeta> &all_cols, TabCol target
             if (sm_manager_->db_.is_table(target.tab_name)) {
                 throw ColumnNotFoundError(target.col_name);
             } else {
-                std::cout << "DEBUG:checkcolumn找不到表 " << target.tab_name << std::endl;
+            //std::cout << "DEBUG:checkcolumn找不到表 " << target.tab_name << std::endl;
                 throw TableNotFoundError(target.tab_name);
             }
         }
@@ -655,7 +653,7 @@ void Analyze::check_clause(const std::vector<std::string> &tab_names,
         // 处理表别名 
         for (const auto& [table, alias] : tab_alias_map) {
             if (cond.lhs_col.tab_name == alias) {
-                std::cout << "DEBUG: 临时将别名 '" << alias << "' 转换为表名 '" << table << "'" << std::endl;
+                //std::cout << "DEBUG: 临时将别名 '" << alias << "' 转换为表名 '" << table << "'" << std::endl;
                 cond.lhs_col.tab_name = table;
             }
             // 处理右侧列的别名
@@ -731,24 +729,24 @@ CompOp Analyze::convert_sv_comp_op(ast::SvCompOp op) {
 }
 
 void Analyze::analyze_table_refs(const std::vector<std::string> &tab_refs, std::shared_ptr<Query> query) {
-    std::cout << "DEBUG: 原始表引用: ";
-    for (const auto& ref : tab_refs) {
-        std::cout << "'" << ref << "' ";
-    }
-    std::cout << std::endl;
+    // std::cout << "DEBUG: 原始表引用: ";
+    // for (const auto& ref : tab_refs) {
+    //     std::cout << "'" << ref << "' ";
+    // }
+    // std::cout << std::endl;
     for (auto &tab_ref : tab_refs) {
         std::string tab_name = tab_ref;
         std::string alias;
         // 检查是否包含空格
         size_t space_pos = tab_name.find(' ');
         if (space_pos != std::string::npos) {
-            std::cout << "DEBUG: 检测到表名 '" << tab_name << "' 包含空格，可能有别名" << std::endl;
+            //std::cout << "DEBUG: 检测到表名 '" << tab_name << "' 包含空格，可能有别名" << std::endl;
             alias = tab_name.substr(space_pos + 1);
             tab_name = tab_name.substr(0, space_pos);  
             // 存储别名映射
             query->tab_alias_map[tab_name] = alias;
         }  
-        std::cout << "DEBUG: 处理表名 '" << tab_name << "'，别名 '" << alias << "'" << std::endl;
+        //std::cout << "DEBUG: 处理表名 '" << tab_name << "'，别名 '" << alias << "'" << std::endl;
         // 将表名添加到查询中
         query->tables.push_back(tab_name);
     }

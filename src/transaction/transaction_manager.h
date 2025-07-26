@@ -118,7 +118,7 @@ public:
                 active_txns.push_back(txn->get_transaction_id());
             }
         }
-        std::cout << "收集到 " << active_txns.size() << " 个活跃事务" << std::endl;
+        //std::cout << "收集到 " << active_txns.size() << " 个活跃事务" << std::endl;
         return active_txns;
     }
 

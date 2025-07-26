@@ -128,11 +128,9 @@ class InsertExecutor : public AbstractExecutor {
                 // 释放日志记录内存
                 delete log_record;
                 
-                std::cout << "DEBUG: 已生成INSERT日志记录，表名: " << tab_name_ 
-                          << ", RID: (" << rid_.page_no << "," << rid_.slot_no << ")" << std::endl;
+                //std::cout << "DEBUG: 已生成INSERT日志记录，表名: " << tab_name_ << ", RID: (" << rid_.page_no << "," << rid_.slot_no << ")" << std::endl;
             }
-            std::cout << "DEBUG:已将插入写记录添加到事务 " << context_->txn_->get_transaction_id() 
-                    << ", 写集合大小: " << context_->txn_->get_write_set()->size() << std::endl;
+            //std::cout << "DEBUG:已将插入写记录添加到事务 " << context_->txn_->get_transaction_id() << ", 写集合大小: " << context_->txn_->get_write_set()->size() << std::endl;
         } else {
             std::cout << "DEBUG:插入操作没有关联有效事务!" << std::endl;
         }

@@ -281,7 +281,7 @@ log_fd_ = open(LOG_FILE_NAME.c_str(), O_RDWR | O_APPEND | O_CREAT, 0644);
         // 调试日志文件大小
         struct stat st;
         if (fstat(log_fd_, &st) == 0) {
-            std::cout << "DEBUG: 日志文件当前大小: " << st.st_size << " 字节" << std::endl;
+            //std::cout << "DEBUG: 日志文件当前大小: " << st.st_size << " 字节" << std::endl;
         }
 }
 

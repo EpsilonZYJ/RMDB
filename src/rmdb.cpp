@@ -61,7 +61,7 @@ void sigint_handler(int signo) {
 void SetTransaction(txn_id_t *txn_id, Context *context, bool is_begin_stmt = false) {
     if (is_begin_stmt) {
         // 显式事务begin，分配新ID并绑定到session
-        std::cout<<"DEBUG: 开始显式事务"<<std::endl;
+        //std::cout<<"DEBUG: 开始显式事务"<<std::endl;
         context->txn_ = txn_manager->begin(nullptr, context->log_mgr_);
         *txn_id = context->txn_->get_transaction_id();
         context->txn_->set_txn_mode(true); // 显式事务
@@ -168,9 +168,9 @@ void *client_handler(void *sock_fd) {
             session_context->data_send_ = data_send;
             session_context->offset_ = &offset;
         }
-        std::cout << "DEBUG: 使用Context对象: " << session_context << std::endl;
+        //std::cout << "DEBUG: 使用Context对象: " << session_context << std::endl;
         if (strcmp(data_recv, "begin;") == 0 || strcmp(data_recv, "BEGIN;") == 0) {
-            std::cout<<"检测到显式事务BEGIN语句，准备开启新事务" << std::endl;
+            //std::cout<<"检测到显式事务BEGIN语句，准备开启新事务" << std::endl;
             SetTransaction(&txn_id, session_context, true);
         } else {
             SetTransaction(&txn_id, session_context);
@@ -181,25 +181,24 @@ void *client_handler(void *sock_fd) {
         YY_BUFFER_STATE buf = yy_scan_string(data_recv);
         if (yyparse() == 0) {
             if (ast::parse_tree != nullptr) {
-                std::cout << "DEBUG: 解析成功，开始分析语法树" << std::endl;
-                std::cout<<"真服了"<<std::endl;
+                //std::cout << "DEBUG: 解析成功，开始分析语法树" << std::endl;
                 try {
-                    std::cout << "DEBUG: 开始analyze" << std::endl;
+                    //std::cout << "DEBUG: 开始analyze" << std::endl;
                     std::shared_ptr<Query> query = analyze->do_analyze(ast::parse_tree);
-                    std::cout << "DEBUG: query->is_load=" << query->is_load << std::endl;
+                    //std::cout << "DEBUG: query->is_load=" << query->is_load << std::endl;
                     yy_delete_buffer(buf);
                     finish_analyze = true;
                     pthread_mutex_unlock(buffer_mutex);
                     //加载数据的特殊处理
                     if (query->is_load) {
-                    std::cout<<"DEBUG: 加载数据" << std::endl;
+                    //std::cout<<"DEBUG: 加载数据" << std::endl;
                     ql_manager->load_data(query->load_file_name, query->load_table_name, session_context->txn_);
-                    std::cout<<"DEBUG: 加载数据完成" << std::endl;
+                    //std::cout<<"DEBUG: 加载数据完成" << std::endl;
                     std::string msg = "Load data finished.\n";
                     memcpy(data_send, msg.c_str(), msg.size());
                     offset = msg.size();
                     goto send_result;
-                    std::cout<<"没有跳过生成计划" << std::endl;
+                    //std::cout<<"没有跳过生成计划" << std::endl;
                     }
                     std::shared_ptr<Plan> plan = optimizer->plan_query(query, session_context);
                     std::shared_ptr<PortalStmt> portalStmt = portal->start(plan, session_context);
@@ -251,19 +250,19 @@ void *client_handler(void *sock_fd) {
 
         // 分别处理COMMIT和ABORT，确保完整的大小写支持
         if (strcmp(data_recv, "commit;") == 0 || strcmp(data_recv, "COMMIT;") == 0) {
-            std::cout << "检测到COMMIT语句，准备清理事务状态" << std::endl;
+            //std::cout << "检测到COMMIT语句，准备清理事务状态" << std::endl;
             // 统一在这里处理COMMIT后的事务清理
             if (session_context && session_context->txn_) {
-                std::cout << "清理已提交的事务: " << session_context->txn_->get_transaction_id() << std::endl;
+                //std::cout << "清理已提交的事务: " << session_context->txn_->get_transaction_id() << std::endl;
                 session_context->txn_ = nullptr;  // 事务对象已在commit中被删除
             }
             txn_id = INVALID_TXN_ID;
         } 
         else if (strcmp(data_recv, "abort;") == 0 || strcmp(data_recv, "ABORT;") == 0) {
-            std::cout << "检测到ABORT语句，准备清理事务状态" << std::endl;
+            //std::cout << "检测到ABORT语句，准备清理事务状态" << std::endl;
             // 统一在这里处理ABORT后的事务清理  
             if (session_context && session_context->txn_) {
-                std::cout << "清理已回滚的事务: " << session_context->txn_->get_transaction_id() << std::endl;
+                //std::cout << "清理已回滚的事务: " << session_context->txn_->get_transaction_id() << std::endl;
                 session_context->txn_ = nullptr;  // 事务对象已在abort中被删除
             }
             txn_id = INVALID_TXN_ID;

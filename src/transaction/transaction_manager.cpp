@@ -28,12 +28,12 @@ Transaction * TransactionManager::begin(Transaction* txn, LogManager* log_manage
     // 4. 返回当前事务指针
     Transaction* res;
     if(txn != nullptr) {
-        std::cout<<"txn指针不为空"<<std::endl;
+        //std::cout<<"txn指针不为空"<<std::endl;
         return txn;
     }
     std::unique_lock<std::mutex> lock(latch_);
     res = new Transaction(next_txn_id_);
-    std::cout<<"新开启的事务事务号为"<<next_txn_id_<<std::endl;
+    //std::cout<<"新开启的事务事务号为"<<next_txn_id_<<std::endl;
     txn_map[next_txn_id_] = res;
     res->set_start_ts(next_timestamp_);
     next_txn_id_++;

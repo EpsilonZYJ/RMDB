@@ -40,7 +40,7 @@ void LogManager::flush_log_to_disk() {
         disk_manager_->write_log(log_buffer_.buffer_, log_buffer_.offset_);
         log_buffer_.offset_ = 0;
         persist_lsn_ = global_lsn_ - 1;
-        std::cout << "日志已刷新到磁盘，persist_lsn=" << persist_lsn_ << std::endl;
+        //std::cout << "日志已刷新到磁盘，persist_lsn=" << persist_lsn_ << std::endl;
     }
 }
 
@@ -50,23 +50,23 @@ void LogManager::flush_log_to_disk() {
  * @param {BufferPoolManager*} buffer_pool_manager 缓冲池管理器
  */
  void LogManager::create_static_checkpoint(TransactionManager* txn_manager, BufferPoolManager* buffer_pool_manager, SmManager* sm_manager) {
-    std::cout << "开始创建静态检查点..." << std::endl;    
+    //std::cout << "开始创建静态检查点..." << std::endl;    
     try {
         // 步骤1: 停止接收新事务和正在运行的事务
         txn_manager->pause_transactions();
-        std::cout << "已暂停所有事务处理" << std::endl;
+        //std::cout << "已暂停所有事务处理" << std::endl;
         
         // 步骤2: 将日志缓冲区内容写入磁盘
         flush_log_to_disk();
-        std::cout << "已将日志缓冲区刷新到磁盘" << std::endl;
+        //std::cout << "已将日志缓冲区刷新到磁盘" << std::endl;
         
         // 获取当前所有活跃事务
         std::vector<txn_id_t> active_txns = txn_manager->get_active_transactions();
-        std::cout << "检查点收集的活跃事务: ";
-        for (auto txn_id : active_txns) {
-            std::cout << txn_id << " ";
-        }
-        std::cout << std::endl;
+        //std::cout << "检查点收集的活跃事务: ";
+        //for (auto txn_id : active_txns) {
+        //    std::cout << txn_id << " ";
+        //}
+        //std::cout << std::endl;
         // 步骤3: 写入检查点记录
         lsn_t checkpoint_lsn= INVALID_LSN;
         for (auto txn_id : active_txns) {
@@ -79,7 +79,7 @@ void LogManager::flush_log_to_disk() {
                 checkpoint_lsn = add_log_to_buffer(&checkpoint_record);
                 txn->set_prev_lsn(checkpoint_lsn);
                 flush_log_to_disk();
-                std::cout << "已写入检查点记录，LSN: " << checkpoint_lsn << " 归属于事务: " << txn_id << std::endl;
+                //std::cout << "已写入检查点记录，LSN: " << checkpoint_lsn << " 归属于事务: " << txn_id << std::endl;
             }
         }
         // 如果没有活跃事务，也写一条系统级检查点日志
@@ -89,7 +89,7 @@ void LogManager::flush_log_to_disk() {
             checkpoint_record.prev_lsn_ = INVALID_LSN;
             checkpoint_lsn = add_log_to_buffer(&checkpoint_record);
             flush_log_to_disk();
-            std::cout << "已写入系统级检查点记录，LSN: " << checkpoint_lsn << std::endl;
+            //std::cout << "已写入系统级检查点记录，LSN: " << checkpoint_lsn << std::endl;
         }
         
         // 步骤4: 将当前数据库缓冲区中的内容写到数据库
@@ -101,7 +101,7 @@ void LogManager::flush_log_to_disk() {
                 auto it = sm_manager->fhs_.find(table_name);
                 if (it != sm_manager->fhs_.end()) {
                     int fd = it->second->GetFd();
-                    std::cout << "刷新表 " << table_name << " (fd=" << fd << ") 的所有页面" << std::endl;
+                    //std::cout << "刷新表 " << table_name << " (fd=" << fd << ") 的所有页面" << std::endl;
                     buffer_pool_manager->flush_all_pages(fd);
                 }
             } catch (const std::exception& e) {
@@ -111,7 +111,7 @@ void LogManager::flush_log_to_disk() {
         }
         
         // 步骤5: 将检查点记录的LSN写入重启文件
-        std::cout << "将检查点LSN " << checkpoint_lsn << " 写入重启文件" << std::endl;
+        //std::cout << "将检查点LSN " << checkpoint_lsn << " 写入重启文件" << std::endl;
         FILE* restart_file = fopen(RESTART_FILE_NAME.c_str(), "w");
         if (restart_file) {
             fprintf(restart_file, "%ld", checkpoint_lsn);
@@ -122,7 +122,7 @@ void LogManager::flush_log_to_disk() {
         
         // 恢复事务处理
         txn_manager->resume_transactions();
-        std::cout << "静态检查点创建完成，已恢复事务处理" << std::endl;
+        //std::cout << "静态检查点创建完成，已恢复事务处理" << std::endl;
     } catch (const std::exception& e) {
         std::cerr << "创建检查点失败: " << e.what() << std::endl;
         txn_manager->resume_transactions();
