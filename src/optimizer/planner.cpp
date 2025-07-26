@@ -206,269 +206,226 @@
     * @return std::vector<Condition>
     */
     std::vector<Condition> pop_conds(std::vector<Condition> &conds, std::string tab_names) {
-        // auto has_tab = [&](const std::string &tab_name) {
-        //     return std::find(tab_names.begin(), tab_names.end(), tab_name) != tab_names.end();
-        // };
-        std::vector<Condition> solved_conds;
-        auto it = conds.begin();
-        while (it != conds.end()) {
-            if ((tab_names.compare(it->lhs_col.tab_name) == 0 && it->is_rhs_val) || (it->lhs_col.tab_name.compare(it->rhs_col.tab_name) == 0)) {
-                solved_conds.emplace_back(std::move(*it));
-                it = conds.erase(it);
-            } else {
-                it++;
-            }
+    // auto has_tab = [&](const std::string &tab_name) {
+    //     return std::find(tab_names.begin(), tab_names.end(), tab_name) != tab_names.end();
+    // };
+    std::vector<Condition> solved_conds;
+    auto it = conds.begin();
+    while (it != conds.end()) {
+        if ((tab_names.compare(it->lhs_col.tab_name) == 0 && it->is_rhs_val) || (it->lhs_col.tab_name.compare(it->rhs_col.tab_name) == 0)) {
+            solved_conds.emplace_back(std::move(*it));
+            it = conds.erase(it);
+        } else {
+            it++;
         }
-        return solved_conds;
     }
+    return solved_conds;
+}
 
 
-    int push_conds(Condition *cond, std::shared_ptr<Plan> plan)
+int push_conds(Condition *cond, std::shared_ptr<Plan> plan)
+{
+    if(auto x = std::dynamic_pointer_cast<ScanPlan>(plan))
     {
-        if(auto x = std::dynamic_pointer_cast<ScanPlan>(plan))
-        {
-            if(x->tab_name_.compare(cond->lhs_col.tab_name) == 0) {
-                return 1;
-            } else if(x->tab_name_.compare(cond->rhs_col.tab_name) == 0){
-                return 2;
-            } else {
-                return 0;
-            }
+        if(x->tab_name_.compare(cond->lhs_col.tab_name) == 0) {
+            return 1;
+        } else if(x->tab_name_.compare(cond->rhs_col.tab_name) == 0){
+            return 2;
+        } else {
+            return 0;
         }
-        else if(auto x = std::dynamic_pointer_cast<JoinPlan>(plan))
-        {
-            int left_res = push_conds(cond, x->left_);
-            // 条件已经下推到左子节点
-            if(left_res == 3){
-                return 3;
-            }
-            int right_res = push_conds(cond, x->right_);
-            // 条件已经下推到右子节点
-            if(right_res == 3){
-                return 3;
-            }
-            // 左子节点或右子节点有一个没有匹配到条件的列
-            if(left_res == 0 || right_res == 0) {
-                return left_res + right_res;
-            }
-            // 左子节点匹配到条件的右边
-            if(left_res == 2) {
-                // 需要将左右两边的条件变换位置
-                std::map<CompOp, CompOp> swap_op = {
-                    {OP_EQ, OP_EQ}, {OP_NE, OP_NE}, {OP_LT, OP_GT}, {OP_GT, OP_LT}, {OP_LE, OP_GE}, {OP_GE, OP_LE},
-                };
-                std::swap(cond->lhs_col, cond->rhs_col);
-                cond->op = swap_op.at(cond->op);
-            }
-            x->conds_.emplace_back(std::move(*cond));
+    }
+    else if(auto x = std::dynamic_pointer_cast<JoinPlan>(plan))
+    {
+        int left_res = push_conds(cond, x->left_);
+        // 条件已经下推到左子节点
+        if(left_res == 3){
             return 3;
         }
-        return false;
-    }
-
-    std::shared_ptr<Plan> pop_scan(int *scantbl, std::string table, std::vector<std::string> &joined_tables, 
-                    std::vector<std::shared_ptr<Plan>> plans)
-    {
-        for (size_t i = 0; i < plans.size(); i++) {
-            auto x = std::dynamic_pointer_cast<ScanPlan>(plans[i]);
-            if(x->tab_name_.compare(table) == 0)
-            {
-                scantbl[i] = 1;
-                joined_tables.emplace_back(x->tab_name_);
-                return plans[i];
-            }
+        int right_res = push_conds(cond, x->right_);
+        // 条件已经下推到右子节点
+        if(right_res == 3){
+            return 3;
         }
-        return nullptr;
-    }
-
-
-    std::shared_ptr<Query> Planner::logical_optimization(std::shared_ptr<Query> query, Context *context)
-    {
-        
-        //TODO 实现逻辑优化规则
-        //谓词下推
-        predicate_pushdown(query, context);
-        
-        //投影下推
-        projection_pushdown(query, context);
-        return query;
-    }
-
-    void Planner::predicate_pushdown(std::shared_ptr<Query> query, Context *context)
-    {
-        // 常量传播优化
-        std::map<TabCol, Value> map;
-        //找出"列=常量"的等值条件
-        for (auto &cond: query->conds) {
-            if (cond.is_rhs_val && cond.op == OP_EQ) {
-                map[cond.lhs_col] = cond.rhs_val; 
-            }
+        // 左子节点或右子节点有一个没有匹配到条件的列
+        if(left_res == 0 || right_res == 0) {
+            return left_res + right_res;
         }
+        // 左子节点匹配到条件的右边
+        if(left_res == 2) {
+            // 需要将左右两边的条件变换位置
+            std::map<CompOp, CompOp> swap_op = {
+                {OP_EQ, OP_EQ}, {OP_NE, OP_NE}, {OP_LT, OP_GT}, {OP_GT, OP_LT}, {OP_LE, OP_GE}, {OP_GE, OP_LE},
+            };
+            std::swap(cond->lhs_col, cond->rhs_col);
+            cond->op = swap_op.at(cond->op);
+        }
+        x->conds_.emplace_back(std::move(*cond));
+        return 3;
+    }
+    return false;
+}
 
-        //将"列1=列2"和"列2=常量"推导出"列1=常量"
-        bool changed;
-        do {
-            changed = false;
-            for (auto it = query->conds.begin(); it != query->conds.end(); ++it) {
-                // 处理"列1=列2"形式的条件
-                if (!it->is_rhs_val && it->op == OP_EQ) {
-                    // 检查右侧列是否有对应常量
-                    auto map_it = map.find(it->rhs_col);
-                    if (map_it != map.end()) {
-                        // 创建新条件:,列1=常量
-                        Condition new_cond;
-                        new_cond.lhs_col = it->lhs_col;
-                        new_cond.op = OP_EQ;
-                        new_cond.is_rhs_val = true;
-                        new_cond.rhs_val = map_it->second;
-                        
-                        // 检查是否已有此条件
-                        bool exists = false;
-                        for (const auto& c : query->conds) {
-                            if (c.is_rhs_val && c.op == OP_EQ && 
-                                c.lhs_col.tab_name == new_cond.lhs_col.tab_name && 
-                                c.lhs_col.col_name == new_cond.lhs_col.col_name) {
-                                exists = true;
-                                break;
-                            }
-                        }
-                        
-                        if (!exists) {
-                            query->conds.push_back(new_cond);
-                            map.emplace(new_cond.lhs_col, new_cond.rhs_val);
-                            changed = true;
+std::shared_ptr<Plan> pop_scan(int *scantbl, std::string table, std::vector<std::string> &joined_tables, 
+                std::vector<std::shared_ptr<Plan>> plans)
+{
+    for (size_t i = 0; i < plans.size(); i++) {
+        auto x = std::dynamic_pointer_cast<ScanPlan>(plans[i]);
+        if(x->tab_name_.compare(table) == 0)
+        {
+            scantbl[i] = 1;
+            joined_tables.emplace_back(x->tab_name_);
+            return plans[i];
+        }
+    }
+    return nullptr;
+}
+
+
+std::shared_ptr<Query> Planner::logical_optimization(std::shared_ptr<Query> query, Context *context)
+{
+    
+    //TODO 实现逻辑优化规则
+    //谓词下推
+    predicate_pushdown(query, context);
+    
+    //投影下推
+    projection_pushdown(query, context);
+    return query;
+}
+
+void Planner::predicate_pushdown(std::shared_ptr<Query> query, Context *context)
+{
+    // 常量传播优化
+    std::map<TabCol, Value> map;
+    //找出"列=常量"的等值条件
+    for (auto &cond: query->conds) {
+        if (cond.is_rhs_val && cond.op == OP_EQ) {
+            map[cond.lhs_col] = cond.rhs_val; 
+        }
+    }
+
+    //将"列1=列2"和"列2=常量"推导出"列1=常量"
+    bool changed;
+    do {
+        changed = false;
+        for (auto it = query->conds.begin(); it != query->conds.end(); ++it) {
+            // 处理"列1=列2"形式的条件
+            if (!it->is_rhs_val && it->op == OP_EQ) {
+                // 检查右侧列是否有对应常量
+                auto map_it = map.find(it->rhs_col);
+                if (map_it != map.end()) {
+                    // 创建新条件:,列1=常量
+                    Condition new_cond;
+                    new_cond.lhs_col = it->lhs_col;
+                    new_cond.op = OP_EQ;
+                    new_cond.is_rhs_val = true;
+                    new_cond.rhs_val = map_it->second;
+                    
+                    // 检查是否已有此条件
+                    bool exists = false;
+                    for (const auto& c : query->conds) {
+                        if (c.is_rhs_val && c.op == OP_EQ && 
+                            c.lhs_col.tab_name == new_cond.lhs_col.tab_name && 
+                            c.lhs_col.col_name == new_cond.lhs_col.col_name) {
+                            exists = true;
+                            break;
                         }
                     }
                     
-                    // 检查左侧列是否有对应常量
-                    map_it = map.find(it->lhs_col);
-                    if (map_it != map.end()) {
-                        // 创建新条件, 列2=常量
-                        Condition new_cond;
-                        new_cond.lhs_col = it->rhs_col;
-                        new_cond.op = OP_EQ;
-                        new_cond.is_rhs_val = true;
-                        new_cond.rhs_val = map_it->second;
-                        
-                        // 检查是否已有此条件
-                        bool exists = false;
-                        for (const auto& c : query->conds) {
-                            if (c.is_rhs_val && c.op == OP_EQ && 
-                                c.lhs_col.tab_name == new_cond.lhs_col.tab_name && 
-                                c.lhs_col.col_name == new_cond.lhs_col.col_name) {
-                                exists = true;
-                                break;
-                            }
+                    if (!exists) {
+                        query->conds.push_back(new_cond);
+                        map.emplace(new_cond.lhs_col, new_cond.rhs_val);
+                        changed = true;
+                    }
+                }
+                
+                // 检查左侧列是否有对应常量
+                map_it = map.find(it->lhs_col);
+                if (map_it != map.end()) {
+                    // 创建新条件, 列2=常量
+                    Condition new_cond;
+                    new_cond.lhs_col = it->rhs_col;
+                    new_cond.op = OP_EQ;
+                    new_cond.is_rhs_val = true;
+                    new_cond.rhs_val = map_it->second;
+                    
+                    // 检查是否已有此条件
+                    bool exists = false;
+                    for (const auto& c : query->conds) {
+                        if (c.is_rhs_val && c.op == OP_EQ && 
+                            c.lhs_col.tab_name == new_cond.lhs_col.tab_name && 
+                            c.lhs_col.col_name == new_cond.lhs_col.col_name) {
+                            exists = true;
+                            break;
                         }
-                        
-                        if (!exists) {
-                            query->conds.push_back(new_cond);
-                            map.emplace(new_cond.lhs_col, new_cond.rhs_val);
-                            changed = true;
-                        }
+                    }
+                    
+                    if (!exists) {
+                        query->conds.push_back(new_cond);
+                        map.emplace(new_cond.lhs_col, new_cond.rhs_val);
+                        changed = true;
                     }
                 }
             }
-        } while (changed); // 重复直到没有新条件产生
+        }
+    } while (changed); // 重复直到没有新条件产生
 
-        std::vector<Condition> join_conds;//连接条件
-        
-        for (const auto& cond : query->conds) {
-            if (!cond.is_rhs_val) {
-                // 检查是否是连接条件
-                if (cond.lhs_col.tab_name != cond.rhs_col.tab_name) {
-                    join_conds.push_back(cond);
-                    continue;
-                }
+    std::vector<Condition> join_conds;//连接条件
+    
+    for (const auto& cond : query->conds) {
+        if (!cond.is_rhs_val) {
+            // 检查是否是连接条件
+            if (cond.lhs_col.tab_name != cond.rhs_col.tab_name) {
+                join_conds.push_back(cond);
+                continue;
             }
         }
-        
-        // 更新query中的条件
-        //query->conds.insert(query->conds.end(), join_conds.begin(), join_conds.end());
     }
+    
+    // 更新query中的条件
+    query->conds.insert(query->conds.end(), join_conds.begin(), join_conds.end());
+}
 
-    void Planner::projection_pushdown(std::shared_ptr<Query> query, Context *context)
-    {
-        // 检查是否是SELECT* 查询
-        bool is_select_star = false;
-        if (auto select_stmt = std::dynamic_pointer_cast<ast::SelectStmt>(query->parse)) {
-            if (select_stmt->cols.empty() || 
-                (select_stmt->cols.size() == 1 && select_stmt->cols[0]->col->col_name == "*")) {
-                is_select_star = true;
-                //std::cout << "DEBUG: 检测到 SELECT *，跳过投影下推分析" << std::endl;
-            }
+void Planner::projection_pushdown(std::shared_ptr<Query> query, Context *context)
+{
+    // 检查是否是SELECT* 查询
+    bool is_select_star = false;
+    if (auto select_stmt = std::dynamic_pointer_cast<ast::SelectStmt>(query->parse)) {
+        if (select_stmt->cols.empty() || 
+            (select_stmt->cols.size() == 1 && select_stmt->cols[0]->col->col_name == "*")) {
+            is_select_star = true;
+            std::cout << "DEBUG: 检测到 SELECT *，跳过投影下推分析" << std::endl;
         }
-        // 为每个表分开跟踪过滤列和输出列
-        std::map<std::string, std::set<std::string>> filter_cols_by_table;
-        std::map<std::string, std::set<std::string>> output_cols_by_table;
-        std::map<std::string, std::set<std::string>> join_cols_by_table;
-        // 为每个表初始化需要的列集合
-        //std::map<std::string, std::set<std::string>> required_cols_by_table;
-        
-         // 如果不是SELECT*，才收集SELECT子句中的列
+    }
+    
+    // 为每个表初始化需要的列集合
+    std::map<std::string, std::set<std::string>> required_cols_by_table;
+    
+    // 如果不是SELECT*，才收集SELECT子句中的列
     if (!is_select_star) {
-        // 从SELECT子句收集需要的列 - 这些是输出列
+        // 从SELECT子句收集需要的列
         for (const auto& col : query->cols) {
             if (!col.tab_name.empty() && !col.col_name.empty()) {
-                output_cols_by_table[col.tab_name].insert(col.col_name);
+                required_cols_by_table[col.tab_name].insert(col.col_name);
             }
         }
     }
-    // 处理GROUP BY列 
-    if (!query->group_bys.empty()) {
-        for (const auto& group_col : query->group_bys) {
-            const std::string& table_name = group_col.tab_name;
-            const std::string& col_name = group_col.col_name;
-            
-            // 使用std::find检查表是否存在
-            if (std::find(query->tables.begin(), query->tables.end(), table_name) != query->tables.end()) {
-                output_cols_by_table[table_name].insert(col_name);
-                //std::cout << "DEBUG: 添加GROUP BY列到投影: " << table_name << "." << col_name << std::endl;
-            }
-        }
-    }
-     // 处理聚合函数中的列
-     if (!query->cols.empty() && !query->agg_types.empty()) {
-        for (size_t i = 0; i < query->cols.size(); ++i) {
-            if (i < query->agg_types.size() && query->agg_types[i] != NO_AGG) {
-                const TabCol& col = query->cols[i];
-                if (!col.tab_name.empty() && !col.col_name.empty()) {
-                    output_cols_by_table[col.tab_name].insert(col.col_name);
-                    //std::cout << "DEBUG: 添加聚合函数列到投影: " << col.tab_name << "." << col.col_name << std::endl;
-                }
-            }
-        }
-    }
-    // 处理HAVING子句中的列
-    if (!query->havings.empty()) {
-        for (const auto& having_cond : query->havings) {
-            // 处理左侧列
-            if (!having_cond.lhs_col.tab_name.empty()) {
-                output_cols_by_table[having_cond.lhs_col.tab_name].insert(having_cond.lhs_col.col_name);
-                //std::cout << "DEBUG: 添加HAVING列到投影: " << having_cond.lhs_col.tab_name << "." << having_cond.lhs_col.col_name << std::endl;
-            }
-            
-            // 处理右侧列(如果不是常量值)
-            if (!having_cond.is_rhs_val && !having_cond.rhs_col.tab_name.empty()) {
-                output_cols_by_table[having_cond.rhs_col.tab_name].insert(having_cond.rhs_col.col_name);
-                //std::cout << "DEBUG: 添加HAVING列到投影: " << having_cond.rhs_col.tab_name << "." << having_cond.rhs_col.col_name << std::endl;
-            }
-        }
-    }
-    // 从WHERE条件中收集需要的列 - 这些是过滤列
+    
+    // 从WHERE条件中收集需要的列
     for (const auto& cond : query->conds) {
         // 处理左侧列
         if (!cond.lhs_col.tab_name.empty()) {
-            filter_cols_by_table[cond.lhs_col.tab_name].insert(cond.lhs_col.col_name);
+            required_cols_by_table[cond.lhs_col.tab_name].insert(cond.lhs_col.col_name);
         }
         
         // 处理右侧列
         if (!cond.is_rhs_val && !cond.rhs_col.tab_name.empty()) {
-            filter_cols_by_table[cond.rhs_col.tab_name].insert(cond.rhs_col.col_name);
+            required_cols_by_table[cond.rhs_col.tab_name].insert(cond.rhs_col.col_name);
         }
     }
     
-    // 从JOIN条件中收集需要的列 - 这些是连接列
+    // 从JOIN条件中收集需要的列
     for (const auto& join_conds : query->join_conds) {
         for (const auto& cond : join_conds) {
             // 处理左侧列
@@ -479,7 +436,7 @@
                     break;
                 }
             }
-            join_cols_by_table[lhs_tab_name].insert(cond.lhs_col.col_name);
+            required_cols_by_table[lhs_tab_name].insert(cond.lhs_col.col_name);
             
             // 处理右侧列
             if (!cond.is_rhs_val) {
@@ -490,13 +447,10 @@
                         break;
                     }
                 }
-                join_cols_by_table[rhs_tab_name].insert(cond.rhs_col.col_name);
+            required_cols_by_table[rhs_tab_name].insert(cond.rhs_col.col_name);
             }
         }
     }
-    
-    // 合并所有需要的列
-    std::map<std::string, std::set<std::string>> required_cols_by_table;
     
     // 如果是SELECT*，将所有表标记为需要所有列
     if (is_select_star) {
@@ -504,93 +458,36 @@
             required_cols_by_table[table].clear(); // 需要所有列
         }
     } else {
-        // 合并输出列、连接列和过滤列
+        // 检查每个表是否需要所有列
         for (const auto& table : query->tables) {
-            // 首先加入输出列
-            if (output_cols_by_table.find(table) != output_cols_by_table.end()) {
-                required_cols_by_table[table].insert(
-                    output_cols_by_table[table].begin(), output_cols_by_table[table].end());
-            }
-            
-            // 加入连接列
-            if (join_cols_by_table.find(table) != join_cols_by_table.end()) {
-                required_cols_by_table[table].insert(
-                    join_cols_by_table[table].begin(), join_cols_by_table[table].end());
-            }
-            
-            // 过滤列单独存储，不合并到required_cols
-            if (filter_cols_by_table.find(table) != filter_cols_by_table.end()) {
-                for (const auto& col : filter_cols_by_table[table]) {
-                    // 检查此列是否用于连接不同表（WHERE子句中的隐式连接）
-                    bool is_join_column = false;
-                    for (const auto& cond : query->conds) {
-                        if (!cond.is_rhs_val && 
-                            cond.lhs_col.tab_name != cond.rhs_col.tab_name) {
-                            // 这是一个连接不同表的条件
-                            if ((cond.lhs_col.tab_name == table && 
-                                 cond.lhs_col.col_name == col) ||
-                                (cond.rhs_col.tab_name == table && 
-                                 cond.rhs_col.col_name == col)) {
-                                is_join_column = true;
-                                break;
-                            }
-                        }
-                    }
-                    
-                    if (is_join_column) {
-                        // 这是连接列，必须保留
-                        required_cols_by_table[table].insert(col);
-                    } else {
-                        // 非连接列，可以单独存储
-                        query->table_filter_cols[table].insert(col);
-                    }
-                }
-            }
-            
-            // 更准确的判断逻辑
-          if (required_cols_by_table[table].size() > 0) {
-    // 获取表的元数据
-    TabMeta &tab = sm_manager_->db_.get_table(table);
-    
-    // 收集表的所有列名
-    std::set<std::string> all_col_names;
-    for (const auto& col : tab.cols) {
-        all_col_names.insert(col.name);
-    }
+            if (required_cols_by_table.find(table) != required_cols_by_table.end()) {
+                TabMeta &tab = sm_manager_->db_.get_table(table);
                 
-                // 只有当所有列都被需要，且需要的列数与表的列数完全匹配时，才标记为"需要所有列"
-                if (required_cols_by_table[table].size() == all_col_names.size()) {
-                    bool exact_match = true;
-                    for (const auto& col_name : required_cols_by_table[table]) {
-                        if (all_col_names.find(col_name) == all_col_names.end()) {
-                            exact_match = false;
+                // 如果需要的列数等于表的总列数，检查是否真的需要所有列
+                if (required_cols_by_table[table].size() == tab.cols.size()) {
+                    // 检查是否所有列都被需要
+                    bool all_cols_needed = true;
+                    for (const auto& col : tab.cols) {
+                        if (required_cols_by_table[table].find(col.name) == required_cols_by_table[table].end()) {
+                            all_cols_needed = false;
                             break;
                         }
                     }
-                    if (exact_match) {
-                        required_cols_by_table[table].clear(); // 标记为需要所有列
-                        //std::cout << "DEBUG: 表 " << table << " 确实需要所有列" << std::endl;
+                    
+                    // 需要所有列，清空列集合作为标记
+                    if (all_cols_needed) {
+                        required_cols_by_table[table].clear();
+                        std::cout << "DEBUG: 表 " << table << " 需要所有列，标记为跳过投影" << std::endl;
                     }
                 }
             }
         }
     }
-    
-    // 输出调试信息
-    // for (const auto& [table, cols] : required_cols_by_table) {
-    //     //std::cout << "DEBUG: 表 " << table << " 最终需要的列: ";
-    //     if (cols.empty()) {
-    //         //std::cout << "所有列";
-    //     } else {
-    //         for (const auto& col : cols) std::cout << col << " ";
-    //     }
-    //     std::cout << std::endl;
-    // }
-    
     // 保存到Query对象中供后续使用
     query->table_required_cols = required_cols_by_table;
 
-    }
+}
+
 
     size_t Planner::get_table_cardinality(const std::string& tab_name) {
         // 直接使用表的元组计数
