@@ -232,14 +232,14 @@ void *client_handler(void *sock_fd) {
         std::cout << "Send to client " << std::endl;
         // TODO 第二关暂时将这里注释掉
         // 如果是单条语句，需要按照一个完整的事务来执行，所以执行完当前语句后，自动提交事务
-        // if (context->txn_ != nullptr && context->txn_->get_txn_mode() == false)
-        // {
-        //     std::cout << "开始commit" << std::endl;
-        //     txn_manager->commit(context->txn_, context->log_mgr_);
-        //     std::cout << "Transaction committed, txn_id: " << txn_id << std::endl;
-        //     // 重置事务ID，确保下次使用新事务
-        //     txn_id = INVALID_TXN_ID;
-        // }
+        if (context->txn_ != nullptr && context->txn_->get_txn_mode() == false)
+        {
+            std::cout << "开始commit" << std::endl;
+            txn_manager->commit(context->txn_, context->log_mgr_);
+            std::cout << "Transaction committed, txn_id: " << txn_id << std::endl;
+            // 重置事务ID，确保下次使用新事务
+            //txn_id = INVALID_TXN_ID;
+        }
         std::cout << "Transaction finished, txn_id: " << txn_id << std::endl;
         delete context; // 确保每次循环结束释放context
 
