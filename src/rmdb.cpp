@@ -238,7 +238,7 @@ void *client_handler(void *sock_fd) {
             txn_manager->commit(context->txn_, context->log_mgr_);
             std::cout << "Transaction committed, txn_id: " << txn_id << std::endl;
             // 重置事务ID，确保下次使用新事务
-            //txn_id = INVALID_TXN_ID;
+            txn_id = INVALID_TXN_ID;
         }
         std::cout << "Transaction finished, txn_id: " << txn_id << std::endl;
         delete context; // 确保每次循环结束释放context
