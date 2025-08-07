@@ -20,8 +20,11 @@ std::unique_ptr<RmRecord> RmFileHandle::get_record(const Rid& rid, Context* cont
     // Todo:
     // 1. 获取指定记录所在的page handle
     // 2. 初始化一个指向RmRecord的指针（赋值其内部的data和size）
+    std::cout<< "DEBUG: get_record "<< std::endl;
     if(context) context->lock_mgr_->lock_shared_on_table(context->txn_, fd_);//检查是否提供了事务上下文，获取共享锁
+    std::cout<<"DEBUG: 开始fetch "<< std::endl;
     RmPageHandle page_handle = fetch_page_handle(rid.page_no);//获取句柄
+    std::cout << "DEBUG: get_record at page_no=" << rid.page_no << ", slot_no=" << rid.slot_no << std::endl;
     char* record_pos = page_handle.get_slot(rid.slot_no);//获取记录偏移
     std::unique_ptr<RmRecord> record_ptr = std::make_unique<RmRecord>(file_hdr_.record_size,record_pos);
     buffer_pool_manager_->unpin_page(page_handle.page->get_page_id(), false);//解除锁定
@@ -138,6 +141,7 @@ RmPageHandle RmFileHandle::fetch_page_handle(int page_no) const {
     if (page == nullptr) {
         throw PageNotExistError(disk_manager_->get_file_name(fd_), page_no);
     }
+    std::cout << "DEBUG: fetch_page_handle finished" << std::endl;
     return RmPageHandle(&file_hdr_, page);
 }
 

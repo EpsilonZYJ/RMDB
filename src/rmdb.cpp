@@ -112,11 +112,11 @@ void *client_handler(void *sock_fd) {
     // 记录客户端当前正在执行的事务ID
     txn_id_t txn_id = INVALID_TXN_ID;
 
-    std::string output = "establish client connection, sockfd: " + std::to_string(fd) + "\n";
-    std::cout << output;
+    //std::string output = "establish client connection, sockfd: " + std::to_string(fd) + "\n";
+    //std::cout << output;
 
     while (true) {
-        std::cout << "Waiting for request..." << std::endl;
+        //std::cout << "Waiting for request..." << std::endl;
         memset(data_recv, 0, BUFFER_LENGTH);
 
         i_recvBytes = read(fd, data_recv, BUFFER_LENGTH);
@@ -129,8 +129,8 @@ void *client_handler(void *sock_fd) {
             std::cout << "Client read error!" << std::endl;
             break;
         }
-        
-        printf("i_recvBytes: %d \n ", i_recvBytes);
+
+        //printf("i_recvBytes: %d \n ", i_recvBytes);
 
         if (strcmp(data_recv, "exit") == 0) {
             std::cout << "Client exit." << std::endl;
@@ -138,64 +138,66 @@ void *client_handler(void *sock_fd) {
         }
         if (strcmp(data_recv, "crash") == 0) {
             std::cout << "Server crash" << std::endl;
+            log_manager->flush_log_to_disk();
             exit(1);
         }
-
-        std::cout << "Read from client " << fd << ": " << data_recv << std::endl;
-
         memset(data_send, '\0', BUFFER_LENGTH);
         offset = 0;
 
+        // 开启事务，初始化系统所需的上下文信息（包括事务对象指针、锁管理器指针、日志管理器指针、存放结果的buffer、记录结果长度的变量）
         Context *context = new Context(lock_manager.get(), log_manager.get(), nullptr, data_send, &offset);
         SetTransaction(&txn_id, context);
+        printf("Read from client %d(size %d): %s,txn_id:%d\n", fd, i_recvBytes, data_recv, txn_id);
+        //std::cout << "Read from client " << fd << ": " << data_recv << std::endl;
 
         // 用于判断是否已经调用了yy_delete_buffer来删除buf
         bool finish_analyze = false;
         pthread_mutex_lock(buffer_mutex);
         YY_BUFFER_STATE buf = yy_scan_string(data_recv);
-        if (yyparse() == 0) {
+        bool parse_ok;
+        try {
+            parse_ok = []() { return (yyparse() == 0); }();
+        } catch (RMDBError &e) {
+            std::cerr << e.what() << std::endl;
+            memcpy(data_send, e.what(), e.get_msg_len());
+            data_send[e.get_msg_len()] = '\n';
+            data_send[e.get_msg_len() + 1] = '\0';
+            offset = e.get_msg_len() + 1;
+            pthread_mutex_unlock(buffer_mutex);
+
+            // Write failures into output.txt
+            if (write(fd, data_send, offset + 1) == -1) {
+                break;
+            }
+            continue;
+        }
+        if (parse_ok) {
             if (ast::parse_tree != nullptr) {
                 try {
                     // analyze and rewrite
-                    std::shared_ptr<Query> query = analyze->do_analyze(ast::parse_tree);
+                    std::shared_ptr<Query>
+                        query = analyze->do_analyze(ast::parse_tree);
                     yy_delete_buffer(buf);
                     finish_analyze = true;
                     pthread_mutex_unlock(buffer_mutex);
                     // 优化器
-                    if (query->is_load) {
-                    //std::cout<<"DEBUG: 加载数据" << std::endl;
-                    ql_manager->load_data(query->load_file_name, query->load_table_name, context->txn_);
-                    //std::cout<<"DEBUG: 加载数据完成" << std::endl;
-                    std::string msg = "Load data finished.\n";
-                    memcpy(data_send, msg.c_str(), msg.size());
-                    offset = msg.size();
-                    goto send_result;
-                    //std::cout<<"没有跳过生成计划" << std::endl;
-                    }
                     std::shared_ptr<Plan> plan = optimizer->plan_query(query, context);
                     // portal
                     std::shared_ptr<PortalStmt> portalStmt = portal->start(plan, context);
                     portal->run(portalStmt, ql_manager.get(), &txn_id, context);
-                    std::cout << "Portal run finished." << std::endl;
                     portal->drop();
-                    std::cout << "Portal drop finished." << std::endl;
+                    printf("Transaction %d finished a query\n", txn_id);
                 } catch (TransactionAbortException &e) {
                     // 事务需要回滚，需要把abort信息返回给客户端并写入output.txt文件中
                     std::string str = "abort\n";
-                    if(e.GetAbortReason() == AbortReason::UPGRADE_CONFLICT)
-                        str = "failure\n";
                     memcpy(data_send, str.c_str(), str.length());
                     data_send[str.length()] = '\0';
                     offset = str.length();
 
                     // 回滚事务
                     txn_manager->abort(context->txn_, log_manager.get());
-                    std::cout << e.GetInfo() << std::endl;
-
-                    std::fstream outfile;
-                    outfile.open("output.txt", std::ios::out | std::ios::app);
-                    outfile << str;
-                    outfile.close();
+                    printf("Transaction %d aborted\n", e.get_transaction_id());
+                    //std::cout << e.GetInfo() << std::endl;
                 } catch (RMDBError &e) {
                     // 遇到异常，需要打印failure到output.txt文件中，并发异常信息返回给客户端
                     std::cerr << e.what() << std::endl;
@@ -205,50 +207,35 @@ void *client_handler(void *sock_fd) {
                     data_send[e.get_msg_len() + 1] = '\0';
                     offset = e.get_msg_len() + 1;
 
-                    // 将报错信息写入output.txt
-                    std::fstream outfile;
-                    outfile.open("output.txt",std::ios::out | std::ios::app);
-                    outfile << "failure\n";
-                    outfile.close();
-                } catch(std::exception &e) {
-                    std::cerr << e.what() << std::endl;
                 }
             }
-        }
-        else {
-            std::fstream outfile;
-            outfile.open("output.txt",std::ios::out | std::ios::app);
-            outfile << "failure\n";
-            outfile.close();
         }
         if(finish_analyze == false) {
             yy_delete_buffer(buf);
             pthread_mutex_unlock(buffer_mutex);
         }
-        send_result:
+        // future TODO: 格式化 sql_handler.result, 传给客户端
+        // send result with fixed format, use protobuf in the future
         if (write(fd, data_send, offset + 1) == -1) {
             break;
         }
-        std::cout << "Send to client " << std::endl;
-        // TODO 第二关暂时将这里注释掉
-        // 如果是单条语句，需要按照一个完整的事务来执行，所以执行完当前语句后，自动提交事务
-        if (context->txn_ != nullptr && context->txn_->get_txn_mode() == false)
+        // 如果是单挑语句，需要按照一个完整的事务来执行，所以执行完当前语句后，自动提交事务
+        if(context->txn_->get_txn_mode() == false)
         {
-            std::cout << "开始commit" << std::endl;
             txn_manager->commit(context->txn_, context->log_mgr_);
-            std::cout << "Transaction committed, txn_id: " << txn_id << std::endl;
-            // 重置事务ID，确保下次使用新事务
-            txn_id = INVALID_TXN_ID;
         }
-        std::cout << "Transaction finished, txn_id: " << txn_id << std::endl;
-        delete context; // 确保每次循环结束释放context
-
+        // 释放上下文
+        delete context;
     }
 
+    // Clear
     std::cout << "Terminating current client_connection..." << std::endl;
-    close(fd);
-    pthread_exit(NULL);
+    close(fd);           // close a file descriptor.
+    delete[] data_send;
+    delete (int *)sock_fd;
+    pthread_exit(NULL);  // terminate calling thread!
 }
+
 
 void start_server() {
     // init mutex

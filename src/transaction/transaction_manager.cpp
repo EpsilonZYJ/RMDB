@@ -28,37 +28,17 @@ Transaction * TransactionManager::begin(Transaction* txn, LogManager* log_manage
     // 4. 返回当前事务指针
     // 如果需要支持MVCC请在上述过程中添加代码
     // 判断传入事务参数是否为空指针
-    if (txn != nullptr) {
-        // 如果不为空，开始已有事务
-        std::cout << "[DEBUG] BEGIN: 开始已有事务，txn_id=" << txn->get_transaction_id() << std::endl;
-        // 检查事务是否已经在事务表中
-        std::unique_lock<std::mutex> lock(latch_);
-        auto it = txn_map.find(txn->get_transaction_id());
-        if (it != txn_map.end()) {
-            return txn;
-        } else {
-            txn_map[txn->get_transaction_id()] = txn;
-            return txn;
-        }
-    }
-    txn_id_t txn_id = next_txn_id_++;
-    std::cout << "[DEBUG] BEGIN: 创建新事务，txn_id=" << txn_id << std::endl;
-    Transaction* new_txn = new Transaction(txn_id);
-    new_txn->set_state(TransactionState::GROWING);
-    new_txn->set_txn_mode(true);  // 默认显式事务
+    if (txn == nullptr)
     {
-        std::unique_lock<std::mutex> lock(latch_);
-        txn_map[txn_id] = new_txn;
+        txn = new Transaction(next_txn_id_++);
+        txn->set_state(TransactionState::GROWING);
     }
-    
-    // 写日志
-    if (log_manager != nullptr) {
-            BeginLogRecord log_record(txn_id);
-            log_record.prev_lsn_ = INVALID_LSN;  
-            lsn_t lsn = log_manager->add_log_to_buffer(&log_record); 
-            new_txn->set_prev_lsn(lsn);
-    }
-    return new_txn;
+    std::unique_lock<std::mutex> lock(latch_);
+    txn_map[txn->get_transaction_id()] = txn;
+    lock.unlock();
+    BeginLogRecord log_record(txn->get_transaction_id());
+    log_manager->add_log_to_buffer(&log_record);
+    return txn;
 }
 
 /**
@@ -74,41 +54,25 @@ void TransactionManager::commit(Transaction* txn, LogManager* log_manager) {
     // 4. 把事务日志刷入磁盘中
     // 5. 更新事务状态
     // 如果需要支持MVCC请在上述过程中添加代码  
-    if (txn == nullptr) return;
-    
-    // 写提交日志
-    if (log_manager != nullptr) {
-        CommitLogRecord log_record(txn->get_transaction_id());
-        log_record.prev_lsn_ = txn->get_prev_lsn();
-        lsn_t curr_lsn = log_manager->add_log_to_buffer(&log_record);
-        txn->set_prev_lsn(curr_lsn);
-    }
-    
-    // 清理写集合
-    for(auto it = txn->get_write_set()->begin(); it != txn->get_write_set()->end();) {
-        delete *it;
-        it = txn->get_write_set()->erase(it);
-    }
-    
-    // 释放所有锁
-    for(auto it = txn->get_lock_set()->begin(); it != txn->get_lock_set()->end();) {
-        lock_manager_->unlock(txn, *it);
-        it = txn->get_lock_set()->erase(it);
-    }
-    
-    // 刷新日志
-    if (log_manager != nullptr) {
-        log_manager->flush_log_to_disk();
-    }
-    
-    // 设置状态
-    txn->set_state(TransactionState::COMMITTED);
-    
-    // 从事务表移除
+    auto write_record = txn->get_write_set();
+    // what to do?
+    if (!write_record->empty())
     {
-        std::unique_lock<std::mutex> lock(latch_);
-        txn_map.erase(txn->get_transaction_id());
+        // how to commit writes?
+        // for(size_t i=0;i<write_record.size();i++)
+
+        write_record->clear();
     }
+
+    // Release locks
+
+    for (auto &lock : *txn->get_lock_set())
+    {
+        lock_manager_->unlock(txn, lock);
+    }
+    CommitLogRecord log_record(txn->get_transaction_id());
+    log_manager->add_log_to_buffer(&log_record);
+    txn->set_state(TransactionState::COMMITTED);
 }
 
 /**
