@@ -199,10 +199,10 @@ void TransactionManager::abort(Transaction * txn, LogManager *log_manager) {
             // 处理数据表回滚
             switch (type) {
             case WType::INSERT_TUPLE:
-                fh->delete_record(write_record->GetRid(), nullptr);
+                fh->delete_record(write_record->GetRid(), &context);
                 break;
             case WType::UPDATE_TUPLE:
-                fh->update_record(write_record->GetRid(), write_record->GetRecord().data, nullptr);
+                fh->update_record(write_record->GetRid(), write_record->GetRecord().data, &context);
                 break;
             default:
                 break;

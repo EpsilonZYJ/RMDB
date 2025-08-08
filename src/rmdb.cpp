@@ -223,6 +223,8 @@ void *client_handler(void *sock_fd) {
         if(context->txn_->get_txn_mode() == false)
         {
             txn_manager->commit(context->txn_, context->log_mgr_);
+            context->txn_ = nullptr;  // 重要：清空事务指针
+            txn_id = INVALID_TXN_ID; 
         }
         // 释放上下文
         delete context;

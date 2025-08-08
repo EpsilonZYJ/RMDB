@@ -39,9 +39,16 @@ bool LockManager::check_and_execute_lock(std::shared_ptr<LockRequestQueue> lock_
     if(!lock_compatible(lock_request_queue->group_lock_mode_, lock_mode)) {
         check_wait_die(lock_request_queue, txn);
         lock_request_queue->request_queue_.emplace_back(lock_request);
-        lock_request_queue->cv_.wait(queue_lock, [&](){
-            return lock_request->granted_;
-        });
+        
+        // 添加5秒超时机制
+        auto now = std::chrono::system_clock::now();
+        if(!lock_request_queue->cv_.wait_until(queue_lock, 
+                                            now + std::chrono::seconds(5), 
+                                            [&](){ return lock_request->granted_; })) {
+            // 从队列中移除请求
+            lock_request_queue->request_queue_.remove(lock_request);
+            throw TransactionAbortException(txn->get_transaction_id(), AbortReason::DEADLOCK_PREVENTION);
+        }
     }
     else
     {
@@ -285,73 +292,36 @@ bool LockManager::unlock(Transaction* txn, LockDataId lock_data_id) {
         }
     }
     
-    // 重新计算锁模式和尝试授予锁
-    if(request_queue.empty()) {
-        lock_request_queue->group_lock_mode_ = GroupLockMode::NON_LOCK;
-    }
-    else {
-        // 先找到所有已授予的锁，计算当前锁模式
-        GroupLockMode current_mode = GroupLockMode::NON_LOCK;
-        bool has_granted = false;
-        
-        for(auto& req : request_queue) {
-            if(req->granted_) {
-                has_granted = true;
-                GroupLockMode mode = get_group_lock_mode(req->lock_mode_);
-                if(mode > current_mode) current_mode = mode;
-            }
+    // 重新计算当前锁模式
+    GroupLockMode new_mode = GroupLockMode::NON_LOCK;
+    for(auto& req : request_queue) {
+        if(req->granted_) {
+            GroupLockMode mode = get_group_lock_mode(req->lock_mode_);
+            if(mode > new_mode) new_mode = mode;
         }
-        
-        lock_request_queue->group_lock_mode_ = current_mode;
-        
-        // 如果没有已授予的锁，尝试授予锁给等待的请求
-        if(!has_granted) {
-            // 处理升级请求
-            if(!lock_request_queue->upgrade_queue_.empty()) {
-                auto& upgrade_lock = lock_request_queue->upgrade_queue_.front();
-                upgrade_lock->granted_ = true;
-                lock_request_queue->group_lock_mode_ = get_group_lock_mode(upgrade_lock->lock_mode_);
-            }
-            // 处理普通请求
-            else {
-                for(auto& req : request_queue) {
-                    GroupLockMode req_mode = get_group_lock_mode(req->lock_mode_);
-                    if(lock_compatible(lock_request_queue->group_lock_mode_, req_mode)) {
-                        req->granted_ = true;
-                        if(req_mode > lock_request_queue->group_lock_mode_)
-                            lock_request_queue->group_lock_mode_ = req_mode;
-                    }
+    }
+    lock_request_queue->group_lock_mode_ = new_mode;
+    
+    // 尝试授予等待的锁
+    bool granted_new = false;
+    for(auto& req : request_queue) {
+        if(!req->granted_) {
+            GroupLockMode req_mode = get_group_lock_mode(req->lock_mode_);
+            if(lock_compatible(new_mode, req_mode)) {
+                req->granted_ = true;
+                granted_new = true;
+                
+                // 更新组锁模式
+                if(req_mode > new_mode) {
+                    new_mode = req_mode;
+                    lock_request_queue->group_lock_mode_ = new_mode;
                 }
             }
         }
-        // 否则，检查是否可以进行锁升级
-        else if(!lock_request_queue->upgrade_queue_.empty()) {
-            // 检查是否只有一个事务持有锁
-            bool single_txn = true;
-            txn_id_t holder_id = 0;
-            
-            for(auto& req : request_queue) {
-                if(req->granted_) {
-                    if(holder_id == 0) {
-                        holder_id = req->txn_id_;
-                    } else if(holder_id != req->txn_id_) {
-                        single_txn = false;
-                        break;
-                    }
-                }
-            }
-            
-            // 如果只有升级事务持有锁，允许升级
-            if(single_txn && holder_id == lock_request_queue->upgrade_queue_.front()->txn_id_) {
-                auto& upgrade_lock = lock_request_queue->upgrade_queue_.front();
-                upgrade_lock->granted_ = true;
-                lock_request_queue->group_lock_mode_ = get_group_lock_mode(upgrade_lock->lock_mode_);
-            }
-        }
-        
-        // 无论如何都通知所有等待的线程
-        lock_request_queue->cv_.notify_all();
     }
+    
+    // 无论是否授予新锁，都通知所有等待线程重新检查
+    lock_request_queue->cv_.notify_all();
     
     return true;
 }
