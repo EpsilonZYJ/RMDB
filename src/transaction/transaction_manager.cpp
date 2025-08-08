@@ -124,7 +124,7 @@ void TransactionManager::abort(Transaction * txn, LogManager *log_manager) {
     // 4. 把事务日志刷入磁盘中
     // 5. 更新事务状态
     if (txn == nullptr) return;
-    
+    std::cout << "1" << std::endl;
     // 写回滚日志
     if (log_manager != nullptr) {
         AbortLogRecord log_record(txn->get_transaction_id());
@@ -132,7 +132,7 @@ void TransactionManager::abort(Transaction * txn, LogManager *log_manager) {
         lsn_t curr_lsn = log_manager->add_log_to_buffer(&log_record);
         txn->set_prev_lsn(curr_lsn);
     }
-    
+    std::cout << "2" << std::endl;
     // 回滚所有写操作 - 使用LIFO顺序
     Context context(lock_manager_, log_manager, txn);
     auto write_set = txn->get_write_set();
@@ -153,9 +153,8 @@ void TransactionManager::abort(Transaction * txn, LogManager *log_manager) {
             
             // 先处理DELETE_TUPLE的数据恢复
             if (type == WType::DELETE_TUPLE) {
-                fh->insert_record(write_record->GetRid(), write_record->GetRecord().data);
-            }
-            
+                 fh->insert_record(write_record->GetRid(), write_record->GetRecord().data, &context);
+            }  
             // 处理索引回滚
             for (auto &index : tab.indexes) {
                     std::string index_name = sm_manager_->get_ix_manager()->get_index_name(tab_name, index.cols);
@@ -235,10 +234,10 @@ void TransactionManager::abort(Transaction * txn, LogManager *log_manager) {
             // 处理数据表回滚
             switch (type) {
             case WType::INSERT_TUPLE:
-                fh->delete_record(write_record->GetRid(), nullptr);
+                fh->delete_record(write_record->GetRid(), &context);
                 break;
             case WType::UPDATE_TUPLE:
-                fh->update_record(write_record->GetRid(), write_record->GetRecord().data, nullptr);
+                fh->update_record(write_record->GetRid(), write_record->GetRecord().data,&context);
                 break;
             default:
                 break;
@@ -246,18 +245,18 @@ void TransactionManager::abort(Transaction * txn, LogManager *log_manager) {
         
         delete write_record;
     }
-    
+    std::cout << "3" << std::endl;
     // 释放所有锁
     for(auto it = txn->get_lock_set()->begin(); it != txn->get_lock_set()->end();) {
         lock_manager_->unlock(txn, *it);
         it = txn->get_lock_set()->erase(it);
     }
-    
+    std::cout << "4" << std::endl;
     // 刷新日志
     if (log_manager != nullptr) {
         log_manager->flush_log_to_disk();
     }
-    
+    std::cout << "5" << std::endl;
     // 更新事务状态
     txn->set_state(TransactionState::ABORTED);
     
