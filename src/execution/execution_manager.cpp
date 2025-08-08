@@ -103,35 +103,36 @@ void QlManager::run_cmd_utility(std::shared_ptr<Plan> plan, txn_id_t *txn_id, Co
             }
             case T_Transaction_begin:
             {
+                // 显示开启一个事务
+                if (context->txn_ != nullptr) {
                     context->txn_->set_txn_mode(true);
                     *txn_id = context->txn_->get_transaction_id();
+                    //std::cout << "设置事务为显式模式: ID=" << *txn_id << std::endl;
+                }
                 break;
             }  
             case T_Transaction_commit:
             {
-                context->txn_ = txn_mgr_->get_transaction(*txn_id);
-                txn_mgr_->commit(context->txn_, context->log_mgr_);
-                //记录日志
-                CommitLogRecord log_record(context->txn_->get_transaction_id());
-                context->log_mgr_->add_log_to_buffer(&log_record);
+                if (context->txn_ != nullptr) {
+                    txn_mgr_->commit(context->txn_, context->log_mgr_);
+                    *txn_id = INVALID_TXN_ID;
+                }
                 break;
             }    
             case T_Transaction_rollback:
             {
-                context->txn_ = txn_mgr_->get_transaction(*txn_id);
-                txn_mgr_->abort(context->txn_, context->log_mgr_);
-                //记录日志
-                AbortLogRecord log_record(context->txn_->get_transaction_id());
-                context->log_mgr_->add_log_to_buffer(&log_record);
+                if (context->txn_ != nullptr) {
+                    txn_mgr_->abort(context->txn_, context->log_mgr_);
+                    *txn_id = INVALID_TXN_ID;
+                }
                 break;
             }    
             case T_Transaction_abort:
             {
-                context->txn_ = txn_mgr_->get_transaction(*txn_id);
-                txn_mgr_->abort(context->txn_, context->log_mgr_);
-                //记录日志
-                AbortLogRecord log_record(context->txn_->get_transaction_id());
-                context->log_mgr_->add_log_to_buffer(&log_record);
+                if (context->txn_ != nullptr) {
+                    txn_mgr_->abort(context->txn_, context->log_mgr_);
+                    *txn_id = INVALID_TXN_ID;  // 重置事务ID
+                }
                 break;
             }     
             case T_ShowIndex:
@@ -186,20 +187,18 @@ void QlManager::select_from(std::unique_ptr<AbstractExecutor> executorTreeRoot, 
         }
         return;
     }
-    std::cout<< "DEBUG: select_from 开始" << std::endl;
     std::vector<std::string> captions;
     captions.reserve(sel_cols.size());
     for (auto &sel_col : sel_cols) {
         //std::cout << "DEBUG: select_from sel_col.col_name: " << sel_col.col_name << std::endl;
         captions.push_back(sel_col.col_name);
     }
-    std::cout << "DEBUG: select_from captions.size(): " << captions.size() << std::endl;
+
     // Print header into buffer
     RecordPrinter rec_printer(sel_cols.size());
     rec_printer.print_separator(context);
     rec_printer.print_record(captions, context);
     rec_printer.print_separator(context);
-    std::cout << "DEBUG: select_from header printed" << std::endl;
     // print header into file
     std::fstream outfile;
     outfile.open("output.txt", std::ios::out | std::ios::app);
@@ -214,7 +213,6 @@ void QlManager::select_from(std::unique_ptr<AbstractExecutor> executorTreeRoot, 
     // 执行query_plan
     for (executorTreeRoot->beginTuple(); !executorTreeRoot->is_end(); executorTreeRoot->nextTuple()) {
         auto Tuple = executorTreeRoot->Next();
-        std::cout << "DEBUG: select_from 处理记录" << std::endl;
         std::vector<std::string> columns;
         for (auto &col : executorTreeRoot->cols()) {
             std::string col_str;
@@ -235,7 +233,6 @@ void QlManager::select_from(std::unique_ptr<AbstractExecutor> executorTreeRoot, 
             }
             columns.push_back(col_str);
         }
-        std::cout << "DEBUG: select_from 处理记录完成，列数: " << columns.size() << std::endl;
         // print record into buffer
         rec_printer.print_record(columns, context);
         // print record into file
