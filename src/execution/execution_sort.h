@@ -19,7 +19,9 @@ private:
     size_t tuple_len_;                        // 元组长度
     bool is_desc_;                            // 是否降序
     bool is_end_{false};                      // 是否结束
-    
+    std::vector<std::pair<TabCol, bool>> order_by_cols_; // 列和排序方向
+    std::vector<ColMeta> sort_cols_meta_; // 存储每列的元数据，用于排序
+
 // ===== 记录管理 =====
     std::unique_ptr<RmRecord> current_tuple_;          // 当前返回的元组
     std::deque<std::unique_ptr<RmRecord>> records_;    // 内存中的记录
@@ -59,10 +61,24 @@ private:
     // 记录比较函数（用于排序）
     auto getRecordComparator() const {
         return [this](const std::unique_ptr<RmRecord>& lhs, const std::unique_ptr<RmRecord>& rhs) {
-            const char* lhs_field = lhs->data + sort_col_.offset;
-            const char* rhs_field = rhs->data + sort_col_.offset;
-            int cmp_result = compare(lhs_field, rhs_field, sort_col_.len, sort_col_.type); // TODO 排序升序降序好像有点问题
-            return is_desc_ ? cmp_result > 0 : cmp_result < 0;
+            // 依次比较每一个排序列
+            for (size_t i = 0; i < sort_cols_meta_.size(); i++) {
+                const auto& col_meta = sort_cols_meta_[i];
+                bool is_desc = order_by_cols_[i].second;
+                
+                const char* lhs_field = lhs->data + col_meta.offset;
+                const char* rhs_field = rhs->data + col_meta.offset;
+                
+                int cmp_result = compare(lhs_field, rhs_field, col_meta.len, col_meta.type);
+                
+                // 如果不相等，则返回比较结果
+                if (cmp_result != 0) {
+                    return is_desc ? cmp_result > 0 : cmp_result < 0;
+                }
+                // 如果相等，则继续比较下一列
+            }
+            // 所有列都相等时返回false
+            return false;
         };
     }
     
@@ -240,18 +256,27 @@ private:
 
 public:
     // 构造函数
-    SortExecutor(std::unique_ptr<AbstractExecutor> prev, const TabCol& sort_col, bool is_desc) 
+     SortExecutor(std::unique_ptr<AbstractExecutor> prev, 
+                const std::vector<std::pair<TabCol, bool>>& order_by_cols,
+                Context* context) 
         : prev_(std::move(prev)), 
-          is_desc_(is_desc),
+          order_by_cols_(order_by_cols),
           tuple_len_(prev_->tupleLen()),
           instance_id_(generateID()) {
         
-        if(prev_->getType() == "AggregateExecutor") {
-            prev_->beginTuple(); // 确保AggregateExecutor开始执行,因为它有可能修改cols_
+        // 初始化每个排序列的元数据
+        for (const auto& [tab_col, is_desc] : order_by_cols_) {
+            auto col_iter = get_col(prev_->cols(), tab_col);
+            if (col_iter != prev_->cols().end()) {
+                sort_cols_meta_.push_back(*col_iter);
+            } else {
+                throw InternalError("Cannot find column metadata for sorting");
+            }
         }
-
-        // 获取排序列的元数据
-        sort_col_ = *get_col(prev_->cols(), sort_col);
+        
+        if (prev_->getType() == "AggregateExecutor") {
+            prev_->beginTuple(); 
+        }
     }
     
     // 析构函数，确保资源清理

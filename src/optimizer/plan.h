@@ -133,21 +133,47 @@ class ProjectionPlan : public Plan
         bool is_select_star_ = false;//是否select *
 };
 
-class SortPlan : public Plan
-{
-    public:
-        SortPlan(PlanTag tag, std::shared_ptr<Plan> subplan, TabCol sel_col, bool is_desc)
-        {
-            Plan::tag = tag;
-            subplan_ = std::move(subplan);
-            sel_col_ = sel_col;
-            is_desc_ = is_desc;
+class SortPlan : public Plan {
+private:
+    std::shared_ptr<Plan> subplan_;
+    TabCol order_by_;
+    bool is_desc_;
+    std::vector<std::pair<TabCol, bool>> order_by_cols_; 
+    
+public:
+    // 单列排序构造函数
+    SortPlan(PlanTag type, std::shared_ptr<Plan> subplan, TabCol order_by, bool is_desc)
+        : subplan_(std::move(subplan)), order_by_(order_by), is_desc_(is_desc) {
+        // 在构造函数体内设置tag，而不是在初始化列表中
+        this->tag = type;
+        // 将单列转换为多列表示
+        order_by_cols_.clear();
+        order_by_cols_.push_back(std::make_pair(order_by, is_desc));
+    }
+    
+    // 多列排序构造函数
+    SortPlan(PlanTag type, std::shared_ptr<Plan> subplan, 
+             const std::vector<std::pair<TabCol, bool>>& order_by_cols)
+        : subplan_(std::move(subplan)), order_by_cols_(order_by_cols) {
+        // 在构造函数体内设置tag
+        this->tag = type;
+        // 兼容旧代码，保存第一列信息
+        if (!order_by_cols.empty()) {
+            order_by_ = order_by_cols[0].first;
+            is_desc_ = order_by_cols[0].second;
         }
-        ~SortPlan(){}
-        std::shared_ptr<Plan> subplan_;
-        TabCol sel_col_;
-        bool is_desc_;
-        
+    }
+    
+    // 原有访问器方法
+    std::shared_ptr<Plan> subplan() const { return subplan_; }
+    TabCol order_by() const { return order_by_; }
+    bool is_desc() const { return is_desc_; }
+    
+    // 多列排序访问器
+    const std::vector<std::pair<TabCol, bool>>& order_by_cols() const { return order_by_cols_; }
+    
+    // 不需要添加get_executor方法，如果你已经实现了
+    ~SortPlan(){}
 };
 
 class AggregatePlan : public Plan {

@@ -56,6 +56,8 @@ COUNT MAX MIN SUM AVG AS GROUP HAVING LIMIT STATIC_CHECKPOINT LOAD
 %type <sv_cond> condition
 %type <sv_conds> whereClause optWhereClause
 %type <sv_orderby>  order_clause opt_order_clause
+%type <sv_orderby> order_items
+%type <sv_order_item> order_item
 %type <sv_orderby_dir> opt_asc_desc
 %type <sv_setKnobType> set_knob_type
 %type <sv_col_extra_info> select_item
@@ -513,11 +515,31 @@ tableList:
     ;
 
 opt_order_clause:
-    ORDER BY order_clause      
+    ORDER BY order_items      
     { 
         $$ = $3; 
     }
     |   /* epsilon */ { /* ignore*/ }
+    ;
+
+order_items:
+    order_item
+    {
+        $$ = std::make_shared<OrderBy>();
+        $$->order_items.push_back($1);
+    }
+    | order_items ',' order_item
+    {
+        $1->order_items.push_back($3);
+        $$ = $1;
+    }
+    ;
+
+order_item:
+    col opt_asc_desc 
+    { 
+        $$ = std::make_shared<OrderByItem>($1, $2);
+    }
     ;
 
 order_clause:

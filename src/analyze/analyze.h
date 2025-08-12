@@ -45,7 +45,8 @@ class Query{
     // having 条件
     std::vector<Condition> havings;
     // order by
-    TabCol order_bys;
+    //TabCol order_bys;
+    std::vector<std::pair<TabCol, bool>> order_bys;
     // limit n
     int limit = -1; // -1表示没有限制
     std::map<std::string, std::set<std::string>> table_filter_cols; // 仅用于过滤的列

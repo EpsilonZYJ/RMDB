@@ -247,8 +247,9 @@ class Portal
                 );
             }
         } else if(auto x = std::dynamic_pointer_cast<SortPlan>(plan)) {
-            return std::make_unique<SortExecutor>(convert_plan_executor(x->subplan_, context), 
-                                            x->sel_col_, x->is_desc_);
+            return std::make_unique<SortExecutor>(convert_plan_executor(x->subplan(), context),
+                                          x->order_by_cols(), 
+                                          context);
         } else if (auto x = std::dynamic_pointer_cast<AggregatePlan>(plan)) {
             return std::make_unique<AggregateExecutor>(
                 convert_plan_executor(x->subplan_, context),

@@ -222,11 +222,14 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse)
         }
 
         if(x->has_sort) {
-            TabCol tab_col = TabCol{std::move(x->order->cols->tab_name), 
-                                    std::move(x->order->cols->col_name)};
-            // 使用带别名映射的check_column版本
-            tab_col = check_column(all_cols, tab_col, query->tab_alias_map);
-            query->order_bys = std::move(tab_col);
+            for (const auto& item : x->order->order_items) {
+                TabCol tab_col = TabCol{item->col->tab_name, 
+                                    item->col->col_name};
+                // 进行表名和列名验证
+                tab_col = check_column(all_cols, tab_col, query->tab_alias_map);
+                // 将列和排序方向作为一对添加到order_bys中
+                query->order_bys.push_back(std::make_pair(tab_col, item->dir == ast::OrderBy_DESC));
+            }
         }
 
         // 处理limit子句

@@ -109,23 +109,16 @@ bool LockManager::lock_exclusive_on_record(Transaction* txn, const Rid& rid, int
  */
 bool LockManager::lock_shared_on_table(Transaction* txn, int tab_fd) {
     //std::cout << "txn " << txn->get_transaction_id() << " lock_shared_on_table " << tab_fd << std::endl;
-    std::cout<<"1"<<std::endl;
     if(txn->get_lock_set()->find(LockDataId(tab_fd, LockDataType::TABLE)) != txn->get_lock_set()->end())
         {
-            std::cout<<"2"<<std::endl;
             return upgrade_lock_on_table(txn, tab_fd, LockMode::SHARED);
         }
-    std::cout<<"3"<<std::endl;
     const LockDataId lock_data_id = LockDataId(tab_fd, LockDataType::TABLE);
-    std::cout<<"4"<<std::endl;
     std::shared_ptr<LockRequestQueue> lock_request_queue = get_lock_request_queue(lock_data_id);
-    std::cout<<"5"<<std::endl;
     std::shared_ptr<LockRequest> lock_request = std::make_shared<LockRequest>(txn->get_transaction_id(), LockMode::SHARED);
     // 检查是否有事务已经持有排他锁
     // 如果有事务持有排他锁，加入等待队列，等待条件变量唤醒
-    std::cout<<"6"<<std::endl;
     check_and_execute_lock(lock_request_queue, lock_request, txn, GroupLockMode::S);
-    std::cout<<"7"<<std::endl;
     txn->get_lock_set()->insert(lock_data_id);
     return true;
 }

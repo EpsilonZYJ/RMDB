@@ -238,12 +238,26 @@ struct AggExpr : public TreeNode {
             col(std::move(col_)), type(type_){}
 };
 
+struct OrderByItem : public TreeNode {
+    std::shared_ptr<Col> col;
+    OrderByDir dir;
+    
+    OrderByItem(std::shared_ptr<Col> col_, OrderByDir dir_) : 
+        col(std::move(col_)), dir(dir_) {}
+};
+
+// 修改现有的OrderBy结构体
 struct OrderBy : public TreeNode
 {
-    std::shared_ptr<Col> cols;
-    OrderByDir orderby_dir;
-    OrderBy( std::shared_ptr<Col> cols_, OrderByDir orderby_dir_) :
-       cols(std::move(cols_)), orderby_dir(std::move(orderby_dir_)) {}
+    std::vector<std::shared_ptr<OrderByItem>> order_items;
+    
+    OrderBy() {} 
+    
+    // 
+    OrderBy(std::shared_ptr<Col> cols_, OrderByDir orderby_dir_) {
+        auto item = std::make_shared<OrderByItem>(std::move(cols_), orderby_dir_);
+        order_items.push_back(item);
+    }
 };
 
 struct InsertStmt : public TreeNode {
@@ -399,6 +413,7 @@ struct SemValue {
     std::shared_ptr<LimitExpr> sv_limit;
 
     SetKnobType sv_setKnobType;
+    std::shared_ptr<OrderByItem> sv_order_item;
 };
 
 extern std::shared_ptr<ast::TreeNode> parse_tree;
