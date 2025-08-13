@@ -162,6 +162,8 @@ class Portal
         } else {
             std::cout << "DEBUG: Portal::run - 无活跃事务" << std::endl;
         }
+        std::cout<< "DEBUG: Portal::run - 开始执行" << std::endl;
+        std::cout<<"DEBUG: Portal::run - portal->tag: " << portal->tag << std::endl;
         switch(portal->tag) {
             case PORTAL_ONE_SELECT:
             {
@@ -174,6 +176,7 @@ class Portal
 
             case PORTAL_DML_WITHOUT_SELECT:
             {
+                std::cout<<"DEBUG: Portal::run - 执行DML语句"<<std::endl;
                 ql->run_dml(std::move(portal->root));
                 break;
             }

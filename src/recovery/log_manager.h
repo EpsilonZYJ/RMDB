@@ -593,6 +593,11 @@ public:
             return true;
         return false;
     }
+    
+    void append(LogRecord* log_record) {
+        log_record->serialize(buffer_ + offset_);
+        offset_ += log_record->log_tot_len_;
+    }
 
     char buffer_[LOG_BUFFER_SIZE+1];
     int offset_;    // 写入log的offset

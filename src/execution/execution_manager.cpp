@@ -104,35 +104,34 @@ void QlManager::run_cmd_utility(std::shared_ptr<Plan> plan, txn_id_t *txn_id, Co
             case T_Transaction_begin:
             {
                 // 显示开启一个事务
-                if (context->txn_ != nullptr) {
-                    context->txn_->set_txn_mode(true);
-                    *txn_id = context->txn_->get_transaction_id();
-                    //std::cout << "设置事务为显式模式: ID=" << *txn_id << std::endl;
-                }
+                context->txn_->set_txn_mode(true);
                 break;
             }  
             case T_Transaction_commit:
             {
-                if (context->txn_ != nullptr) {
-                    txn_mgr_->commit(context->txn_, context->log_mgr_);
-                    *txn_id = INVALID_TXN_ID;
-                }
+                context->txn_ = txn_mgr_->get_transaction(*txn_id);
+                txn_mgr_->commit(context->txn_, context->log_mgr_);
+                //记录日志
+                CommitLogRecord log_record(context->txn_->get_transaction_id());
+                context->log_mgr_->add_log_to_buffer(&log_record);
                 break;
             }    
             case T_Transaction_rollback:
             {
-                if (context->txn_ != nullptr) {
-                    txn_mgr_->abort(context->txn_, context->log_mgr_);
-                    *txn_id = INVALID_TXN_ID;
-                }
+                context->txn_ = txn_mgr_->get_transaction(*txn_id);
+                txn_mgr_->abort(context->txn_, context->log_mgr_);
+                //记录日志
+                AbortLogRecord log_record(context->txn_->get_transaction_id());
+                context->log_mgr_->add_log_to_buffer(&log_record);
                 break;
             }    
             case T_Transaction_abort:
             {
-                if (context->txn_ != nullptr) {
-                    txn_mgr_->abort(context->txn_, context->log_mgr_);
-                    *txn_id = INVALID_TXN_ID;  // 重置事务ID
-                }
+                context->txn_ = txn_mgr_->get_transaction(*txn_id);
+                txn_mgr_->abort(context->txn_, context->log_mgr_);
+                //记录日志
+                AbortLogRecord log_record(context->txn_->get_transaction_id());
+                context->log_mgr_->add_log_to_buffer(&log_record);
                 break;
             }     
             case T_ShowIndex:
@@ -253,27 +252,8 @@ void QlManager::select_from(std::unique_ptr<AbstractExecutor> executorTreeRoot, 
 
 // 执行DML语句
 void QlManager::run_dml(std::unique_ptr<AbstractExecutor> exec){
+    std::cout<<"DEBUG: QlManager::run_dml 开始" << std::endl;
     exec->Next();
-    
-    // 添加自动提交逻辑
-    if (exec->context_ && exec->context_->txn_ && !exec->context_->txn_->get_txn_mode()) {
-        // 只有在非显式事务模式下才自动提交
-        //std::cout << "自动提交隐式事务: " << exec->context_->txn_->get_transaction_id() << std::endl;
-        
-        // 使用事务管理器正确提交，而不是手动创建日志
-        try {
-            txn_mgr_->commit(exec->context_->txn_, exec->context_->log_mgr_);
-            //std::cout << "隐式事务提交成功" << std::endl;
-        } catch (const std::exception& e) {
-            std::cerr << "隐式事务提交失败: " << e.what() << std::endl;
-            // 提交失败时尝试回滚
-            try {
-                txn_mgr_->abort(exec->context_->txn_, exec->context_->log_mgr_);
-            } catch (...) {
-                std::cerr << "回滚也失败" << std::endl;
-            }
-        }
-    }
 }
 
 void QlManager::load_data(const std::string& file_name, const std::string& table_name, Transaction* txn) {

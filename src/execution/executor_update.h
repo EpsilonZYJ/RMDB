@@ -40,6 +40,7 @@ class UpdateExecutor : public AbstractExecutor {
 
     // 由于是update，Next()只调用一次（同insert，delete）
     std::unique_ptr<RmRecord> Next() override {
+    context_->lock_mgr_->lock_exclusive_on_table(context_->txn_, fh_->GetFd());
     for (auto& rid : rids_) {
         RmRecord old_record = *fh_->get_record(rid, context_);
         if (!check_condition(old_record, tab_, conds_)) continue;

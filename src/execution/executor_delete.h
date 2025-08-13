@@ -39,69 +39,55 @@ class DeleteExecutor : public AbstractExecutor {
 
     std::unique_ptr<RmRecord> Next() override {
         int deleted_count = 0;
+        context_->lock_mgr_->lock_exclusive_on_table(context_->txn_, fh_->GetFd());
+        
         for(auto& rid: rids_ ) {
             // 读取当前记录
             RmRecord old_record = *fh_->get_record(rid, context_);
             
-            // 检查条件是否满足，若不满足则跳过，不进行更新
-            // 这里的条件是指update语句中的where条件
+            // 检查条件是否满足
             if(!check_condition(old_record, tab_, conds_)) continue;
-            
-            // 在删除前，添加写记录到事务写集合
-            if (context_ && context_->txn_) {
-                // 创建DELETE类型的写记录，保存原始记录供回滚使用
-                // 创建一个old_record的副本
-                RmRecord record_copy(old_record.size);
-                memcpy(record_copy.data, old_record.data, old_record.size);
-                
-                WriteRecord* write_record = new WriteRecord(WType::DELETE_TUPLE, tab_name_, rid, record_copy);
-                context_->txn_->append_write_record(write_record);
-                
-                //std::cout << "DEBUG:已将删除写记录添加到事务 " << context_->txn_->get_transaction_id()  << ", 写集合大小: " << context_->txn_->get_write_set()->size() << std::endl;
-            } else {
-                std::cout << "DEBUG:删除操作没有关联有效事务!" << std::endl;
-            }
-
-            if (context_ && context_->txn_ && context_->log_mgr_) {
-                // 创建DELETE日志记录
-                DeleteLogRecord* log_record = new DeleteLogRecord(
-                    context_->txn_->get_transaction_id(),
-                    old_record,  // 要删除的记录
-                    rid,
-                    tab_name_
-                );
-                
-                log_record->prev_lsn_ = context_->txn_->get_prev_lsn();
-                // 写日志，获得当前日志lsn
-                lsn_t curr_lsn = context_->log_mgr_->add_log_to_buffer(log_record);
-                // 写日志后，更新事务的prev_lsn
-                context_->txn_->set_prev_lsn(curr_lsn);
-                context_->log_mgr_->flush_log_to_disk();
-                // 释放日志记录内存
-                delete log_record;  
-                //std::cout << "DEBUG: 已生成DELETE日志记录，表名: " << tab_name_ << ", RID: (" << rid.page_no << "," << rid.slot_no << ")" << std::endl;
-            }
-            
-            bool debug = fh_->is_record(rid);
-            fh_->delete_record(rid, context_); // 更新数据文件中的记录
-
-            // 删除计数
-            deleted_count++;
             for (size_t i = 0; i < tab_.indexes.size(); i++) {
-                auto& index = tab_.indexes[i]; // 获取当前遍历到的索引 类型为IndexMeta
-                auto ih = sm_manager_->ihs_.at(sm_manager_->get_ix_manager()->get_index_name(tab_name_, index.cols)).get(); // 获取对应的B+树，类型为IxNodeHandl
-                // 下面构造用于B+树索引的key
-                char *key = new char[index.col_tot_len];
+                auto& index = tab_.indexes[i];
+                auto ih = sm_manager_->ihs_.at(sm_manager_->get_ix_manager()->get_index_name(tab_name_, index.cols)).get();
+                char key[index.col_tot_len]; // 替代动态分配
                 int offset = 0;
-                for(size_t j = 0; j < index.col_num; ++j) { // col_num表示索引字段数量
+                for(size_t j = 0; j < index.col_num; ++j) {
                     memcpy(key + offset, old_record.data + index.cols[j].offset, index.cols[j].len);
                     offset += index.cols[j].len;
                 }
-                // 删除B+树索引中的记录
+                
+                // 先删索引
                 ih->delete_entry(key, context_->txn_);
-                delete []key;
+            }
+            
+            // 再删记录
+            fh_->delete_record(rid, context_);
+            deleted_count++;
+            
+            // 最后处理日志和写集
+            if (context_ && context_->txn_) {
+                // 添加写集记录
+                RmRecord record_copy(old_record.size);
+                memcpy(record_copy.data, old_record.data, old_record.size);
+                WriteRecord* write_record = new WriteRecord(WType::DELETE_TUPLE, tab_name_, rid, record_copy);
+                context_->txn_->append_write_record(write_record);
+                
+                // 添加日志
+                if (context_->log_mgr_) {
+                    DeleteLogRecord log_record(
+                        context_->txn_->get_transaction_id(),
+                        old_record,
+                        rid,
+                        tab_name_
+                    );
+                    log_record.prev_lsn_ = context_->txn_->get_prev_lsn();
+                    lsn_t curr_lsn = context_->log_mgr_->add_log_to_buffer(&log_record);
+                    context_->txn_->set_prev_lsn(curr_lsn);
+                }
             }
         }
+        
         // 更新表的元组计数
         if (deleted_count > 0) {
             TabMeta &tab = sm_manager_->db_.get_table(tab_name_);
@@ -109,6 +95,7 @@ class DeleteExecutor : public AbstractExecutor {
                 tab.decrement_tuple_count();
             }
         }
+        
         return nullptr;
     }
 

@@ -72,16 +72,6 @@ public:
     LockManager* get_lock_manager() { return lock_manager_; }
     
     void set_next_txn_id(txn_id_t txn_id) { next_txn_id_ = txn_id; }
-
-    void release_txn(Transaction* txn) {
-        if(txn == nullptr) return;
-        std::unique_lock<std::mutex> lock(latch_);
-        if(TransactionManager::txn_map.find(txn->get_transaction_id()) == TransactionManager::txn_map.end())
-            return;
-        TransactionManager::txn_map.erase(txn->get_transaction_id());
-        delete txn;
-    }
-
     /**
      * @description: 获取事务ID为txn_id的事务对象
      * @return {Transaction*} 事务对象的指针
@@ -89,16 +79,14 @@ public:
      */    
     Transaction* get_transaction(txn_id_t txn_id) {
         if(txn_id == INVALID_TXN_ID) return nullptr;
+        
         std::unique_lock<std::mutex> lock(latch_);
-        auto it = TransactionManager::txn_map.find(txn_id);
-        if(it == TransactionManager::txn_map.end()) {
-            return nullptr;
-        }
-        auto *res = it->second;
+        assert(TransactionManager::txn_map.find(txn_id) != TransactionManager::txn_map.end());
+        auto res = TransactionManager::txn_map[txn_id];
         lock.unlock();
-        if(res != nullptr && res->get_thread_id() != std::this_thread::get_id()) {
-            return nullptr; 
-        }
+        assert(res != nullptr);
+        assert(res->get_thread_id() == std::this_thread::get_id());
+
         return res;
     }
     

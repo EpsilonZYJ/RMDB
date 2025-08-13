@@ -41,8 +41,8 @@ auto txn_manager = std::make_unique<TransactionManager>(lock_manager.get(), sm_m
 auto planner = std::make_unique<Planner>(sm_manager.get());
 auto optimizer = std::make_unique<Optimizer>(sm_manager.get(), planner.get());
 auto log_manager = std::make_unique<LogManager>(disk_manager.get());
-auto ql_manager = std::make_unique<QlManager>(lock_manager.get(),sm_manager.get(), txn_manager.get(), 
-    planner.get(), log_manager.get(), buffer_pool_manager.get());
+auto ql_manager = std::make_unique<QlManager>(sm_manager.get(), txn_manager.get(), 
+    planner.get());
 auto recovery = std::make_unique<RecoveryManager>(disk_manager.get(), buffer_pool_manager.get(), sm_manager.get(),log_manager.get(), txn_manager.get());
 auto portal = std::make_unique<Portal>(sm_manager.get());
 auto analyze = std::make_unique<Analyze>(sm_manager.get());
@@ -62,7 +62,6 @@ void SetTransaction(txn_id_t *txn_id, Context *context) {
     context->txn_ = txn_manager->get_transaction(*txn_id);
     if(context->txn_ == nullptr || context->txn_->get_state() == TransactionState::COMMITTED ||
         context->txn_->get_state() == TransactionState::ABORTED) {
-        //txn_manager->release_txn(context->txn_);
         context->txn_ = txn_manager->begin(nullptr, context->log_mgr_);
         *txn_id = context->txn_->get_transaction_id();
         context->txn_->set_txn_mode(false);
@@ -236,10 +235,6 @@ void *client_handler(void *sock_fd) {
         {
             std::cout << "开始commit" << std::endl;
             txn_manager->commit(context->txn_, context->log_mgr_);
-            std::cout << "Transaction committed, txn_id: " << txn_id << std::endl;
-            context->txn_ = nullptr;
-            // 重置事务ID，确保下次使用新事务
-            txn_id = INVALID_TXN_ID;
         }
         std::cout << "Transaction finished, txn_id: " << txn_id << std::endl;
         delete context; // 确保每次循环结束释放context
