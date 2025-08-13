@@ -77,7 +77,7 @@ public:
 
 
 private:
-    inline void check_wait_die(const std::shared_ptr<LockRequestQueue>& lock_request_queue, Transaction* txn);
+    inline void check_wait_die(const std::shared_ptr<LockRequestQueue>& lock_request_queue, Transaction* txn, LockMode requested_mode);
     inline std::shared_ptr<LockRequestQueue> get_lock_request_queue(const LockDataId& lock_data_id);
     bool check_and_execute_lock(std::shared_ptr<LockRequestQueue> lock_request_queue, std::shared_ptr<LockRequest> lock_request, Transaction* txn, GroupLockMode lock_mode);
 

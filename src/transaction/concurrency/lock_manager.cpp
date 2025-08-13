@@ -12,12 +12,26 @@ See the Mulan PSL v2 for more details. */
 #include <algorithm>
 
 
-inline void LockManager::check_wait_die(const std::shared_ptr<LockRequestQueue>& lock_request_queue, Transaction* txn) {
-    bool wait_die = std::any_of(lock_request_queue->request_queue_.begin(), lock_request_queue->request_queue_.end(), [&](const std::shared_ptr<LockRequest>& lock_request){
-        return lock_request->txn_id_ < txn->get_transaction_id();
-    });
-    if(wait_die)
-    {
+inline void LockManager::check_wait_die(const std::shared_ptr<LockRequestQueue>& lock_request_queue, Transaction* txn, LockMode requested_mode) {
+    // 只检查已授予的锁且与请求锁冲突的事务
+    bool should_abort = false;
+    GroupLockMode req_group_mode = get_group_lock_mode(requested_mode);
+    
+    for (const auto& req : lock_request_queue->request_queue_) {
+        // 只考虑已授予的锁
+        if (req->granted_) {
+            // 只检查锁冲突的情况
+            if (!lock_compatible(get_group_lock_mode(req->lock_mode_), req_group_mode)) {
+                // 只有当持有锁的事务更老（ID更小）时，才需要中止
+                if (req->txn_id_ < txn->get_transaction_id()) {
+                    should_abort = true;
+                    break;
+                }
+            }
+        }
+    }
+    
+    if (should_abort) {
         throw TransactionAbortException(txn->get_transaction_id(), AbortReason::DEADLOCK_PREVENTION);
     }
 }
@@ -33,29 +47,40 @@ inline std::shared_ptr<LockManager::LockRequestQueue> LockManager::get_lock_requ
     return lock_table_[lock_data_id];
 }
 
-bool LockManager::check_and_execute_lock(std::shared_ptr<LockRequestQueue> lock_request_queue, std::shared_ptr<LockRequest> lock_request, Transaction* txn, GroupLockMode lock_mode)
-{
+bool LockManager::check_and_execute_lock(std::shared_ptr<LockRequestQueue> lock_request_queue, 
+                                         std::shared_ptr<LockRequest> lock_request, 
+                                         Transaction* txn, 
+                                         GroupLockMode lock_mode) {
     std::unique_lock<std::mutex> queue_lock(lock_request_queue->latch_);
+    
+    // 检查锁兼容性
     if(!lock_compatible(lock_request_queue->group_lock_mode_, lock_mode)) {
-        check_wait_die(lock_request_queue, txn);
+        // 使用修改后的Wait-Die检查
+        check_wait_die(lock_request_queue, txn, lock_request->lock_mode_);
+        
+        // 若通过检查，则等待
         lock_request_queue->request_queue_.emplace_back(lock_request);
         
-        // 添加5秒超时机制
+        // 超时机制保持不变
         auto now = std::chrono::system_clock::now();
         if(!lock_request_queue->cv_.wait_until(queue_lock, 
-                                            now + std::chrono::seconds(5), 
-                                            [&](){ return lock_request->granted_; })) {
-            // 从队列中移除请求
+                                          now + std::chrono::seconds(5), 
+                                          [&](){ return lock_request->granted_; })) {
+            // 超时处理
             lock_request_queue->request_queue_.remove(lock_request);
-            throw TransactionAbortException(txn->get_transaction_id(), AbortReason::DEADLOCK_PREVENTION);
+            throw TransactionAbortException(txn->get_transaction_id(), AbortReason:: DEADLOCK_PREVENTION);
         }
-    }
-    else
-    {
+    } else {
+        // 锁兼容，直接授予
         lock_request->granted_ = true;
         lock_request_queue->request_queue_.emplace_back(lock_request);
-        lock_request_queue->group_lock_mode_ = lock_mode;
+        
+        // 更新组锁模式
+        if(lock_mode > lock_request_queue->group_lock_mode_) {
+            lock_request_queue->group_lock_mode_ = lock_mode;
+        }
     }
+    
     return true;
 }
 
@@ -158,7 +183,7 @@ bool LockManager::upgrade_lock_on_record(Transaction* txn,const Rid& rid, int ta
         return true;
     else
     {
-        check_wait_die(lock_request_queue, txn);
+        check_wait_die(lock_request_queue, txn, LockMode::EXLUCSIVE);
     }
     if(lock_request_queue->request_queue_.size() == 1) {
         lock_request_queue->group_lock_mode_ = GroupLockMode::X;
@@ -192,7 +217,7 @@ bool LockManager::upgrade_lock_on_table(Transaction* txn, int tab_fd, LockMode l
         return true;
     else
     {
-        check_wait_die(lock_request_queue, txn);
+        check_wait_die(lock_request_queue, txn, lock_mode);
     }
     if(lock_request_queue->request_queue_.size() == 1 || lock_compatible(lock_request_queue->group_lock_mode_, get_group_lock_mode(lock_mode))) {
         lock_request->lock_mode_ = lock_mode;
@@ -304,6 +329,31 @@ bool LockManager::unlock(Transaction* txn, LockDataId lock_data_id) {
     }
     lock_request_queue->group_lock_mode_ = new_mode;
     
+    if (!lock_request_queue->upgrade_queue_.empty()) {
+        auto upgrade_req = lock_request_queue->upgrade_queue_.front();
+        GroupLockMode req_mode = get_group_lock_mode(upgrade_req->lock_mode_);
+        
+        // 检查是否可以授予升级请求
+        if (lock_compatible(new_mode, req_mode)) {
+            // 找到对应的原始锁请求并更新
+            for (auto& req : request_queue) {
+                if (req->txn_id_ == upgrade_req->txn_id_) {
+                    req->lock_mode_ = upgrade_req->lock_mode_;
+                    req->granted_ = true;
+                    
+                    // 更新组锁模式
+                    if (req_mode > new_mode) {
+                        lock_request_queue->group_lock_mode_ = req_mode;
+                    }
+                    break;
+                }
+            }
+            
+            upgrade_req->granted_ = true;
+            lock_request_queue->upgrade_queue_.pop_front();
+        }
+    }
+
     // 尝试授予等待的锁
     bool granted_new = false;
     for(auto& req : request_queue) {

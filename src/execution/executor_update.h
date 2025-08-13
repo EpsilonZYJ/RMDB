@@ -137,14 +137,17 @@ class UpdateExecutor : public AbstractExecutor {
             context_->txn_->append_write_record(write_record);
         }
 
-        fh_->update_record(rid, new_record.data, context_);
-
         for (size_t i = 0; i < tab_.indexes.size(); ++i) {
             ihs[i]->delete_entry(old_keys[i], context_->txn_);
+        }
+
+        fh_->update_record(rid, new_record.data, context_);
+        for (size_t i = 0; i < tab_.indexes.size(); ++i) {
             ihs[i]->insert_entry(new_keys[i], rid, context_->txn_);
             delete []old_keys[i];
             delete []new_keys[i];
         }
+        
         delete []old_keys;
         delete []new_keys;
         delete []ihs;
