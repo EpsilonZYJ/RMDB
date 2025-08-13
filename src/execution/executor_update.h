@@ -41,164 +41,64 @@ class UpdateExecutor : public AbstractExecutor {
     // 由于是update，Next()只调用一次（同insert，delete）
     std::unique_ptr<RmRecord> Next() override {
     context_->lock_mgr_->lock_exclusive_on_table(context_->txn_, fh_->GetFd());
-    for(auto& rid: rids_ ) {
-            // 读取当前记录
-            RmRecord old_record = *fh_->get_record(rid, context_);
-            
-            // 检查条件是否满足，若不满足则跳过，不进行更新
-            // 这里的条件是指update语句中的where条件
-            if(!check_condition(old_record, tab_, conds_)) continue;
+    for (auto& rid : rids_) {
+        RmRecord old_record = *fh_->get_record(rid, context_);
+        if (!check_condition(old_record, tab_, conds_)) continue;
 
-            // 构造新的记录
-            RmRecord new_record(old_record);
-            for(auto& set_clause: set_clauses_) {
-                auto col_meta = tab_.get_col(set_clause.lhs.col_name);
-                int offset = col_meta->offset;
-                
-                // 检查是否为表达式更新
-                if (set_clause.is_expr && 
-                    !set_clause.ref_col.col_name.empty()) {
-                    
-                    // 获取引用列的元数据
-                    auto ref_col_meta = tab_.get_col(set_clause.ref_col.col_name);
-                    int ref_offset = ref_col_meta->offset;
-                    
-                    // 创建Value对象表示原始列值
-                    Value orig_value;
-                    switch (ref_col_meta->type) {
-                        case TYPE_INT:
-                            orig_value.set_int(*(int*)(old_record.data + ref_offset));
-                            break;
-                        case TYPE_FLOAT:
-                            orig_value.set_float(*(float*)(old_record.data + ref_offset));
-                            break;
-                        case TYPE_STRING:
-                            orig_value.set_str(std::string(old_record.data + ref_offset, ref_col_meta->len));
-                            break;
-                        default:
-                            throw InternalError("不支持的列类型");
-                    }
-                    
-                    // 获取右侧值
-                    Value rhs_value = set_clause.rhs;
-                    
-                    // 确保值类型一致
-                    if (orig_value.type != rhs_value.type) {
-                        if (value_type_match(orig_value.type, rhs_value.type))
-                            rhs_value.value_cast(orig_value.type);
-                        else
-                            throw IncompatibleTypeError(coltype2str(orig_value.type), 
-                                                     coltype2str(rhs_value.type));
-                    }
-                    
-                    // 计算结果
-                    Value result_value;
-                    switch (set_clause.op_type) {
-                        case '+':
-                            if (orig_value.type == TYPE_INT)
-                                result_value.set_int(orig_value.int_val + rhs_value.int_val);
-                            else if (orig_value.type == TYPE_FLOAT)
-                                result_value.set_float(orig_value.float_val + rhs_value.float_val);
-                            break;
-                            
-                        case '-':
-                            if (orig_value.type == TYPE_INT)
-                                result_value.set_int(orig_value.int_val - rhs_value.int_val);
-                            else if (orig_value.type == TYPE_FLOAT)
-                                result_value.set_float(orig_value.float_val - rhs_value.float_val);
-                            break;
-                            
-                        case '*':
-                            if (orig_value.type == TYPE_INT)
-                                result_value.set_int(orig_value.int_val * rhs_value.int_val);
-                            else if (orig_value.type == TYPE_FLOAT)
-                                result_value.set_float(orig_value.float_val * rhs_value.float_val);
-                            break;
-                            
-                        case '/':
-                            if (rhs_value.int_val == 0 || rhs_value.float_val == 0.0)
-                                throw InternalError("除数不能为零");
-                                
-                            if (orig_value.type == TYPE_INT)
-                                result_value.set_int(orig_value.int_val / rhs_value.int_val);
-                            else if (orig_value.type == TYPE_FLOAT)
-                                result_value.set_float(orig_value.float_val / rhs_value.float_val);
-                            break;
-                            
-                        default:
-                            throw InternalError("不支持的运算符");
-                    }
-                    
-                    // 结果类型转换
-                    result_value.init_raw(col_meta->len);
-                    memcpy(new_record.data + offset, result_value.raw->data, col_meta->len);
-                } else {
-                    // 处理普通赋值
-                    Value value = set_clause.rhs;
-                    if (value.type != col_meta->type) {
-                        if (value_type_match(col_meta->type, value.type)) {
-                            // 转换类型
-                            value.value_cast(col_meta->type);
-                          }}
-                    if (!value.raw) {
-                        value.init_raw(col_meta->len);               
-                        // 根据值类型设置raw数据
-                        switch (value.type) {
-                            case TYPE_INT:
-                                *(int*)value.raw->data = value.int_val;
-                                break;
-                            case TYPE_FLOAT:
-                                *(float*)value.raw->data = value.float_val;
-                                break;
-                            case TYPE_STRING:
-                                if (!value.str_val.empty()) {
-                                    memcpy(value.raw->data, value.str_val.c_str(), 
-                                          std::min(col_meta->len, (int)value.str_val.length()));
-                                }
-                                break;
-                        }
-                    }
-                    memcpy(new_record.data + offset, value.raw->data, col_meta->len);
+        // 构造新记录
+        RmRecord new_record(old_record);
+
+        for (auto& set_clause : set_clauses_) {
+            auto col_meta = tab_.get_col(set_clause.lhs.col_name);
+            int offset = col_meta->offset;
+            Value value;
+
+            if (set_clause.is_expr && !set_clause.ref_col.col_name.empty()) {
+                // 右侧为列或表达式
+                auto ref_col_meta = tab_.get_col(set_clause.ref_col.col_name);
+                int ref_offset = ref_col_meta->offset;
+                Value orig_value;
+                switch (ref_col_meta->type) {
+                    case TYPE_INT: orig_value.set_int(*(int*)(old_record.data + ref_offset)); break;
+                    case TYPE_FLOAT: orig_value.set_float(*(float*)(old_record.data + ref_offset)); break;
+                    case TYPE_STRING: orig_value.set_str(std::string(old_record.data + ref_offset, ref_col_meta->len)); break;
+                    default: throw InternalError("不支持的列类型");
                 }
-                // 日志记录代码
-                if (context_ && context_->txn_ && context_->log_mgr_) {
-                    // 创建UPDATE日志记录
-                    UpdateLogRecord* log_record;
-        
-                    if (set_clause.is_expr) {
-                        // 对于表达式更新，使用扩展的构造函数
-                        log_record = new UpdateLogRecord(
-                            context_->txn_->get_transaction_id(),
-                            old_record,
-                            new_record,
-                            rid,
-                            tab_name_,
-                            true,                           // is_expr_update
-                            set_clause.op_type,             // 操作符
-                            set_clause.ref_col.col_name     // 引用列名
-                        );
-                    } else {
-                        // 对于普通更新，使用原有构造函数
-                        log_record = new UpdateLogRecord(
-                            context_->txn_->get_transaction_id(),
-                            old_record,
-                            new_record,
-                            rid,
-                            tab_name_
-                        );
-                    }
-                    
-                    log_record->prev_lsn_ = context_->txn_->get_prev_lsn();
-                    // 写日志，获得当前日志lsn
-                    lsn_t curr_lsn = context_->log_mgr_->add_log_to_buffer(log_record);
-                    // 写日志后，更新事务的prev_lsn
-                    context_->txn_->set_prev_lsn(curr_lsn);
-                    context_->log_mgr_->flush_log_to_disk();
-                    // 释放日志记录内存
-                    delete log_record;  
-                    //std::cout << "DEBUG: 已生成UPDATE日志记录，表名: " << tab_name_ << ", RID: (" << rid.page_no << "," << rid.slot_no << ")" << std::endl;
+                Value rhs_value = set_clause.rhs;
+                if (orig_value.type != rhs_value.type) rhs_value.value_cast(orig_value.type);
+
+                // 计算表达式结果
+                switch (set_clause.op_type) {
+                    case '+':
+                        if (orig_value.type == TYPE_INT) value.set_int(orig_value.int_val + rhs_value.int_val);
+                        else if (orig_value.type == TYPE_FLOAT) value.set_float(orig_value.float_val + rhs_value.float_val);
+                        break;
+                    case '-':
+                        if (orig_value.type == TYPE_INT) value.set_int(orig_value.int_val - rhs_value.int_val);
+                        else if (orig_value.type == TYPE_FLOAT) value.set_float(orig_value.float_val - rhs_value.float_val);
+                        break;
+                    case '*':
+                        if (orig_value.type == TYPE_INT) value.set_int(orig_value.int_val * rhs_value.int_val);
+                        else if (orig_value.type == TYPE_FLOAT) value.set_float(orig_value.float_val * rhs_value.float_val);
+                        break;
+                    case '/':
+                        if ((rhs_value.type == TYPE_INT && rhs_value.int_val == 0) ||
+                            (rhs_value.type == TYPE_FLOAT && rhs_value.float_val == 0.0))
+                            throw InternalError("除数不能为零");
+                        if (orig_value.type == TYPE_INT) value.set_int(orig_value.int_val / rhs_value.int_val);
+                        else if (orig_value.type == TYPE_FLOAT) value.set_float(orig_value.float_val / rhs_value.float_val);
+                        break;
+                    default: throw InternalError("不支持的运算符");
                 }
+            } else {
+                // 右侧为值
+                value = set_clause.rhs;
+                if (value.type != col_meta->type) value.value_cast(col_meta->type);
             }
+
+            value.init_raw(col_meta->len);
+            memcpy(new_record.data + offset, value.raw->data, col_meta->len);
+        }
 
         // 索引 key 构造
         auto **old_keys = new char *[tab_.indexes.size()];

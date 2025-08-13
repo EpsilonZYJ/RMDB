@@ -40,6 +40,7 @@ value_int {sign}?{digit}+
 value_float {sign}?{digit}+\.({digit}+)?
 value_string '[^']*'
 single_op ";"|"("|")"|","|"*"|"="|">"|"<"|"."
+path_like [^ \t\r\n;()']+\.csv
 %x STATE_COMMENT
 
 %%
@@ -132,6 +133,10 @@ single_op ";"|"("|")"|","|"*"|"="|">"|"<"|"."
 {value_string} {
     yylval->sv_str = std::string(yytext + 1, strlen(yytext) - 2);
     return VALUE_STRING;
+}
+{path_like} {
+    yylval->sv_str = std::string(yytext);
+    return VALUE_PATH;
 }
     /* id */
 {identifier} {
