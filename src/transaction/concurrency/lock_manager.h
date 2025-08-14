@@ -79,10 +79,6 @@ public:
 
     bool lock_compatible_check(LockDataId lock_data_id, Transaction* txn, LockMode lock_mode);
 
-    bool wait_die_check(LockDataId lock_data_id, Transaction* txn, LockMode lock_mode);
-
-    bool wake_up_check(LockDataId lock_data_id, Transaction* txn, LockMode lock_mode);
-
 private:
     inline void check_wait_die(const std::shared_ptr<LockRequestQueue>& lock_request_queue, Transaction* txn, LockMode requested_mode);
     inline std::shared_ptr<LockRequestQueue> get_lock_request_queue(const LockDataId& lock_data_id);
@@ -96,9 +92,9 @@ private:
         return lock_matrix_[static_cast<int>(a)][static_cast<int>(b)];
     }
 
-    bool wait_die_check(LockDataId lock_data_id, std::shared_ptr<Transaction> txn, LockMode lock_mode);
+   bool wait_die_check(LockDataId lock_data_id, Transaction* txn, LockMode lock_mode);
 
-    bool wake_up_check(LockDataId lock_data_id, std::shared_ptr<Transaction> txn, LockMode lock_mode);
+    bool wake_up_check(LockDataId lock_data_id, Transaction* txn, LockMode lock_mode);
 
     void update_group_lock_mode(LockDataId lock_data_id){
         auto &lock_request_queue = lock_table_[lock_data_id]->request_queue_;
