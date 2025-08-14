@@ -51,7 +51,10 @@ class IndexScanExecutor : public AbstractExecutor {
         for (; !scan_->is_end(); scan_->next()) {
             rid_ = scan_->rid();
             RmRecord rec = *fh_->get_record(rid_, context_);
-            if (check_condition(rec, tab_, fed_conds_)) return true;
+            if (check_condition(rec, tab_, fed_conds_)) {
+                context_->lock_mgr_->lock_shared_on_record(context_->txn_, rid_, fh_->GetFd());
+                return true;
+            }
         }
 
         return false;

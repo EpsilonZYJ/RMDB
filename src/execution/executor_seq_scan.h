@@ -61,7 +61,10 @@ class SeqScanExecutor : public AbstractExecutor {
                 *rec, 
                 sm_manager_->db_.get_table(tab_name_), 
                 fed_conds_)
-              ) break;
+              ) {
+                context_->lock_mgr_->lock_shared_on_record(context_->txn_, rid_, fh_->GetFd());
+                break;
+              }
         }
     }
 
@@ -76,7 +79,10 @@ class SeqScanExecutor : public AbstractExecutor {
                 *rec, 
                 sm_manager_->db_.get_table(tab_name_),
                 fed_conds_)
-              ) break;
+              ){
+               context_->lock_mgr_->lock_shared_on_record(context_->txn_, rid_, fh_->GetFd());
+               break;
+              } 
         }
     }
 
