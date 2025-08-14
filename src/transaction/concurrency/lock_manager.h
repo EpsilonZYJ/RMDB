@@ -23,24 +23,37 @@ class LockManager {
     /* 用于标识加锁队列中排他性最强的锁类型，例如加锁队列中有SHARED和EXLUSIVE两个加锁操作，则该队列的锁模式为X */
     enum class GroupLockMode { NON_LOCK, IS, IX, S, X, SIX};
 
+    bool lock_matrix_[6][6] = {
+                        /* NON_LOCK, IS, IX, S, X, SIX */
+        /* NON_LOCK */  {true, true, true, true, true, true},
+        /* IS */        {true, true, true, true, false, true},
+        /* IX */        {true, true, true, false, false, false},
+        /* S */         {true, true, false, true, false, false},
+        /* X */         {true, false, false, false, false, false},
+        /* SIX */       {true, true, false, false, false, false}
+    };
+
+
     /* 事务的加锁申请 */
     class LockRequest {
     public:
-        LockRequest(txn_id_t txn_id, LockMode lock_mode, timestamp_t txn_timestamp)
-            : txn_id_(txn_id), lock_mode_(lock_mode),txn_timestamp_(txn_timestamp) {}
+        LockRequest(txn_id_t txn_id, LockMode lock_mode)
+            : txn_id_(txn_id), lock_mode_(lock_mode), granted_(false) {}
 
         txn_id_t txn_id_;   // 申请加锁的事务ID
         LockMode lock_mode_;    // 事务申请加锁的类型
-        timestamp_t txn_timestamp_; // 申请加锁的事务的开始时间戳
+        bool granted_;          // 该事务是否已经被赋予锁
     };
 
     /* 数据项上的加锁队列 */
     class LockRequestQueue {
     public:
         std::list<std::shared_ptr<LockRequest>> request_queue_;  // 加锁队列
-        std::list<std::shared_ptr<LockRequest>> wait_queue_;     //等待队列
+        std::list<std::shared_ptr<LockRequest>> upgrade_queue_;  // 升级队列
+        std::mutex latch_;     // 用于加锁队列的互斥锁
         std::condition_variable cv_;            // 条件变量，用于唤醒正在等待加锁的申请，在no-wait策略下无需使用
-        GroupLockMode group_lock_mode_ = GroupLockMode::NON_LOCK;   // 加锁队列的锁模式
+        GroupLockMode group_lock_mode_ = GroupLockMode::NON_LOCK;   // 加锁队列的锁模式，即队列中已获取锁的最高级别
+        LockRequestQueue() = default;
     };
 
 public:
@@ -60,54 +73,24 @@ public:
 
     bool lock_IX_on_table(Transaction* txn, int tab_fd);
 
-    bool lock_SIX_on_table(Transaction* txn, int tab_fd);
-
     bool unlock(Transaction* txn, LockDataId lock_data_id);
 
-    bool try_lock(LockDataId lock_data_id, Transaction* txn, LockMode lock_mode);
-
-    bool lock_compatible_check(LockDataId lock_data_id, Transaction* txn, LockMode lock_mode);
-
-    bool wait_die_check(LockDataId lock_data_id, Transaction* txn, LockMode lock_mode);
-
-    bool wake_up_check(LockDataId lock_data_id, Transaction* txn, LockMode lock_mode);
-
-    void update_group_lock_mode(LockDataId lock_data_id){
-        auto &lock_request_queue = lock_table_[lock_data_id].request_queue_;
-        GroupLockMode max_group_lock_mode = GroupLockMode::NON_LOCK;
-        for(auto &lock_request : lock_request_queue){
-            if(lock_request->lock_mode_ == LockMode::SHARED){
-                if(max_group_lock_mode < GroupLockMode::S){
-                    assert(max_group_lock_mode == GroupLockMode::NON_LOCK || max_group_lock_mode == GroupLockMode::IS);
-                    max_group_lock_mode = GroupLockMode::S;
-                }
-            }else if(lock_request->lock_mode_ == LockMode::EXLUCSIVE){
-                if(max_group_lock_mode < GroupLockMode::X){
-                    assert(max_group_lock_mode == GroupLockMode::NON_LOCK);
-                    max_group_lock_mode = GroupLockMode::X;
-                }
-            }else if(lock_request->lock_mode_ == LockMode::INTENTION_SHARED){
-                if(max_group_lock_mode < GroupLockMode::IS){
-                    assert(max_group_lock_mode == GroupLockMode::NON_LOCK);
-                    max_group_lock_mode = GroupLockMode::IS;
-                }
-            }else if(lock_request->lock_mode_ == LockMode::INTENTION_EXCLUSIVE){
-                if(max_group_lock_mode < GroupLockMode::IX){
-                    assert(max_group_lock_mode == GroupLockMode::NON_LOCK || max_group_lock_mode == GroupLockMode::IS);
-                    max_group_lock_mode = GroupLockMode::IX;
-                }
-            }else if(lock_request->lock_mode_ == LockMode::S_IX){
-                if(max_group_lock_mode < GroupLockMode::SIX){
-                    assert(max_group_lock_mode == GroupLockMode::NON_LOCK || max_group_lock_mode == GroupLockMode::IS);
-                    max_group_lock_mode = GroupLockMode::SIX;
-                }
-            }
-        }
-        lock_table_[lock_data_id].group_lock_mode_ = max_group_lock_mode;
-    }
 
 private:
-    std::mutex latch_;      // 用于锁表的并发
-    std::unordered_map<LockDataId, LockRequestQueue> lock_table_;   // 全局锁表
-};
+    inline void check_wait_die(const std::shared_ptr<LockRequestQueue>& lock_request_queue, Transaction* txn, LockMode requested_mode);
+    inline std::shared_ptr<LockRequestQueue> get_lock_request_queue(const LockDataId& lock_data_id);
+    bool check_and_execute_lock(std::shared_ptr<LockRequestQueue> lock_request_queue, std::shared_ptr<LockRequest> lock_request, Transaction* txn, GroupLockMode lock_mode);
 
+    bool upgrade_lock_on_table(Transaction* txn, int tab_fd, LockMode lock_mode);
+
+    bool upgrade_lock_on_record(Transaction* txn, const Rid& rid, int tab_fd);
+
+    inline bool lock_compatible(GroupLockMode a, GroupLockMode b) {
+        return lock_matrix_[static_cast<int>(a)][static_cast<int>(b)];
+    }
+
+    GroupLockMode get_group_lock_mode(LockMode lock_mode);
+
+    std::mutex latch_;      // 用于锁表的并发
+    std::unordered_map<LockDataId, std::shared_ptr<LockRequestQueue>> lock_table_;   // 全局锁表
+};
