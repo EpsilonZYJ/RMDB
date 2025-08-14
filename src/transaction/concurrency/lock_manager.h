@@ -75,9 +75,6 @@ public:
 
     bool unlock(Transaction* txn, LockDataId lock_data_id);
 
-    bool try_lock(LockDataId lock_data_id, Transaction* txn, LockMode lock_mode);
-
-    bool lock_compatible_check(LockDataId lock_data_id, Transaction* txn, LockMode lock_mode);
 
 private:
     inline void check_wait_die(const std::shared_ptr<LockRequestQueue>& lock_request_queue, Transaction* txn, LockMode requested_mode);
@@ -90,44 +87,6 @@ private:
 
     inline bool lock_compatible(GroupLockMode a, GroupLockMode b) {
         return lock_matrix_[static_cast<int>(a)][static_cast<int>(b)];
-    }
-
-   bool wait_die_check(LockDataId lock_data_id, Transaction* txn, LockMode lock_mode);
-
-    bool wake_up_check(LockDataId lock_data_id, Transaction* txn, LockMode lock_mode);
-
-    void update_group_lock_mode(LockDataId lock_data_id){
-        auto &lock_request_queue = lock_table_[lock_data_id]->request_queue_;
-        GroupLockMode max_group_lock_mode = GroupLockMode::NON_LOCK;
-        for(auto &lock_request : lock_request_queue){
-            if(lock_request->lock_mode_ == LockMode::SHARED){
-                if(max_group_lock_mode < GroupLockMode::S){
-                    assert(max_group_lock_mode == GroupLockMode::NON_LOCK || max_group_lock_mode == GroupLockMode::IS);
-                    max_group_lock_mode = GroupLockMode::S;
-                }
-            }else if(lock_request->lock_mode_ == LockMode::EXLUCSIVE){
-                if(max_group_lock_mode < GroupLockMode::X){
-                    assert(max_group_lock_mode == GroupLockMode::NON_LOCK);
-                    max_group_lock_mode = GroupLockMode::X;
-                }
-            }else if(lock_request->lock_mode_ == LockMode::INTENTION_SHARED){
-                if(max_group_lock_mode < GroupLockMode::IS){
-                    assert(max_group_lock_mode == GroupLockMode::NON_LOCK);
-                    max_group_lock_mode = GroupLockMode::IS;
-                }
-            }else if(lock_request->lock_mode_ == LockMode::INTENTION_EXCLUSIVE){
-                if(max_group_lock_mode < GroupLockMode::IX){
-                    assert(max_group_lock_mode == GroupLockMode::NON_LOCK || max_group_lock_mode == GroupLockMode::IS);
-                    max_group_lock_mode = GroupLockMode::IX;
-                }
-            }else if(lock_request->lock_mode_ == LockMode::S_IX){
-                if(max_group_lock_mode < GroupLockMode::SIX){
-                    assert(max_group_lock_mode == GroupLockMode::NON_LOCK || max_group_lock_mode == GroupLockMode::IS);
-                    max_group_lock_mode = GroupLockMode::SIX;
-                }
-            }
-        }
-        lock_table_[lock_data_id]->group_lock_mode_ = max_group_lock_mode;
     }
 
     GroupLockMode get_group_lock_mode(LockMode lock_mode);
