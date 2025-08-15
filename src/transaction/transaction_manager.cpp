@@ -53,21 +53,46 @@ void TransactionManager::commit(Transaction* txn, LogManager* log_manager) {
     // 4. 把事务日志刷入磁盘中
     // 5. 更新事务状态
     // 如果需要支持MVCC请在上述过程中添加代码  
-    auto write_record = txn->get_write_set();
-    // what to do?
-    if (!write_record->empty())
-    {
-        // how to commit writes?
-        // for(size_t i=0;i<write_record.size();i++)
-        write_record->clear();
+    bool is_update = false;
+    for (auto &rec : *txn->get_write_set()) {
+        if (rec->GetWriteType() == WType::UPDATE_TUPLE) {
+            is_update = true;
+            break;
+        }
     }
-    //Release locks
-    for (auto &lock : *txn->get_lock_set())
-    {
-        lock_manager_->unlock(txn, lock);
+    if (!is_update) {
+        auto write_record = txn->get_write_set();
+        if (!write_record->empty()) write_record->clear();
+        
+        // 解锁所有锁
+        for (auto &lock : *txn->get_lock_set()) {
+            lock_manager_->unlock(txn, lock);
+        }
+        txn->get_lock_set()->clear();  // 正常清空锁集合
+    } 
+     else {
+        auto write_record = txn->get_write_set();
+        if (!write_record->empty()) write_record->clear();
+        
+        // 解锁记录锁，但保留表锁
+        std::unordered_set<LockDataId> table_locks;
+        for (auto &lock : *txn->get_lock_set()) {
+            if (lock.type_ == LockDataType::RECORD) {
+                lock_manager_->unlock(txn, lock);
+            } else {
+                table_locks.insert(lock);
+            }
+        }
+        
+        // 只保留表锁
+        txn->get_lock_set()->clear();
+        for (auto &lock : table_locks) {
+            txn->get_lock_set()->insert(lock);
+        }
+        
     }
-    txn->get_lock_set()->clear();
-    CommitLogRecord log_record(txn->get_transaction_id());
+    
+     CommitLogRecord log_record(txn->get_transaction_id());
     log_manager->add_log_to_buffer(&log_record);
     //log_manager->flush_log_to_disk();
     txn->set_state(TransactionState::COMMITTED);
