@@ -92,31 +92,18 @@ void TransactionManager::commit(Transaction* txn, LogManager* log_manager) {
     lock_set->clear();
     
     // 把事务日志刷入磁盘中
-    bool log_success = true;
-    if (log_manager != nullptr) {
-        try {
             CommitLogRecord log_record(txn->get_transaction_id());
             log_record.prev_lsn_ = txn->get_prev_lsn();
             lsn_t lsn = log_manager->add_log_to_buffer(&log_record);
             txn->set_prev_lsn(lsn);
             log_manager->flush_log_to_disk();
-        } catch (const std::exception& e) {
-            std::cerr << "Error: Failed to write commit log: " << e.what() << std::endl;
-            log_success = false;
-        }
-    }
     
     // 更新事务状态为已提交
     txn->set_state(TransactionState::COMMITTED);
     
     // 从事务表中移除
-    if (log_success) {
         std::unique_lock<std::mutex> lock(latch_);
         txn_map.erase(txn->get_transaction_id());
-    } else {
-        // 如果日志失败，保留事务以便后续尝试
-        std::cerr << "Warning: Transaction remains in txn_map due to log failure" << std::endl;
-    }
 }
 
 
