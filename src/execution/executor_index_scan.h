@@ -52,7 +52,7 @@ class IndexScanExecutor : public AbstractExecutor {
             rid_ = scan_->rid();
             RmRecord rec = *fh_->get_record(rid_, context_);
             if (check_condition(rec, tab_, fed_conds_)) {
-                context_->lock_mgr_->lock_shared_on_record(context_->txn_, rid_, fh_->GetFd());
+                //context_->lock_mgr_->lock_shared_on_record(context_->txn_, rid_, fh_->GetFd());
                 return true;
             }
         }

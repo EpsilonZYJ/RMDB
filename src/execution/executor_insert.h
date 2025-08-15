@@ -48,7 +48,7 @@ class InsertExecutor : public AbstractExecutor {
     std::unique_ptr<RmRecord> Next() override {
         // Make record buffer
         std::cout<<"1"<<std::endl;
-        context_->lock_mgr_->lock_exclusive_on_table(context_->txn_, fh_->GetFd());
+        //context_->lock_mgr_->lock_exclusive_on_table(context_->txn_, fh_->GetFd());
         std::cout<<"2"<<std::endl;
         RmRecord rec(fh_->get_file_hdr().record_size);
         for (size_t i = 0; i < values_.size(); i++) { // 依次遍历每个待插入的值

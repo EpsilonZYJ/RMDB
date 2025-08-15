@@ -39,7 +39,7 @@ class DeleteExecutor : public AbstractExecutor {
 
     std::unique_ptr<RmRecord> Next() override {
         int deleted_count = 0;
-        context_->lock_mgr_->lock_exclusive_on_table(context_->txn_, fh_->GetFd());
+        //context_->lock_mgr_->lock_exclusive_on_table(context_->txn_, fh_->GetFd());
         
         for(auto& rid: rids_ ) {
             // 读取当前记录
