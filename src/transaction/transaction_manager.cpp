@@ -53,23 +53,25 @@ void TransactionManager::commit(Transaction* txn, LogManager* log_manager) {
     // 4. 把事务日志刷入磁盘中
     // 5. 更新事务状态
     // 如果需要支持MVCC请在上述过程中添加代码  
-    auto write_record = txn->get_write_set();
-    // what to do?
-    if (!write_record->empty())
-    {
-        // how to commit writes?
-        // for(size_t i=0;i<write_record.size();i++)
-        write_record->clear();
-    }
-    //Release locks
-    for (auto &lock : *txn->get_lock_set())
-    {
-        lock_manager_->unlock(txn, lock);
-    }
+   auto write_set = txn->get_write_set();
+    while (!write_set->empty()) {
+        WriteRecord* record = write_set->front();
 
+        write_set->pop_front();
+        delete record;
+    }
+    
+    // 释放所有锁
+    auto lock_set = txn->get_lock_set();
+    for (auto lock_id : *lock_set) {
+        lock_manager_->unlock(txn, lock_id);
+    }
+    
+    // 释放事务相关资源
+    lock_set->clear();
     CommitLogRecord log_record(txn->get_transaction_id());
     log_manager->add_log_to_buffer(&log_record);
-
+    log_manager->flush_log_to_disk();
     txn->set_state(TransactionState::COMMITTED);
 }
 
