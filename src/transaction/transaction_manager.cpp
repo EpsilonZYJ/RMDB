@@ -61,11 +61,11 @@ void TransactionManager::commit(Transaction* txn, LogManager* log_manager) {
         // for(size_t i=0;i<write_record.size();i++)
         write_record->clear();
     }
-    // //Release locks
-    // for (auto &lock : *txn->get_lock_set())
-    // {
-    //     lock_manager_->unlock(txn, lock);
-    // }
+    //Release locks
+    for (auto &lock : *txn->get_lock_set())
+    {
+        lock_manager_->unlock(txn, lock);
+    }
 
     // CommitLogRecord log_record(txn->get_transaction_id());
     // log_manager->add_log_to_buffer(&log_record);
