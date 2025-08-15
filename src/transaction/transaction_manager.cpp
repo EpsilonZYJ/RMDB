@@ -109,14 +109,14 @@ void TransactionManager::commit(Transaction* txn, LogManager* log_manager) {
     // 更新事务状态为已提交
     txn->set_state(TransactionState::COMMITTED);
     
-    // // 从事务表中移除
-    // if (log_success) {
-    //     std::unique_lock<std::mutex> lock(latch_);
-    //     txn_map.erase(txn->get_transaction_id());
-    // } else {
-    //     // 如果日志失败，保留事务以便后续尝试
-    //     std::cerr << "Warning: Transaction remains in txn_map due to log failure" << std::endl;
-    // }
+    // 从事务表中移除
+    if (log_success) {
+        std::unique_lock<std::mutex> lock(latch_);
+        txn_map.erase(txn->get_transaction_id());
+    } else {
+        // 如果日志失败，保留事务以便后续尝试
+        std::cerr << "Warning: Transaction remains in txn_map due to log failure" << std::endl;
+    }
 }
 
 
