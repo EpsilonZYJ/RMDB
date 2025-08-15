@@ -66,12 +66,11 @@ void TransactionManager::commit(Transaction* txn, LogManager* log_manager) {
     for (auto lock_id : *lock_set) {
         lock_manager_->unlock(txn, lock_id);
     }
-    
     // 释放事务相关资源
     lock_set->clear();
     CommitLogRecord log_record(txn->get_transaction_id());
     log_manager->add_log_to_buffer(&log_record);
-    log_manager->flush_log_to_disk();
+    //log_manager->flush_log_to_disk();
     txn->set_state(TransactionState::COMMITTED);
 }
 
