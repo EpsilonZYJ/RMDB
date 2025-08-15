@@ -381,6 +381,7 @@ void SmManager::load_table(const std::string& file_name, const std::string& tab_
     std::ifstream csv_data(file_name, std::ios::in);
     auto fh = fhs_[tab_name].get();
     TabMeta &tab = db_.get_table(tab_name);
+    std::cout<< "DEBUG: 开始加载数据到表 " << tab_name << std::endl;
     if (!csv_data.is_open()) {
         throw InternalError("error opening file");
     }
@@ -399,11 +400,11 @@ void SmManager::load_table(const std::string& file_name, const std::string& tab_
 
     // 读取每一行数据
     while (getline(csv_data, line)) {
+        std::cout << "DEBUG: 读取行数据: " << line << std::endl;
         sin.clear();
         sin.str(line);
         int curr = 0;
         while (getline(sin, word, ',')) {
-        // 去除末尾的换行符和回车符
         while (!word.empty() && (word.back() == '\r' || word.back() == '\n')) {
             word.pop_back();
         }
@@ -422,6 +423,7 @@ void SmManager::load_table(const std::string& file_name, const std::string& tab_
             memcpy(rec.data + col.offset, val.raw->data, col.len);
         }
         Rid rid = fh->insert_record(rec.data, nullptr);
+        std::cout << "DEBUG: 插入记录" << std::endl;
         // 插入索引
         for(size_t i = 0; i < tab.indexes.size(); ++i) {
             auto& index = tab.indexes[i];
@@ -433,6 +435,7 @@ void SmManager::load_table(const std::string& file_name, const std::string& tab_
             }
             ih->insert_entry(key, rid, nullptr);
         }
+        std::cout << "DEBUG: 插入索引" << std::endl;
     }
     csv_data.close();
     delete[] key;

@@ -162,7 +162,7 @@ void *client_handler(void *sock_fd) {
                     pthread_mutex_unlock(buffer_mutex);
                     // 优化器
                     if (query->is_load) {
-                    //std::cout<<"DEBUG: 加载数据" << std::endl;
+                    std::cout<<"DEBUG: 加载数据" << std::endl;
                     ql_manager->load_data(query->load_file_name, query->load_table_name, context->txn_);
                     //std::cout<<"DEBUG: 加载数据完成" << std::endl;
                     std::string msg = "Load data finished.\n";
