@@ -67,8 +67,8 @@ void TransactionManager::commit(Transaction* txn, LogManager* log_manager) {
         lock_manager_->unlock(txn, lock);
     }
 
-    // CommitLogRecord log_record(txn->get_transaction_id());
-    // log_manager->add_log_to_buffer(&log_record);
+    CommitLogRecord log_record(txn->get_transaction_id());
+    log_manager->add_log_to_buffer(&log_record);
 
     txn->set_state(TransactionState::COMMITTED);
 }
