@@ -69,7 +69,7 @@ void TransactionManager::commit(Transaction* txn, LogManager* log_manager) {
     }
 
     CommitLogRecord log_record(txn->get_transaction_id());
-    // log_manager->add_log_to_buffer(&log_record);
+    log_manager->add_log_to_buffer(&log_record);
 
     // txn->set_state(TransactionState::COMMITTED);
 }
