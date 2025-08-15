@@ -318,7 +318,7 @@ bool LockManager::unlock(Transaction* txn, LockDataId lock_data_id) {
             ++it;
         }
     }
-    //txn->get_lock_set()->erase(lock_data_id);
+    txn->get_lock_set()->erase(lock_data_id);
     // 重新计算当前锁模式
     GroupLockMode new_mode = GroupLockMode::NON_LOCK;
     for(auto& req : request_queue) {
