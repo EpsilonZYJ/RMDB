@@ -92,7 +92,7 @@ void TransactionManager::commit(Transaction* txn, LogManager* log_manager) {
     txn->set_state(TransactionState::COMMITTED);
     
     // 从事务表中移除
-     txn_map.erase(txn->get_transaction_id());
+    txn_map.erase(txn->get_transaction_id());
 }
 
 
