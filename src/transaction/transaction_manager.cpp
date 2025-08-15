@@ -27,16 +27,35 @@ Transaction * TransactionManager::begin(Transaction* txn, LogManager* log_manage
     // 3. 把开始事务加入到全局事务表中
     // 4. 返回当前事务指针
     // 如果需要支持MVCC请在上述过程中添加代码
+    
     // 判断传入事务参数是否为空指针
     if (txn == nullptr) {
-       txn = new Transaction(next_txn_id_++);
-       txn->set_state(TransactionState::GROWING);
+        // 如果为空指针，创建新事务
+        txn_id_t txn_id = next_txn_id_++;
+        txn = new Transaction(txn_id);
+        txn->set_state(TransactionState::GROWING);
     }
-    std::unique_lock<std::mutex> lock(latch_);  
-     txn_map[txn->get_transaction_id()] = txn;
-    lock.unlock();
-    BeginLogRecord log_record(txn->get_transaction_id());
-    log_manager->add_log_to_buffer(&log_record);
+    
+    // 把开始事务加入到全局事务表中
+    {
+        std::unique_lock<std::mutex> lock(latch_);
+        txn_map[txn->get_transaction_id()] = txn;
+    }
+    
+    // 写入BEGIN日志记录
+    if (log_manager != nullptr) {
+        try {
+            BeginLogRecord log_record(txn->get_transaction_id());
+            log_record.prev_lsn_ = txn->get_prev_lsn();
+            lsn_t lsn = log_manager->add_log_to_buffer(&log_record);
+            txn->set_prev_lsn(lsn);
+        } catch (const std::exception& e) {
+            // 处理日志错误
+            std::cerr << "Warning: Failed to write begin log: " << e.what() << std::endl;
+        }
+    }
+    
+    // 4. 返回当前事务指针
     return txn;
 }
 
@@ -52,51 +71,55 @@ void TransactionManager::commit(Transaction* txn, LogManager* log_manager) {
     // 3. 释放事务相关资源，eg.锁集
     // 4. 把事务日志刷入磁盘中
     // 5. 更新事务状态
-    // 如果需要支持MVCC请在上述过程中添加代码  
-    bool is_update = false;
-    for (auto &rec : *txn->get_write_set()) {
-        if (rec->GetWriteType() == WType::UPDATE_TUPLE) {
-            is_update = true;
-            break;
-        }
-    }
-    if (!is_update) {
-        auto write_record = txn->get_write_set();
-        if (!write_record->empty()) write_record->clear();
-        
-        // 解锁所有锁
-        for (auto &lock : *txn->get_lock_set()) {
-            lock_manager_->unlock(txn, lock);
-        }
-        txn->get_lock_set()->clear();  // 正常清空锁集合
-    } 
-     else {
-        auto write_record = txn->get_write_set();
-        if (!write_record->empty()) write_record->clear();
-        
-        // 解锁记录锁，但保留表锁
-        std::unordered_set<LockDataId> table_locks;
-        for (auto &lock : *txn->get_lock_set()) {
-            if (lock.type_ == LockDataType::RECORD) {
-                lock_manager_->unlock(txn, lock);
-            } else {
-                table_locks.insert(lock);
-            }
-        }
-        
-        // 只保留表锁
-        txn->get_lock_set()->clear();
-        for (auto &lock : table_locks) {
-            txn->get_lock_set()->insert(lock);
-        }
-        
+    // 如果需要支持MVCC请在上述过程中添加代码
+    
+    //事务结束，清理所有写记录
+
+    auto write_set = txn->get_write_set();
+    while (!write_set->empty()) {
+        WriteRecord* record = write_set->front();
+
+        write_set->pop_front();
+        delete record;
     }
     
-     CommitLogRecord log_record(txn->get_transaction_id());
-    log_manager->add_log_to_buffer(&log_record);
-    //log_manager->flush_log_to_disk();
+    // 释放所有锁
+    auto lock_set = txn->get_lock_set();
+    for (auto lock_id : *lock_set) {
+        lock_manager_->unlock(txn, lock_id);
+    }
+    
+    // 释放事务相关资源
+    lock_set->clear();
+    
+    // 把事务日志刷入磁盘中
+    bool log_success = true;
+    if (log_manager != nullptr) {
+        try {
+            CommitLogRecord log_record(txn->get_transaction_id());
+            log_record.prev_lsn_ = txn->get_prev_lsn();
+            lsn_t lsn = log_manager->add_log_to_buffer(&log_record);
+            txn->set_prev_lsn(lsn);
+            log_manager->flush_log_to_disk();
+        } catch (const std::exception& e) {
+            std::cerr << "Error: Failed to write commit log: " << e.what() << std::endl;
+            log_success = false;
+        }
+    }
+    
+    // 更新事务状态为已提交
     txn->set_state(TransactionState::COMMITTED);
+    
+    // 从事务表中移除
+    if (log_success) {
+        std::unique_lock<std::mutex> lock(latch_);
+        txn_map.erase(txn->get_transaction_id());
+    } else {
+        // 如果日志失败，保留事务以便后续尝试
+        std::cerr << "Warning: Transaction remains in txn_map due to log failure" << std::endl;
+    }
 }
+
 
 /**
  * @description: 事务的终止（回滚）方法
