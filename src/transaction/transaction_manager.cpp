@@ -37,23 +37,14 @@ Transaction * TransactionManager::begin(Transaction* txn, LogManager* log_manage
     }
     
     // 把开始事务加入到全局事务表中
-    {
-        std::unique_lock<std::mutex> lock(latch_);
-        txn_map[txn->get_transaction_id()] = txn;
-    }
+    txn_map[txn->get_transaction_id()] = txn;
     
     // 写入BEGIN日志记录
-    if (log_manager != nullptr) {
-        try {
-            BeginLogRecord log_record(txn->get_transaction_id());
-            log_record.prev_lsn_ = txn->get_prev_lsn();
-            lsn_t lsn = log_manager->add_log_to_buffer(&log_record);
-            txn->set_prev_lsn(lsn);
-        } catch (const std::exception& e) {
-            // 处理日志错误
-            std::cerr << "Warning: Failed to write begin log: " << e.what() << std::endl;
-        }
-    }
+    BeginLogRecord log_record(txn->get_transaction_id());
+    log_record.prev_lsn_ = txn->get_prev_lsn();
+    lsn_t lsn = log_manager->add_log_to_buffer(&log_record);
+    txn->set_prev_lsn(lsn);
+
     
     // 4. 返回当前事务指针
     return txn;
@@ -74,7 +65,6 @@ void TransactionManager::commit(Transaction* txn, LogManager* log_manager) {
     // 如果需要支持MVCC请在上述过程中添加代码
     
     //事务结束，清理所有写记录
-
     auto write_set = txn->get_write_set();
     while (!write_set->empty()) {
         WriteRecord* record = write_set->front();
@@ -92,18 +82,17 @@ void TransactionManager::commit(Transaction* txn, LogManager* log_manager) {
     lock_set->clear();
     
     // 把事务日志刷入磁盘中
-            CommitLogRecord log_record(txn->get_transaction_id());
-            log_record.prev_lsn_ = txn->get_prev_lsn();
-            lsn_t lsn = log_manager->add_log_to_buffer(&log_record);
-            txn->set_prev_lsn(lsn);
-            log_manager->flush_log_to_disk();
+    CommitLogRecord log_record(txn->get_transaction_id());
+    log_record.prev_lsn_ = txn->get_prev_lsn();
+    lsn_t lsn = log_manager->add_log_to_buffer(&log_record);
+    txn->set_prev_lsn(lsn);
+    log_manager->flush_log_to_disk();
     
     // 更新事务状态为已提交
     txn->set_state(TransactionState::COMMITTED);
     
     // 从事务表中移除
-        std::unique_lock<std::mutex> lock(latch_);
-        txn_map.erase(txn->get_transaction_id());
+     txn_map.erase(txn->get_transaction_id());
 }
 
 
