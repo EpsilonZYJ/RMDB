@@ -85,4 +85,8 @@ public:
     void show_index(std::string &table_name, Context *context);
 
     void load_table(const std::string& file_name, const std::string& tab_name);
+    void process_batch(std::vector<RmRecord>& records, std::vector<Rid>& rids, 
+                             TabMeta& tab, RmFileHandle* fh, 
+                             const std::vector<IxIndexHandle*>& index_handlers);
+    RmRecord parse_csv_line(const std::string& line, const TabMeta& tab);
 };

@@ -378,65 +378,153 @@ void SmManager::get_all_tables(std::vector<std::string>& tables) const {
 
 void SmManager::load_table(const std::string& file_name, const std::string& tab_name)
 {
-    std::ifstream csv_data(file_name, std::ios::in);
-    auto fh = fhs_[tab_name].get();
+    // 获取表元数据和文件句柄
     TabMeta &tab = db_.get_table(tab_name);
-    std::cout<< "DEBUG: 开始加载数据到表 " << tab_name << std::endl;
+    auto fh = fhs_[tab_name].get();
+    
+    // 打开CSV文件，使用二进制模式提高读取速度
+    std::ifstream csv_data(file_name, std::ios::in | std::ios::binary);
     if (!csv_data.is_open()) {
-        throw InternalError("error opening file");
+        throw UnixError();
     }
+    
+    // 获取文件大小以预分配内存
+    csv_data.seekg(0, std::ios::end);
+    size_t file_size = csv_data.tellg();
+    csv_data.seekg(0, std::ios::beg);
+    
+    // 读取标题行
+    std::string header_line;
+    std::getline(csv_data, header_line);
+    
+    // 预先创建索引处理器映射，避免重复查找
+    std::vector<IxIndexHandle*> index_handlers;
+    for (auto &index : tab.indexes) {
+        auto index_name = get_ix_manager()->get_index_name(tab_name, index.cols);
+        index_handlers.push_back(ihs_.at(index_name).get());
+    }
+    
+    // 批量处理变量
+    const size_t BATCH_SIZE = 5000;  // 可根据内存调整
+    std::vector<RmRecord> records;
+    std::vector<Rid> rids;
+    records.reserve(BATCH_SIZE);
+    rids.reserve(BATCH_SIZE);
+    
+    // 禁用输出缓冲区同步，提高性能
+    std::ios::sync_with_stdio(false);
+    
+    // 批量读取处理
     std::string line;
-    std::string word;
-    std::vector<Value> values(tab.cols.size());
-    getline(csv_data, line);
-    std::istringstream sin;
+    size_t line_count = 0;
+    
+    while (std::getline(csv_data, line)) {
+        line_count++;
+        
+        // 解析CSV行
+        RmRecord rec = parse_csv_line(line, tab);
+        records.push_back(std::move(rec));
+        
+        // 达到批处理大小时执行批量插入
+        if (records.size() >= BATCH_SIZE) {
+            process_batch(records, rids, tab, fh, index_handlers);
+            records.clear();
+            rids.clear();
+            records.reserve(BATCH_SIZE);
+            rids.reserve(BATCH_SIZE);
+        }
+        
+        // 每处理100万行输出一次进度
+        if (line_count % 1000000 == 0) {
+            std::cout << "Processed " << line_count << " lines..." << std::endl;
+        }
+    }
+    
+    // 处理剩余记录
+    if (!records.empty()) {
+        process_batch(records, rids, tab, fh, index_handlers);
+    }
+    
+    std::cout << "Successfully loaded " << line_count << " records into table " 
+              << tab_name << std::endl;
+}
 
-    // 计算索引 key 的总长度
-    int col_total_len = 0;
+RmRecord SmManager::parse_csv_line(const std::string& line, const TabMeta& tab) {
+    int record_size = 0;
     for (const auto& col : tab.cols) {
-        col_total_len += col.len;
+        record_size += col.len;
     }
-    char* key = new char[col_total_len];
-
-    // 读取每一行数据
-    while (getline(csv_data, line)) {
-        std::cout << "DEBUG: 读取行数据: " << line << std::endl;
-        sin.clear();
-        sin.str(line);
-        int curr = 0;
-        while (getline(sin, word, ',')) {
-        while (!word.empty() && (word.back() == '\r' || word.back() == '\n')) {
-            word.pop_back();
+    RmRecord rec(record_size);
+    size_t pos = 0;
+    size_t next_pos = 0;
+    // 直接处理每个字段，避免使用istringstream
+    for (size_t i = 0; i < tab.cols.size(); i++) {
+        const ColMeta& col = tab.cols[i];
+        next_pos = line.find(',', pos);
+        
+        std::string_view field;
+        if (next_pos == std::string::npos) {
+            field = std::string_view(line).substr(pos);
+        } else {
+            field = std::string_view(line).substr(pos, next_pos - pos);
+            pos = next_pos + 1;
         }
-        Value curr_value;
-        curr_value.set_str(word);
-        curr_value.value_cast(tab.cols[curr].type);
-        curr_value.init_raw(tab.cols[curr].len);
-        values[curr] = curr_value;
-        curr++;
-       }
-        // 插入数据
-        RmRecord rec(fh->get_file_hdr().record_size);
-        for (size_t i = 0; i < values.size(); i++) {
-            auto &col = tab.cols[i];
-            auto &val = values[i];
-            memcpy(rec.data + col.offset, val.raw->data, col.len);
-        }
-        Rid rid = fh->insert_record(rec.data, nullptr);
-        std::cout << "DEBUG: 插入记录" << std::endl;
-        // 插入索引
-        for(size_t i = 0; i < tab.indexes.size(); ++i) {
-            auto& index = tab.indexes[i];
-            auto ih = ihs_.at(get_ix_manager()->get_index_name(tab_name, index.cols)).get();
-            int offset = 0;
-            for(size_t j = 0; j < (size_t)index.col_num; ++j) {
-                memcpy(key + offset, rec.data + index.cols[j].offset, index.cols[j].len);
-                offset += index.cols[j].len;
+        
+        // 直接转换并填充记录
+        switch (col.type) {
+            case TYPE_INT: {
+                int val = std::atoi(field.data());
+                memcpy(rec.data + col.offset, &val, sizeof(int));
+                break;
             }
-            ih->insert_entry(key, rid, nullptr);
+            case TYPE_FLOAT: {
+                float val = std::atof(field.data());
+                memcpy(rec.data + col.offset, &val, sizeof(float));
+                break;
+            }
+            case TYPE_STRING: {
+                // 填充字符串，确保不超过列长度
+                size_t copy_len = std::min(field.length(), static_cast<size_t>(col.len));
+                memset(rec.data + col.offset, 0, col.len);  // 先清零
+                memcpy(rec.data + col.offset, field.data(), copy_len);
+                break;
+            }
         }
-        std::cout << "DEBUG: 插入索引" << std::endl;
     }
-    csv_data.close();
-    delete[] key;
+    
+    return rec;
+}
+
+void SmManager::process_batch(std::vector<RmRecord>& records, std::vector<Rid>& rids, 
+                             TabMeta& tab, RmFileHandle* fh, 
+                             const std::vector<IxIndexHandle*>& index_handlers) {
+    // 批量插入记录
+    std::cout <<"批量"<< std::endl;
+    for (auto& rec : records) {
+        Rid rid = fh->insert_record(rec.data, nullptr);
+        rids.push_back(rid);
+    }
+    
+    // 批量更新索引
+    for (size_t i = 0; i < tab.indexes.size(); i++) {
+        auto& index = tab.indexes[i];
+        auto ih = index_handlers[i];
+        
+        for (size_t j = 0; j < records.size(); j++) {
+            // 构建索引键
+            char* key = new char[index.col_tot_len];
+            int offset = 0;
+            
+            for (int k = 0; k < index.col_num; k++) {
+                memcpy(key + offset, 
+                       records[j].data + index.cols[k].offset, 
+                       index.cols[k].len);
+                offset += index.cols[k].len;
+            }
+            
+            // 插入索引
+            ih->insert_entry(key, rids[j], nullptr);
+            delete[] key;
+        }
+    }
 }
