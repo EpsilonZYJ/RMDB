@@ -174,10 +174,11 @@ void QlManager::select_from(std::unique_ptr<AbstractExecutor> executorTreeRoot, 
         auto record = executorTreeRoot->Next();
         if (record) {
             // 直接写入文件
+            if (output_off == false) {
             std::fstream outfile;
             outfile.open("output.txt", std::ios::out | std::ios::app);
             outfile << record->data << std::endl;
-            outfile.close();
+            outfile.close();}
             
             // 设置上下文响应
             memcpy(context->data_send_ + *(context->offset_), 
@@ -200,13 +201,14 @@ void QlManager::select_from(std::unique_ptr<AbstractExecutor> executorTreeRoot, 
     rec_printer.print_separator(context);
     // print header into file
     std::fstream outfile;
+    if (output_off == false) {
     outfile.open("output.txt", std::ios::out | std::ios::app);
     outfile << "|";
     for(int i = 0; i < captions.size(); ++i) {
         outfile << " " << captions[i] << " |";
     }
     outfile << "\n";
-
+    }
     // Print records
     size_t num_rec = 0;
     // 执行query_plan
@@ -235,14 +237,17 @@ void QlManager::select_from(std::unique_ptr<AbstractExecutor> executorTreeRoot, 
         // print record into buffer
         rec_printer.print_record(columns, context);
         // print record into file
-        outfile << "|";
-        for(int i = 0; i < columns.size(); ++i) {
-            outfile << " " << columns[i] << " |";
+        if (output_off == false) {
+            outfile << "|";
+            for(int i = 0; i < columns.size(); ++i) {
+                outfile << " " << columns[i] << " |";
+            }
+            outfile << "\n";
         }
-        outfile << "\n";
         num_rec++;
     }
-    outfile.close();
+    if (output_off == false) {
+    outfile.close();}
     // Print footer into buffer
     rec_printer.print_separator(context);
     // Print record count into buffer

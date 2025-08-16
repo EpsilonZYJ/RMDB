@@ -29,6 +29,7 @@ See the Mulan PSL v2 for more details. */
 #define MAX_CONN_LIMIT 8
 
 static bool should_exit = false;
+bool output_off = false;
 
 // 构建全局所需的管理器对象
 auto disk_manager = std::make_unique<DiskManager>();
@@ -139,7 +140,23 @@ void *client_handler(void *sock_fd) {
             std::cout << "Server crash" << std::endl;
             exit(1);
         }
-
+        // std::cout << "收到的命令: [";
+        // for (int i = 0; data_recv[i] != '\0'; i++) {
+        //     if (isprint(data_recv[i])) {
+        //         std::cout << data_recv[i];
+        //     } else {
+        //         std::cout << std::hex << static_cast<int>(static_cast<unsigned char>(data_recv[i]));
+        //     }
+        // }
+        //std::cout << "]" << std::endl << std::flush;
+        if (strcmp(data_recv, "set output_file off") == 0) {
+            //std::cout<<"Set output_file off" << std::endl;
+            output_off = true;
+            if (write(fd, data_send, offset + 1) == -1) {
+                break;
+            }
+            continue;
+        }
         std::cout << "Read from client " << fd << ": " << data_recv << std::endl;
 
         memset(data_send, '\0', BUFFER_LENGTH);
@@ -190,11 +207,12 @@ void *client_handler(void *sock_fd) {
                     // 回滚事务
                     txn_manager->abort(context->txn_, log_manager.get());
                     std::cout << e.GetInfo() << std::endl;
-
-                    std::fstream outfile;
-                    outfile.open("output.txt", std::ios::out | std::ios::app);
-                    outfile << str;
-                    outfile.close();
+                    if (output_off == false) {
+                        std::fstream outfile;
+                        outfile.open("output.txt", std::ios::out | std::ios::app);
+                        outfile << "failure\n";
+                        outfile.close();
+                    }
                 } catch (RMDBError &e) {
                     // 遇到异常，需要打印failure到output.txt文件中，并发异常信息返回给客户端
                     std::cerr << e.what() << std::endl;
@@ -205,20 +223,39 @@ void *client_handler(void *sock_fd) {
                     offset = e.get_msg_len() + 1;
 
                     // 将报错信息写入output.txt
-                    std::fstream outfile;
-                    outfile.open("output.txt",std::ios::out | std::ios::app);
-                    outfile << "failure\n";
-                    outfile.close();
+                if (output_off == false) {
+                std::fstream outfile;
+                outfile.open("output.txt", std::ios::out | std::ios::app);
+                outfile << "failure\n";
+                outfile.close();
+                 }
+                } catch (std::exception &e) {
+                    // 其他异常，打印异常信息到output.txt文件中，并返回给客户端
+                    std::cerr << e.what() << std::endl;
+
+                    memcpy(data_send, e.what(), strlen(e.what()));
+                    data_send[strlen(e.what())] = '\n';
+                    data_send[strlen(e.what()) + 1] = '\0';
+                    offset = strlen(e.what()) + 1;
+
+                    if (output_off == false) {
+                        std::fstream outfile;
+                        outfile.open("output.txt", std::ios::out | std::ios::app);
+                        outfile << "failure\n";
+                        outfile.close();
+                    }       
                 } catch(std::exception &e) {
                     std::cerr << e.what() << std::endl;
                 }
             }
         }
         else {
-            std::fstream outfile;
-            outfile.open("output.txt",std::ios::out | std::ios::app);
-            outfile << "failure\n";
-            outfile.close();
+            if(output_off == false) {
+                std::fstream outfile;
+                outfile.open("output.txt", std::ios::out | std::ios::app);
+                outfile << "failure\n";
+                outfile.close();
+            }
         }
         if(finish_analyze == false) {
             yy_delete_buffer(buf);

@@ -27,7 +27,7 @@ See the Mulan PSL v2 for more details. */
 #include "optimizer/planner.h"
 
 class Planner;
-
+extern bool output_off;
 class QlManager {
    private:
     SmManager *sm_manager_;

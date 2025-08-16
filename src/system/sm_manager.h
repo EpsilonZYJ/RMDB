@@ -17,7 +17,7 @@ See the Mulan PSL v2 for more details. */
 #include "common/context.h"
 
 class Context;
-
+extern bool output_off;
 struct ColDef {
     std::string name;  // Column name
     ColType type;      // Type of column
