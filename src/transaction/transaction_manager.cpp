@@ -44,8 +44,6 @@ Transaction * TransactionManager::begin(Transaction* txn, LogManager* log_manage
     log_record.prev_lsn_ = txn->get_prev_lsn();
     lsn_t lsn = log_manager->add_log_to_buffer(&log_record);
     txn->set_prev_lsn(lsn);
-
-    
     // 4. 返回当前事务指针
     return txn;
 }
@@ -123,18 +121,15 @@ void TransactionManager::abort(Transaction * txn, LogManager *log_manager) {
     while (!write_set->empty()) {
         WriteRecord *write_record = write_set->back();  
         write_set->pop_back();                          
-            std::string tab_name = write_record->GetTableName();
-            
+            std::string tab_name = write_record->GetTableName();   
             // 检查表是否存在
             if (sm_manager_->fhs_.find(tab_name) == sm_manager_->fhs_.end()) {
                 delete write_record;
                 continue;
             }
-            
             auto& tab = sm_manager_->db_.get_table(tab_name);
             auto fh = sm_manager_->fhs_.at(tab_name).get();
             WType type = write_record->GetWriteType();
-            
             // 先处理DELETE_TUPLE的数据恢复
             if (type == WType::DELETE_TUPLE) {
                  fh->insert_record(write_record->GetRid(), write_record->GetRecord().data, &context);

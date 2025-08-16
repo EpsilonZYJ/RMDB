@@ -266,7 +266,6 @@ void *client_handler(void *sock_fd) {
             txn_id = INVALID_TXN_ID;
         }
         delete context; // 确保每次循环结束释放context
-
     }
 
     std::cout << "Terminating current client_connection..." << std::endl;
