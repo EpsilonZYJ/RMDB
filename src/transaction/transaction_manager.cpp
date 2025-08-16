@@ -27,18 +27,26 @@ Transaction * TransactionManager::begin(Transaction* txn, LogManager* log_manage
     // 3. 把开始事务加入到全局事务表中
     // 4. 返回当前事务指针
     // 如果需要支持MVCC请在上述过程中添加代码
+    
     // 判断传入事务参数是否为空指针
     if (txn == nullptr) {
-       txn = new Transaction(next_txn_id_++);
-       txn->set_state(TransactionState::GROWING);
+        // 如果为空指针，创建新事务
+        txn_id_t txn_id = next_txn_id_++;
+        txn = new Transaction(txn_id);
+        txn->set_state(TransactionState::GROWING);
     }
-    std::unique_lock<std::mutex> lock(latch_);  
+    
+    // 把开始事务加入到全局事务表中
     txn_map[txn->get_transaction_id()] = txn;
-    lock.unlock();
+    
+    // 写入BEGIN日志记录
     BeginLogRecord log_record(txn->get_transaction_id());
     log_record.prev_lsn_ = txn->get_prev_lsn();
     lsn_t lsn = log_manager->add_log_to_buffer(&log_record);
     txn->set_prev_lsn(lsn);
+
+    
+    // 4. 返回当前事务指针
     return txn;
 }
 
@@ -54,27 +62,39 @@ void TransactionManager::commit(Transaction* txn, LogManager* log_manager) {
     // 3. 释放事务相关资源，eg.锁集
     // 4. 把事务日志刷入磁盘中
     // 5. 更新事务状态
-    // 如果需要支持MVCC请在上述过程中添加代码  
-    auto write_record = txn->get_write_set();
-    // what to do?
-    if (!write_record->empty())
-    {
-        // how to commit writes?
-        // for(size_t i=0;i<write_record.size();i++)
-        write_record->clear();
+    // 如果需要支持MVCC请在上述过程中添加代码
+    
+    //事务结束，清理所有写记录
+    auto write_set = txn->get_write_set();
+    while (!write_set->empty()) {
+        WriteRecord* record = write_set->front();
+        write_set->pop_front();
+        delete record;
     }
-    //Release locks
-    for (auto &lock : *txn->get_lock_set())
-    {
-        lock_manager_->unlock(txn, lock);
+    
+    // 释放所有锁
+    auto lock_set = txn->get_lock_set();
+    for (auto lock_id : *lock_set) {
+        lock_manager_->unlock(txn, lock_id);
     }
-    txn->get_lock_set()->clear();
+    
+    // 释放事务相关资源
+    lock_set->clear();
+    
+    // 把事务日志刷入磁盘中
     CommitLogRecord log_record(txn->get_transaction_id());
     log_record.prev_lsn_ = txn->get_prev_lsn();
     lsn_t lsn = log_manager->add_log_to_buffer(&log_record);
     txn->set_prev_lsn(lsn);
+    log_manager->flush_log_to_disk();
+    
+    // 更新事务状态为已提交
     txn->set_state(TransactionState::COMMITTED);
+    
+    // 从事务表中移除
+    txn_map.erase(txn->get_transaction_id());
 }
+
 
 /**
  * @description: 事务的终止（回滚）方法
