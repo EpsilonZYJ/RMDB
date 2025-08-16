@@ -60,9 +60,6 @@ public:
         sm_manager_ = sm_manager;
         lock_manager_ = lock_manager;
         concurrency_mode_ = concurrency_mode;
-        if (lock_manager_) {
-      lock_manager_->set_transaction_manager(this);
-    }
     }
     
     ~TransactionManager() = default;
