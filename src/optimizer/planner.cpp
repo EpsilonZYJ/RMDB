@@ -24,7 +24,7 @@
     #include "execution/executor_semi_join.h" 
     #include <set>
     #include <cmath>
-
+    #include <queue>
     /**
     * @brief 评估单个索引的匹配度
     * @param index 某一个索引信息
@@ -294,98 +294,137 @@
         return query;
     }
 
-    void Planner::predicate_pushdown(std::shared_ptr<Query> query, Context *context)
-    {
-        // 常量传播优化
-        std::map<TabCol, Value> map;
-        //找出"列=常量"的等值条件
-        for (auto &cond: query->conds) {
-            if (cond.is_rhs_val && cond.op == OP_EQ) {
-                map[cond.lhs_col] = cond.rhs_val; 
-            }
-        }
-
-        //将"列1=列2"和"列2=常量"推导出"列1=常量"
-        bool changed;
-        do {
-            changed = false;
-            for (auto it = query->conds.begin(); it != query->conds.end(); ++it) {
-                // 处理"列1=列2"形式的条件
-                if (!it->is_rhs_val && it->op == OP_EQ) {
-                    // 检查右侧列是否有对应常量
-                    auto map_it = map.find(it->rhs_col);
-                    if (map_it != map.end()) {
-                        // 创建新条件:,列1=常量
-                        Condition new_cond;
-                        new_cond.lhs_col = it->lhs_col;
-                        new_cond.op = OP_EQ;
-                        new_cond.is_rhs_val = true;
-                        new_cond.rhs_val = map_it->second;
-                        
-                        // 检查是否已有此条件
-                        bool exists = false;
-                        for (const auto& c : query->conds) {
-                            if (c.is_rhs_val && c.op == OP_EQ && 
-                                c.lhs_col.tab_name == new_cond.lhs_col.tab_name && 
-                                c.lhs_col.col_name == new_cond.lhs_col.col_name) {
-                                exists = true;
-                                break;
-                            }
-                        }
-                        
-                        if (!exists) {
-                            query->conds.push_back(new_cond);
-                            map.emplace(new_cond.lhs_col, new_cond.rhs_val);
-                            changed = true;
-                        }
-                    }
-                    
-                    // 检查左侧列是否有对应常量
-                    map_it = map.find(it->lhs_col);
-                    if (map_it != map.end()) {
-                        // 创建新条件, 列2=常量
-                        Condition new_cond;
-                        new_cond.lhs_col = it->rhs_col;
-                        new_cond.op = OP_EQ;
-                        new_cond.is_rhs_val = true;
-                        new_cond.rhs_val = map_it->second;
-                        
-                        // 检查是否已有此条件
-                        bool exists = false;
-                        for (const auto& c : query->conds) {
-                            if (c.is_rhs_val && c.op == OP_EQ && 
-                                c.lhs_col.tab_name == new_cond.lhs_col.tab_name && 
-                                c.lhs_col.col_name == new_cond.lhs_col.col_name) {
-                                exists = true;
-                                break;
-                            }
-                        }
-                        
-                        if (!exists) {
-                            query->conds.push_back(new_cond);
-                            map.emplace(new_cond.lhs_col, new_cond.rhs_val);
-                            changed = true;
-                        }
-                    }
-                }
-            }
-        } while (changed); // 重复直到没有新条件产生
-
-        std::vector<Condition> join_conds;//连接条件
+struct ConditionComparator {
+    bool operator()(const Condition& a, const Condition& b) const {
+        // 定义条件比较逻辑，确保唯一性
+        if (a.is_rhs_val != b.is_rhs_val) return a.is_rhs_val < b.is_rhs_val;
+        if (a.op != b.op) return a.op < b.op;
         
-        for (const auto& cond : query->conds) {
-            if (!cond.is_rhs_val) {
-                // 检查是否是连接条件
-                if (cond.lhs_col.tab_name != cond.rhs_col.tab_name) {
-                    join_conds.push_back(cond);
-                    continue;
-                }
-            }
-        }
+        int lhs_cmp = compareTabCol(a.lhs_col, b.lhs_col);
+        if (lhs_cmp != 0) return lhs_cmp < 0;
         
-        // 更新query中的条件
-        //query->conds.insert(query->conds.end(), join_conds.begin(), join_conds.end());
+        if (a.is_rhs_val) {
+            return compareValue(a.rhs_val, b.rhs_val) < 0;
+        } else {
+            return compareTabCol(a.rhs_col, b.rhs_col) < 0;
+        }
     }
+    
+    int compareTabCol(const TabCol& a, const TabCol& b) const {
+        if (a.tab_name != b.tab_name) return a.tab_name.compare(b.tab_name);
+        return a.col_name.compare(b.col_name);
+    }
+    
+    int compareValue(const Value& a, const Value& b) const {
+        if (a.type != b.type) return a.type < b.type;
+        
+        // 根据类型比较值的内容
+        switch (a.type) {
+            case TYPE_INT:
+                return a.int_val < b.int_val ? -1 : (a.int_val > b.int_val ? 1 : 0);
+            case TYPE_FLOAT:
+                return a.float_val < b.float_val ? -1 : (a.float_val > b.float_val ? 1 : 0);
+            case TYPE_STRING:
+                return a.str_val.compare(b.str_val);
+            case TYPE_DATE:
+                 return a.str_val.compare(b.str_val);
+            default:
+                return 0;
+        }
+    }
+};
+
+void Planner::predicate_pushdown(std::shared_ptr<Query> query, Context *context)
+{
+    // 使用set而非vector存储条件，避免重复
+    std::set<Condition, ConditionComparator> all_conditions(query->conds.begin(), query->conds.end());
+    query->conds.clear();
+    
+    // 常量映射表
+    std::map<TabCol, Value> const_map;
+    
+    // 建立初始常量映射
+    for (const auto& cond : all_conditions) {
+        if (cond.is_rhs_val && cond.op == OP_EQ) {
+            const_map[cond.lhs_col] = cond.rhs_val;
+        }
+    }
+    
+    // 创建列之间的等价关系图
+    std::map<TabCol, std::set<TabCol>> equiv_classes;
+    for (const auto& cond : all_conditions) {
+        if (!cond.is_rhs_val && cond.op == OP_EQ) {
+            equiv_classes[cond.lhs_col].insert(cond.rhs_col);
+            equiv_classes[cond.rhs_col].insert(cond.lhs_col);
+        }
+    }
+    
+    // 一次性传播所有常量，直到不再有新的常量产生
+    bool changed;
+    do {
+        changed = false;
+        std::map<TabCol, Value> new_consts;
+        
+        // 对每个已知常量
+        for (const auto& [col, val] : const_map) {
+            // 查找其所有等价列
+            std::queue<TabCol> to_visit;
+            std::set<TabCol> visited;
+            to_visit.push(col);
+            
+            while (!to_visit.empty()) {
+                TabCol curr = to_visit.front();
+                to_visit.pop();
+                
+                if (visited.count(curr) > 0) continue;
+                visited.insert(curr);
+                
+                // 对等价类中的每个列
+                for (const TabCol& equiv : equiv_classes[curr]) {
+                    if (visited.count(equiv) == 0 && const_map.count(equiv) == 0) {
+                        new_consts[equiv] = val;
+                        to_visit.push(equiv);
+                    }
+                }
+            }
+        }
+        
+        // 将新常量添加到映射中
+        if (!new_consts.empty()) {
+            const_map.insert(new_consts.begin(), new_consts.end());
+            changed = true;
+        }
+    } while (changed);
+    
+    // 根据常量映射和原始条件生成最终条件列表
+    for (const auto& cond : all_conditions) {
+        query->conds.push_back(cond);
+    }
+    
+    // 添加推导出的新常量条件
+    for (const auto& [col, val] : const_map) {
+        // 检查是否已存在此条件
+        bool exists = false;
+        for (const auto& cond : all_conditions) {
+            if (cond.is_rhs_val && cond.op == OP_EQ && 
+                cond.lhs_col.tab_name == col.tab_name && 
+                cond.lhs_col.col_name == col.col_name) {
+                exists = true;
+                break;
+            }
+        }
+        
+        if (!exists) {
+            Condition new_cond;
+            new_cond.lhs_col = col;
+            new_cond.op = OP_EQ;
+            new_cond.is_rhs_val = true;
+            new_cond.rhs_val = val;
+            query->conds.push_back(new_cond);
+        }
+    }
+}
+
 
     void Planner::projection_pushdown(std::shared_ptr<Query> query, Context *context)
     {
@@ -1112,10 +1151,10 @@
     */
     std::shared_ptr<Plan> Planner::generate_select_plan(std::shared_ptr<Query> query, Context *context) {
         //逻辑优化
-        //std::cout << "DEBUG: generate_select_plan 开始" << std::endl;
+        std::cout << "DEBUG: generate_select_plan 开始" << std::endl;
         //std::cout << "DEBUG: 开始逻辑优化" << std::endl;
         query = logical_optimization(std::move(query), context);
-        
+        std::cout << "DEBUG: 逻辑优化完成" << std::endl;
         //处理JOIN ON条件，将它们合并到WHERE条件中
         if (!query->join_conds.empty()) {
             //std::cout << "DEBUG: 处理 JOIN ON 条件，数量: " << query->join_conds.size() << std::endl;
@@ -1145,8 +1184,6 @@
                 if (agg_type != NO_AGG) {
                     agg = true; break;
                 }
-            
-
         // Generate aggregate plan if needed（在projection之下增加aggregation节点）
         if (agg) 
             plannerRoot = std::make_shared<AggregatePlan>(
@@ -1158,7 +1195,7 @@
                 std::move(query->havings)
             );
         // 查询执行树中表示聚合函数的节点为
-
+        std::cout << "DEBUG: 聚合函数处理完成" << std::endl;
         plannerRoot = generate_sort_plan(query, std::move(plannerRoot)); // TODO 此处修改是关联着physical_optimization的
 
         // 添加limit节点
@@ -1167,7 +1204,7 @@
         }
 
         // TODO order by在前面physical_optimization已经处理过。难道排序是在聚合函数前面吗？
-        //std::cout << "DEBUG: 创建投影计划" << std::endl;
+        std::cout << "DEBUG: 创建投影计划" << std::endl;
         //检查是否为SELECT*
         bool is_select_star = false;
         if (auto select_stmt = std::dynamic_pointer_cast<ast::SelectStmt>(query->parse)) {
@@ -1194,7 +1231,7 @@
                 has_matching_projection = all_equal;
             }
         }
-
+        std::cout << "DEBUG: 检查是否存在匹配的投影节点: " << (has_matching_projection ? "是" : "否") << std::endl;
         // 只有在没有合适的投影节点时才创建新的
         if (!has_matching_projection) {
             plannerRoot = std::make_shared<ProjectionPlan>(
@@ -1205,6 +1242,7 @@
                 is_select_star
             );
         }
+        std::cout << "DEBUG: 投影计划创建完成" << std::endl;
         return plannerRoot;
     }
 
@@ -1285,14 +1323,15 @@
                                                         query->set_clauses);
         } else if (auto x = std::dynamic_pointer_cast<ast::SelectStmt>(query->parse)) {
             std::shared_ptr<plannerInfo> root = std::make_shared<plannerInfo>(x);
-
+            
             // 生成select语句的查询执行计划(projection总是在最顶层)
-            //std::cout << "DEBUG: 生成select语句的查询执行计划" << std::endl;
+            std::cout << "DEBUG: 生成select语句的查询执行计划" << std::endl;
             std::map<std::string, std::string> saved_alias_map;
             if (is_explain) {
                 saved_alias_map = query->tab_alias_map;  // 保存副本
             }
             std::shared_ptr<Plan> projection = generate_select_plan(std::move(query), context); // 生成select语句的查询执行计划
+            std::cout << "DEBUG: 生成select语句的查询执行计划完成" << std::endl;
             plannerRoot = std::make_shared<DMLPlan>(T_select, projection, std::string(), std::vector<Value>(),
                                                         std::vector<Condition>(), std::vector<SetClause>());
                                                         // 创建ExplainPlan并设置别名映射
@@ -1304,6 +1343,7 @@
                 std::cout << "DEBUG: 别名映射设置完成，大小: " << saved_alias_map.size() << std::endl;
                 return explain_plan;
             }
+            std::cout << "DEBUG: 生成select语句的查询执行计划完成" << std::endl;
         } else {
             throw InternalError("Unexpected AST root");
         }

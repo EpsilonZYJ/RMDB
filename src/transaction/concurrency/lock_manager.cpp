@@ -8,9 +8,6 @@ EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
 MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 See the Mulan PSL v2 for more details. */
 
-// 这是一个新的MVCC实现的锁管理器
-// 由于头文件依赖问题，我们重新实现了所需的功能
-
 #include "lock_manager.h"
 #include "../transaction_manager.h"
 #include "../txn_defs.h"
@@ -75,7 +72,7 @@ bool LockManager::lock_exclusive_on_record(Transaction *txn, const Rid &rid,
 }
 
 /**
- * MVCC 模式下的表级读访问检查（简化实现）
+ * MVCC 模式下的表级读访问检查
  */
 bool LockManager::lock_shared_on_table(Transaction *txn, int tab_fd) {
   // 在MVCC模式下，表级读锁通常直接允许
@@ -83,7 +80,7 @@ bool LockManager::lock_shared_on_table(Transaction *txn, int tab_fd) {
 }
 
 /**
- * MVCC 模式下的表级写访问检查（简化实现）
+ * MVCC 模式下的表级写访问检查
  */
 bool LockManager::lock_exclusive_on_table(Transaction *txn, int tab_fd) {
   // 在MVCC模式下，表级写锁通常直接允许
@@ -91,7 +88,7 @@ bool LockManager::lock_exclusive_on_table(Transaction *txn, int tab_fd) {
 }
 
 /**
- * MVCC 模式下的表级意向读锁检查（简化实现）
+ * MVCC 模式下的表级意向读锁检查
  */
 bool LockManager::lock_IS_on_table(Transaction *txn, int tab_fd) {
   // 在MVCC模式下，意向锁通常直接允许
@@ -99,7 +96,7 @@ bool LockManager::lock_IS_on_table(Transaction *txn, int tab_fd) {
 }
 
 /**
- * MVCC 模式下的表级意向写锁检查（简化实现）
+ * MVCC 模式下的表级意向写锁检查
  */
 bool LockManager::lock_IX_on_table(Transaction *txn, int tab_fd) {
   // 在MVCC模式下，意向锁通常直接允许
@@ -107,7 +104,7 @@ bool LockManager::lock_IX_on_table(Transaction *txn, int tab_fd) {
 }
 
 /**
- * MVCC 模式下的锁释放（简化实现）
+ * MVCC 模式下的锁释放
  */
 bool LockManager::unlock(Transaction *txn, LockDataId lock_data_id) {
   // 在MVCC模式下，不需要显式释放锁

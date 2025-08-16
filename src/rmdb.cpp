@@ -179,9 +179,12 @@ void *client_handler(void *sock_fd) {
                     goto send_result;
                     //std::cout<<"没有跳过生成计划" << std::endl;
                     }
+                    std::cout << "DEBUG: query->parse->type: " << std::endl;
                     std::shared_ptr<Plan> plan = optimizer->plan_query(query, context);
                     // portal
+                    std::cout << "DEBUG: plan generated" << std::endl;
                     std::shared_ptr<PortalStmt> portalStmt = portal->start(plan, context);
+                    std::cout << "DEBUG: portal started" << std::endl;
                     portal->run(portalStmt, ql_manager.get(), &txn_id, context);
                     std::cout << "Portal run finished." << std::endl;
                     portal->drop();

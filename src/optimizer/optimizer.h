@@ -60,7 +60,9 @@ class Optimizer {
             // Set Knob Plan
             return std::make_shared<SetKnobPlan>(x->set_knob_type_, x->bool_val_);
         } else {
+            std::cout<< "DEBUG: 进入planner" << std::endl;
             return planner_->do_planner(query, context); // 生成DDL语句和DML语句的查询执行计划
+            std::cout<< "DEBUG: planner finished" << std::endl;
         }
     }
 

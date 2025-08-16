@@ -19,6 +19,7 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse)
 {
     std::cout << "DEBUG: do_analyze AST type: " << typeid(*parse).name() << std::endl;
     std::shared_ptr<Query> query = std::make_shared<Query>();//初始化空query
+    std::cout<<"DEBUG: do_analyze query created" << std::endl;
     query->parse = parse;
    if (auto x = std::dynamic_pointer_cast<ast::LoadStmt>(parse)) {
     std::cout<< "DEBUG: Processing LoadStmt" << std::endl;
@@ -123,7 +124,7 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse)
                 throw TableNotFoundError(tab_name);
             }
         }
-
+        std::cout<<"DEBUG: analyze_table_refs finished" << std::endl;
        // TODO orderby不能使用别名
 
         for (auto &item: x->cols) {
@@ -154,9 +155,10 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse)
                 query->alias.emplace_back(std::move(item->alias));
             
         }
-
+        std::cout<<"DEBUG: cols and agg_types processed" << std::endl;
         std::vector<ColMeta> all_cols;
         get_all_cols(query->tables, all_cols);
+        std::cout<<"DEBUG: get_all_cols finished" << std::endl;
         if (query->cols.empty()) { // select all columns(select *)
             if (!x->group_bys.empty() || !x->havings.empty()) 
                 throw InternalError("Aggregation functions and GROUP BY cannot be used without a target list.");
@@ -190,7 +192,7 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse)
                 std::cout << "DEBUG: 检测到半连接，推迟列检查" << std::endl;
             }
         }
-
+        std::cout<<"DEBUG: column names checked" << std::endl;
         // 处理group by条件
         for (auto &group_by: x->group_bys) 
             query->group_bys.emplace_back(TabCol{group_by->tab_name, group_by->col_name});
@@ -354,13 +356,14 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse)
     }
 
         //处理where条件
-        
+        std::cout<<"DEBUG: where and having conditions processing started" << std::endl;
         get_clause(x->conds, query->conds);
         get_having_clause(x->havings, query->havings);
         // check_clause(query->tables, query->havings, true);
         // check_clause(query->tables, query->conds, false);
         check_clause(query->tables, query->conds, query->tab_alias_map, false);
         check_clause(query->tables, query->havings, query->tab_alias_map, true);
+        std::cout<<"DEBUG: where and having conditions processed" << std::endl;
     } else if (auto x = std::dynamic_pointer_cast<ast::UpdateStmt>(parse)) {
         // 处理表名
         query->tables.push_back(x->tab_name);
