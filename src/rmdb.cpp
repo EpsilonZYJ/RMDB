@@ -140,15 +140,6 @@ void *client_handler(void *sock_fd) {
             std::cout << "Server crash" << std::endl;
             exit(1);
         }
-        // std::cout << "收到的命令: [";
-        // for (int i = 0; data_recv[i] != '\0'; i++) {
-        //     if (isprint(data_recv[i])) {
-        //         std::cout << data_recv[i];
-        //     } else {
-        //         std::cout << std::hex << static_cast<int>(static_cast<unsigned char>(data_recv[i]));
-        //     }
-        // }
-        //std::cout << "]" << std::endl << std::flush;
         if (strcmp(data_recv, "set output_file off") == 0) {
             //std::cout<<"Set output_file off" << std::endl;
             output_off = true;
@@ -161,10 +152,10 @@ void *client_handler(void *sock_fd) {
 
         memset(data_send, '\0', BUFFER_LENGTH);
         offset = 0;
-
+        std::cout << "pre transaction ID: " << txn_id << std::endl;
         Context *context = new Context(lock_manager.get(), log_manager.get(), nullptr, data_send, &offset);
         SetTransaction(&txn_id, context);
-
+        std::cout << "Current transaction ID: " << txn_id << std::endl;
         // 用于判断是否已经调用了yy_delete_buffer来删除buf
         bool finish_analyze = false;
         pthread_mutex_lock(buffer_mutex);
@@ -274,7 +265,6 @@ void *client_handler(void *sock_fd) {
             txn_manager->commit(context->txn_, context->log_mgr_);
             txn_id = INVALID_TXN_ID;
         }
-        std::cout << "Transaction finished, txn_id: " << txn_id << std::endl;
         delete context; // 确保每次循环结束释放context
 
     }

@@ -114,6 +114,7 @@ void QlManager::run_cmd_utility(std::shared_ptr<Plan> plan, txn_id_t *txn_id, Co
                 //记录日志
                 CommitLogRecord log_record(context->txn_->get_transaction_id());
                 context->log_mgr_->add_log_to_buffer(&log_record);
+                *txn_id= INVALID_TXN_ID;
                 break;
             }    
             case T_Transaction_rollback:
@@ -123,6 +124,7 @@ void QlManager::run_cmd_utility(std::shared_ptr<Plan> plan, txn_id_t *txn_id, Co
                 //记录日志
                 AbortLogRecord log_record(context->txn_->get_transaction_id());
                 context->log_mgr_->add_log_to_buffer(&log_record);
+                *txn_id= INVALID_TXN_ID;
                 break;
             }    
             case T_Transaction_abort:
@@ -132,6 +134,7 @@ void QlManager::run_cmd_utility(std::shared_ptr<Plan> plan, txn_id_t *txn_id, Co
                 //记录日志
                 AbortLogRecord log_record(context->txn_->get_transaction_id());
                 context->log_mgr_->add_log_to_buffer(&log_record);
+                *txn_id= INVALID_TXN_ID;
                 break;
             }     
             case T_ShowIndex:

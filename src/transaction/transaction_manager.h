@@ -22,6 +22,7 @@ See the Mulan PSL v2 for more details. */
 #include "concurrency/lock_manager.h"
 //#include "system/sm_manager.h"
 #include "common/exception.h"
+
 // 前向声明
 class LogManager;
 class SmManager;
@@ -33,6 +34,10 @@ struct VersionUndoLink {
     /** 版本链中的下一个版本。 */
     UndoLink prev_;
     bool in_progress_{false};
+    /** 提交时间戳，仅在已提交时有效 */
+    timestamp_t commit_ts_{INVALID_TS};
+    /** 历史版本数据，用于快照隔离 */
+    std::shared_ptr<RmRecord> historical_data_{nullptr};
 
     friend auto operator==(const VersionUndoLink &a, const VersionUndoLink &b) {
         return a.prev_ == b.prev_ && a.in_progress_ == b.in_progress_;
@@ -55,6 +60,9 @@ public:
         sm_manager_ = sm_manager;
         lock_manager_ = lock_manager;
         concurrency_mode_ = concurrency_mode;
+        if (lock_manager_) {
+      lock_manager_->set_transaction_manager(this);
+    }
     }
     
     ~TransactionManager() = default;
@@ -78,6 +86,7 @@ public:
      * @param {txn_id_t} txn_id 事务ID
      */    
     Transaction* get_transaction(txn_id_t txn_id) {
+        std::cout<< "DEBUG: get_transaction called with txn_id=" << txn_id << std::endl;
         if(txn_id == INVALID_TXN_ID) return nullptr;
         
         std::unique_lock<std::mutex> lock(latch_);
@@ -157,6 +166,19 @@ public:
     void GarbageCollection();
 
     timestamp_t GetNextTimestamp();
+
+    /** @brief 检查记录对事务的可见性 */
+    bool IsVisible(Rid rid, Transaction *txn);
+
+    /** @brief 重构可见版本的记录 */
+    std::optional<RmRecord> ReconstructTuple(Rid rid, Transaction *txn);
+
+    /** @brief 从UndoLog递归重构历史版本 */
+    std::optional<RmRecord> ReconstructFromUndoLog(UndoLink undo_link,
+                                                    Transaction *txn);
+
+    /** @brief 更新事务提交时的所有版本链状态 */
+    void UpdateTransactionVersionLinks(txn_id_t txn_id, timestamp_t commit_ts);
 
     struct PageVersionInfo {
         std::shared_mutex mutex_;

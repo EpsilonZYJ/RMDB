@@ -23,6 +23,30 @@ std::unique_ptr<RmRecord> RmFileHandle::get_record(const Rid& rid, Context* cont
     std::cout<< "DEBUG: get_record "<< std::endl;
     if(context) context->lock_mgr_->lock_shared_on_table(context->txn_, fd_);//检查是否提供了事务上下文，获取共享锁
     std::cout<<"DEBUG: 开始fetch "<< std::endl;
+    if (context && context->txn_ &&
+      context->lock_mgr_->get_transaction_manager()->get_concurrency_mode() ==
+          ConcurrencyMode::MVCC) {
+    auto txn_mgr = context->lock_mgr_->get_transaction_manager();
+
+    try {
+      // 首先尝试重构版本（如果需要的话）
+      auto reconstructed = txn_mgr->ReconstructTuple(rid, context->txn_);
+      if (reconstructed.has_value()) {
+        // 返回重构的版本
+        auto record_ptr = std::make_unique<RmRecord>(reconstructed->size);
+        memcpy(record_ptr->data, reconstructed->data, reconstructed->size);
+        return record_ptr;
+      }
+      // ReconstructTuple返回nullopt表示应该使用当前版本
+      // 继续下面的处理获取当前版本
+    } catch (const RecordNotFoundError &e) {
+      // 记录对当前事务不可见，抛出异常
+      throw;
+    } catch (const std::exception &e) {
+      // 其他异常，可能是内部错误
+      throw RecordNotFoundError(rid.page_no, rid.slot_no);
+    }
+  }
     RmPageHandle page_handle = fetch_page_handle(rid.page_no);//获取句柄
     std::cout << "DEBUG: get_record at page_no=" << rid.page_no << ", slot_no=" << rid.slot_no << std::endl;
     char* record_pos = page_handle.get_slot(rid.slot_no);//获取记录偏移
@@ -44,6 +68,8 @@ Rid RmFileHandle::insert_record(char* buf, Context* context) {
     // 3. 将buf复制到空闲slot位置
     // 4. 更新page_handle.page_hdr中的数据结构
     // 注意考虑插入一条记录后页面已满的情况，需要更新file_hdr_.first_free_page_no
+     if (context)
+    context->lock_mgr_->lock_exclusive_on_table(context->txn_, fd_);
     RmPageHandle page_handle = create_page_handle();
     int slot_no = Bitmap::first_bit(0, page_handle.bitmap, file_hdr_.num_records_per_page);
     if(slot_no == file_hdr_.num_records_per_page) throw InternalError("No free slot in page");
@@ -51,6 +77,31 @@ Rid RmFileHandle::insert_record(char* buf, Context* context) {
     memcpy(slot, buf, file_hdr_.record_size);
     Bitmap::set(page_handle.bitmap, slot_no);
     page_handle.page_hdr->num_records++;
+    Rid new_rid{page_handle.page->get_page_id().page_no, slot_no};
+
+  // MVCC支持：为插入操作创建版本链
+  if (context && context->txn_ &&
+      context->lock_mgr_->get_transaction_manager()->get_concurrency_mode() ==
+          ConcurrencyMode::MVCC) {
+    auto txn_mgr = context->lock_mgr_->get_transaction_manager();
+
+    // 创建UndoLog记录插入操作
+    UndoLog undo_log;
+    undo_log.is_deleted_ = false;
+    undo_log.ts_ = 0; // 时间戳将在事务提交时设置
+    undo_log.prev_version_ =
+        UndoLink{INVALID_TXN_ID, 0}; // 插入操作没有前一个版本
+
+    // 将UndoLog添加到事务的撤销日志缓冲区
+    UndoLink undo_link = context->txn_->AppendUndoLog(undo_log);
+
+    // 更新版本链
+    VersionUndoLink version_link;
+    version_link.prev_ = undo_link;
+    version_link.in_progress_ = true; // 事务还未提交
+
+    txn_mgr->UpdateVersionLink(new_rid, version_link, nullptr);
+  }
     if (page_handle.page_hdr->num_records == file_hdr_.num_records_per_page) {
         file_hdr_.first_free_page_no = page_handle.page_hdr->next_free_page_no;
         page_handle.page_hdr->next_free_page_no = RM_NO_PAGE;
@@ -59,7 +110,7 @@ Rid RmFileHandle::insert_record(char* buf, Context* context) {
     buffer_pool_manager_->unpin_page(page_id, true);
     
     printf("DEBUG: insert_record finished\n");
-    return Rid{page_id.page_no, slot_no};
+    return new_rid;
 }   
 
 /**
@@ -122,6 +173,45 @@ void RmFileHandle::delete_record(const Rid& rid, Context* context) {
     if (!Bitmap::is_set(page_handle.bitmap, rid.slot_no)) {
         throw RecordNotFoundError(rid.page_no, rid.slot_no);
     }//检查记录是否存在
+     if (context && context->txn_ &&
+      context->lock_mgr_->get_transaction_manager()->get_concurrency_mode() ==
+          ConcurrencyMode::MVCC) {
+    auto txn_mgr = context->lock_mgr_->get_transaction_manager();
+
+    // 保存被删除的记录数据
+    char *slot_pos = page_handle.get_slot(rid.slot_no);
+    RmRecord deleted_record(file_hdr_.record_size);
+    memcpy(deleted_record.data, slot_pos, file_hdr_.record_size);
+
+    // 创建UndoLog记录删除操作
+    UndoLog undo_log;
+    undo_log.is_deleted_ = true;
+    undo_log.ts_ = 0; // 时间戳将在事务提交时设置
+
+    // 保存被删除记录的原始数据
+    undo_log.tuple_test_ = new RmRecord(deleted_record.size);
+    memcpy(undo_log.tuple_test_->data, deleted_record.data,
+           deleted_record.size);
+
+    // 获取当前版本链
+    auto current_version = txn_mgr->GetVersionLink(rid);
+    if (current_version.has_value()) {
+      undo_log.prev_version_ = current_version->prev_;
+    } else {
+      undo_log.prev_version_ = UndoLink{INVALID_TXN_ID, 0};
+    }
+
+    // 将UndoLog添加到事务的撤销日志缓冲区
+    UndoLink undo_link = context->txn_->AppendUndoLog(undo_log);
+
+    // 更新版本链
+    VersionUndoLink version_link;
+    version_link.prev_ = undo_link;
+    version_link.in_progress_ = true; // 事务还未提交
+
+    txn_mgr->UpdateVersionLink(rid, version_link, nullptr);
+  }
+
     Bitmap::reset(page_handle.bitmap, rid.slot_no);//清空记录
     page_handle.page_hdr->num_records--;
     bool was_full = (page_handle.page_hdr->num_records == file_hdr_.num_records_per_page - 1);
@@ -143,6 +233,48 @@ void RmFileHandle::update_record(const Rid& rid, char* buf, Context* context) {
     //if(context) context->lock_mgr_->lock_exclusive_on_table(context->txn_, fd_);
     RmPageHandle page_handle = fetch_page_handle(rid.page_no);
     char* slot_pos = page_handle.get_slot(rid.slot_no);
+    if (context && context->txn_ &&
+      context->lock_mgr_->get_transaction_manager()->get_concurrency_mode() ==
+          ConcurrencyMode::MVCC) {
+    auto txn_mgr = context->lock_mgr_->get_transaction_manager();
+
+    // 保存原始记录数据
+    RmRecord old_record(file_hdr_.record_size);
+    memcpy(old_record.data, slot_pos, file_hdr_.record_size);
+
+    // 创建UndoLog记录更新操作
+    UndoLog undo_log;
+    undo_log.is_deleted_ = false;
+    undo_log.ts_ = 0; // 时间戳将在事务提交时设置
+
+    // 保存原始记录数据到UndoLog中
+    undo_log.tuple_test_ = new RmRecord(old_record.size);
+    memcpy(undo_log.tuple_test_->data, old_record.data, old_record.size);
+
+    // 获取当前版本链
+    auto current_version = txn_mgr->GetVersionLink(rid);
+    if (current_version.has_value()) {
+      undo_log.prev_version_ = current_version->prev_;
+    } else {
+      undo_log.prev_version_ = UndoLink{INVALID_TXN_ID, 0};
+    }
+
+    // 将UndoLog添加到事务的撤销日志缓冲区
+    UndoLink undo_link = context->txn_->AppendUndoLog(undo_log);
+
+    // 更新版本链
+    VersionUndoLink version_link;
+    version_link.prev_ = undo_link;
+    version_link.in_progress_ = true; // 事务还未提交
+
+    // 保存历史版本数据用于快照隔离
+    version_link.historical_data_ = std::make_shared<RmRecord>(old_record.size);
+    memcpy(version_link.historical_data_->data, old_record.data,
+           old_record.size);
+
+    // 更新版本链
+    txn_mgr->UpdateVersionLink(rid, version_link, nullptr);
+  }
     memcpy(slot_pos, buf, file_hdr_.record_size);
     buffer_pool_manager_->unpin_page(page_handle.page->get_page_id(), true);
 }
