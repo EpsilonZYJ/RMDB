@@ -67,7 +67,9 @@ class Analyze
 private:
     SmManager *sm_manager_;
     bool current_is_semi_join_ = false;
+    bool current_is_anti_join_ = false;
     std::set<std::string> current_semi_join_left_tables_;
+    std::set<std::string> current_anti_join_left_tables_;
 public:
     Analyze(SmManager *sm_manager) : sm_manager_(sm_manager){}
     ~Analyze(){}
@@ -77,11 +79,15 @@ public:
         current_is_semi_join_ = is_semi_join;
         current_semi_join_left_tables_ = left_tables;
     }
+    void set_anti_join_info(bool is_anti_join, const std::set<std::string>& left_tables) {
+        current_is_anti_join_ = is_anti_join;
+        current_anti_join_left_tables_ = left_tables;
+    }
 
 private:
     TabCol check_column(const std::vector<ColMeta> &all_cols, TabCol target,
         const std::map<std::string, std::string> &tab_alias_map = {},
-        bool is_semi_join = false, const std::set<std::string> &left_tables = {});
+        bool is_semi_join = false, bool is_anti_join = false ,const std::set<std::string> &left_tables = {});
     void get_all_cols(const std::vector<std::string> &tab_names, std::vector<ColMeta> &all_cols);
     void get_clause(const std::vector<std::shared_ptr<ast::BinaryExpr>> &sv_conds, std::vector<Condition> &conds);
     void check_clause(const std::vector<std::string> &tab_names, std::vector<Condition> &conds, bool check_having=false);

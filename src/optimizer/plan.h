@@ -48,6 +48,7 @@ typedef enum PlanTag{
     T_Limit,
     T_Explain,
     T_SemiJoin,
+    T_AntiJoin,
     T_CreateCheckpoint
 } PlanTag;
 
@@ -96,7 +97,11 @@ class JoinPlan : public Plan
             conds_ = std::move(conds);
             if (tag == T_SemiJoin) {
                 type = SEMI_JOIN;  
-            } else {
+            } else if(tag==T_AntiJoin)
+            {
+                type = ANTI_JOIN;
+            }
+            else {
                 type = INNER_JOIN;  
             }
         }

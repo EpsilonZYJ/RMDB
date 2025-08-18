@@ -362,6 +362,7 @@ struct Condition {
     Value rhs_val;    // right-hand side value
     bool is_join_cond = false; // 是否为JOIN条件
     bool is_semi_join = false;
+    bool is_anti_join = false;
 
     /* 新增 */
     AggType agg_type = NO_AGG; // aggregation type, default is NO_AGG

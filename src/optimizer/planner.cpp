@@ -22,6 +22,7 @@
     #include "index/ix.h"
     #include "record_printer.h"
     #include "execution/executor_semi_join.h" 
+    #include "execution/executor_anti_join.h"
     #include <set>
     #include <cmath>
     #include <queue>
@@ -768,6 +769,7 @@ void Planner::predicate_pushdown(std::shared_ptr<Query> query, Context *context)
         }
         // 检查是否存在半连接条件
         bool has_semi_join = false;
+        bool has_anti_join = false;
         // 先检查普通条件
         for (const auto& cond : query->conds) {
             if (cond.is_semi_join) {
@@ -775,9 +777,14 @@ void Planner::predicate_pushdown(std::shared_ptr<Query> query, Context *context)
                 //std::cout << "DEBUG: 检测到半连接条件，禁用表顺序优化" << std::endl;
                 break;
             }
+            if (cond.is_anti_join) {
+                has_anti_join = true;
+                //std::cout << "DEBUG: 检测到半连接条件，禁用表顺序优化" << std::endl;
+                break;
+            }
         }
         // 再检查JOIN条件
-        if (!has_semi_join) {
+        if (!has_semi_join&&!has_anti_join) {
             for (const auto& join_conds : query->join_conds) {
                 for (const auto& cond : join_conds) {
                     if (cond.is_semi_join) {
@@ -785,10 +792,17 @@ void Planner::predicate_pushdown(std::shared_ptr<Query> query, Context *context)
                         //std::cout << "DEBUG: 检测到SEMI JOIN ON条件，禁用表顺序优化" << std::endl;
                         break;
                     }
+                    if (cond.is_anti_join) {
+                        has_anti_join = true;
+                        //std::cout << "DEBUG: 检测到SEMI JOIN ON条件，禁用表顺序优化" << std::endl;
+                        break;
+                    }
                 }
                 if (has_semi_join) break;
+                if (has_anti_join) break;
             }
         }
+        
 
         // 为每个表创建扫描执行器
         std::vector<std::shared_ptr<Plan>> table_scan_executors(tables.size());
@@ -870,6 +884,11 @@ void Planner::predicate_pushdown(std::shared_ptr<Query> query, Context *context)
         if (has_semi_join) {
             // 半连接使用原始表顺序，跳过优化
             //std::cout << "DEBUG: 半连接使用原始表顺序" << std::endl;
+            for (size_t i = 0; i < tables.size(); i++) {
+                join_order.push_back(i);
+                used[i] = true;
+            }
+        }else if(has_anti_join){
             for (size_t i = 0; i < tables.size(); i++) {
                 join_order.push_back(i);
                 used[i] = true;
@@ -1035,15 +1054,24 @@ void Planner::predicate_pushdown(std::shared_ptr<Query> query, Context *context)
 
             // 检查是否标记为SEMI JOIN
             bool has_semi_join = false;
+            bool has_anti_join = false;
             for (const auto& cond : join_conds) {
                 if (cond.is_semi_join) {
                     has_semi_join = true;
                     //std::cout << "DEBUG: 检测到SEMI JOIN条件，设置JOIN类型为T_SemiJoin" << std::endl;
                     break;
                 }
+                if (cond.is_anti_join) {
+                    has_anti_join = true;
+                    //std::cout << "DEBUG: 检测到SEMI JOIN条件，设置JOIN类型为T_SemiJoin" << std::endl;
+                    break;
+                }
             }
             if (has_semi_join) {
                 join_type = T_SemiJoin;
+            }
+            if (has_anti_join) {
+                join_type = T_AntiJoin;
             }
             join_plan = std::make_shared<JoinPlan>(
                 join_type, 

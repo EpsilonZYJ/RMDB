@@ -23,7 +23,7 @@ std::vector<std::shared_ptr<ast::JoinExpr>> current_joins;
 // keywords
 %token SHOW TABLES CREATE TABLE DROP DESC INSERT INTO VALUES DELETE FROM ASC ORDER BY
 WHERE UPDATE SET SELECT INT CHAR FLOAT DATE INDEX AND JOIN ON EXIT HELP TXN_BEGIN TXN_COMMIT 
-TXN_ABORT TXN_ROLLBACK ORDER_BY ENABLE_NESTLOOP ENABLE_SORTMERGE EXPLAIN SEMI 
+TXN_ABORT TXN_ROLLBACK ORDER_BY ENABLE_NESTLOOP ENABLE_SORTMERGE EXPLAIN SEMI ANTI 
 COUNT MAX MIN SUM AVG AS GROUP HAVING LIMIT STATIC_CHECKPOINT LOAD
 // non-keywords
 %token LEQ NEQ GEQ T_EOF
@@ -509,6 +509,22 @@ tableList:
             right_tab,
             std::vector<std::shared_ptr<ast::BinaryExpr>>{$6},
             SEMI_JOIN 
+        );
+        current_joins.push_back(join_expr);
+    }
+    | tableList ANTI JOIN tbName ON condition
+    {
+        $$ = $1;
+        $$.push_back($4);
+        
+        //创建ANTI JOIN表达式
+        std::string right_tab = $4;
+        std::string left_tab = $1[$1.size() - 1];
+        auto join_expr = std::make_shared<JoinExpr>(
+            left_tab,
+            right_tab,
+            std::vector<std::shared_ptr<ast::BinaryExpr>>{$6},
+            ANTI_JOIN 
         );
         current_joins.push_back(join_expr);
     }

@@ -21,6 +21,7 @@ See the Mulan PSL v2 for more details. */
 #include "record_printer.h"
 #include "execution/executor_explain.h"
 #include "executor_semi_join.h"
+#include "executor_anti_join.h"
 const char *help_info = "Supported SQL syntax:\n"
                    "  command ;\n"
                    "command:\n"

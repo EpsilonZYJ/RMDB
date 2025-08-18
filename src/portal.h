@@ -27,7 +27,7 @@ See the Mulan PSL v2 for more details. */
 #include "execution/executor_limit.h"
 #include "common/common.h"
 #include "execution/executor_semi_join.h"
-
+#include "execution/executor_anti_join.h"
 typedef enum portalTag{
     PORTAL_Invalid_Query = 0,
     PORTAL_ONE_SELECT,
@@ -241,7 +241,14 @@ class Portal
                     std::move(right), 
                     std::move(x->conds_)
                 );
-            } else {
+            } 
+            else if(x->type == ANTI_JOIN){
+                std::cout << "DEBUG: 创建半连接执行器AntiJoinExecutor" << std::endl;
+                return std::make_unique<AntiJoinExecutor>(
+                    std::move(left), 
+                    std::move(right), 
+                    std::move(x->conds_));
+            }else {
                 // 默认使用嵌套循环连接
                 return std::make_unique<NestedLoopJoinExecutor>(
                     std::move(left), 

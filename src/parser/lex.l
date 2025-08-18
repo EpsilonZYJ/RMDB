@@ -86,6 +86,7 @@ path_like [^ \t\r\n;()']+\.csv
 "JOIN" {return JOIN;}
 "ON" {return ON;}
 "SEMI" {return SEMI;}
+"ANTI" {return ANTI;}
 "EXIT" { return EXIT; }
 "HELP" { return HELP; }
 "COUNT" { return COUNT; }

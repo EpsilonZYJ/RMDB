@@ -99,6 +99,10 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse)
                         cond.is_semi_join = true;  //标记为SEMI JOIN
                         //std::cout << "DEBUG: 检测到SEMI JOIN条件" << std::endl;
                     }
+                    if (join_expr->type == ANTI_JOIN) {
+                        cond.is_anti_join = true;  //标记为ANTI JOIN
+                        //std::cout << "DEBUG: 检测到ANTI JOIN条件" << std::endl;
+                    }
                 }
                 query->join_conds.push_back(join_conds);
                 // 检查JOIN条件
@@ -170,15 +174,20 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse)
         } else {
             // infer table name from column name
             bool might_have_semi_join = false;
+            bool might_have_anti_join = false;
             for (const auto& join_ref : x->jointree) {
                 if (join_ref->type == SEMI_JOIN) {
                     might_have_semi_join = true;
                     break;
                 }
+                if (join_ref->type == ANTI_JOIN) {
+                    might_have_anti_join = true;
+                    break;
+                }
             }
             // 如果不是半连接，执行正常的列检查
             // 如果可能是半连接，则推迟到JOIN处理后进行
-            if (!might_have_semi_join) {
+            if (!might_have_semi_join&&!might_have_anti_join) {
                 // infer table name from column name
                 for (size_t i = 0; i < query->cols.size(); i++) {
                 TabCol &sel_col = query->cols[i];
@@ -189,7 +198,7 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse)
                     sel_col = check_column(all_cols, sel_col, query->tab_alias_map);  // 列元数据校验
                 }
             } else {
-                std::cout << "DEBUG: 检测到半连接，推迟列检查" << std::endl;
+                std::cout << "DEBUG: 检测到半连接或者反半连接，推迟列检查" << std::endl;
             }
         }
         std::cout<<"DEBUG: column names checked" << std::endl;
@@ -279,12 +288,16 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse)
                     if (join_expr->type == SEMI_JOIN) {
                         cond.is_semi_join = true;  //标记为SEMI JOIN
                         std::cout << "DEBUG: 检测到SEMI JOIN条件" << std::endl;}
+                    if (join_expr->type == ANTI_JOIN) {
+                        cond.is_anti_join = true;  //标记为SEMI JOIN
+                        std::cout << "DEBUG: 检测到ANTI JOIN条件" << std::endl;}
                 }
                 query->join_conds.push_back(join_conds);
                 // 检查JOIN条件
                 check_clause({left_table, right_table}, join_conds,query->tab_alias_map);
             }
             bool has_semi_join = false;
+            bool has_anti_join = false;
             std::set<std::string> left_tables; // 保存所有半连接的左表
 
             for (const auto& join_expr : x->jointree) {
@@ -302,6 +315,20 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse)
                     left_tables.insert(left_table);
                     std::cout << "DEBUG: 半连接左表: " << left_table << std::endl;
                 }
+                if (join_expr->type == ANTI_JOIN) {
+                    has_anti_join = true;
+                    
+                    // 提取左表名（去掉可能的别名）
+                    std::string left_table = join_expr->left;
+                    size_t space_pos = left_table.find(' ');
+                    if (space_pos != std::string::npos) {
+                        left_table = left_table.substr(0, space_pos);
+                    }
+                    
+                    // 将左表添加到集合中
+                    left_tables.insert(left_table);
+                    std::cout << "DEBUG: 反半连接左表: " << left_table << std::endl;
+                }
             }
 
             // 如果存在半连接，筛选列，只保留左表的列
@@ -313,7 +340,7 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse)
                     TabCol checked_col = check_column(all_cols, 
                                                      col, 
                                                      query->tab_alias_map, 
-                                                     has_semi_join, left_tables);
+                                                     has_semi_join, has_anti_join,left_tables);
                     std::string real_tab_name = checked_col.tab_name;
                     
                     // 处理可能的表别名
@@ -347,6 +374,54 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse)
                         invalid_cols_str += invalid_cols[i];
                     }
                     throw SemiJoinColumnError(invalid_cols_str);
+                }
+                
+                // 更新查询列
+                query->cols = filtered_cols;
+                std::cout << "DEBUG: 半连接后列过滤：保留 " << query->cols.size() << " 列" << std::endl;
+            }
+            if (has_anti_join) {
+                std::vector<TabCol> filtered_cols;
+                std::vector<std::string> invalid_cols; // 收集无效列名
+                
+                for (const auto& col : query->cols) {
+                    TabCol checked_col = check_column(all_cols, 
+                                                     col, 
+                                                     query->tab_alias_map, 
+                                                     has_semi_join, has_anti_join,left_tables);
+                    std::string real_tab_name = checked_col.tab_name;
+                    
+                    // 处理可能的表别名
+                    auto it = query->tab_alias_map.find(real_tab_name);
+                    if (it != query->tab_alias_map.end()) {
+                        real_tab_name = it->first;
+                    } else {
+                        // 反向查找别名
+                        for (const auto& [table, alias] : query->tab_alias_map) {
+                            if (alias == real_tab_name) {
+                                real_tab_name = table;
+                                break;
+                            }
+                        }
+                    }
+                    
+                    // 检查列是否属于左表
+                    if (left_tables.find(real_tab_name) != left_tables.end()) {
+                        filtered_cols.push_back(checked_col);
+                    } else {
+                        // 收集来自右表的列名
+                        invalid_cols.push_back(checked_col.col_name);
+                    }
+                }
+                
+                // 如果有任何来自右表的列，抛出错误
+                if (!invalid_cols.empty()) {
+                    std::string invalid_cols_str;
+                    for (size_t i = 0; i < invalid_cols.size(); ++i) {
+                        if (i > 0) invalid_cols_str += ", ";
+                        invalid_cols_str += invalid_cols[i];
+                    }
+                    throw AntiJoinColumnError(invalid_cols_str);
                 }
                 
                 // 更新查询列
@@ -445,7 +520,7 @@ std::shared_ptr<Query> Analyze::do_analyze(std::shared_ptr<ast::TreeNode> parse)
 
 TabCol Analyze::check_column(const std::vector<ColMeta> &all_cols, TabCol target,
     const std::map<std::string, std::string> &tab_alias_map,
-    bool is_semi_join, const std::set<std::string> &left_tables) {
+    bool is_semi_join, bool is_anti_join,const std::set<std::string> &left_tables) {
     // 检查是否是别名，如果是则转换为原表名
     std::string real_tab_name = target.tab_name;
     //反向查找别名对应的真实表名
@@ -475,7 +550,10 @@ TabCol Analyze::check_column(const std::vector<ColMeta> &all_cols, TabCol target
         
         // 如果有多个匹配，检查是否是半连接情况
         if (matched_tables.size() > 1) {
-            if (is_semi_join && !left_tables.empty()) {
+            if(is_anti_join==0) std::cout<<"1"<<std::endl;
+            if(is_semi_join==0) std::cout<<"2"<<std::endl;
+            if(!left_tables.empty()) std::cout<<"3"<<std::endl;
+            if (is_semi_join && !left_tables.empty()||is_anti_join && !left_tables.empty()) {
                 for (const auto& tab : matched_tables) {
                     if (left_tables.find(tab) != left_tables.end()) {
                         tab_name = tab;
