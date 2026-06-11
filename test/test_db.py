@@ -5,12 +5,27 @@ import os
 import signal
 import threading
 import queue
+from pathlib import Path
 
 # 默认路径和参数
-DEFAULT_SERVER_PATH = "./build/bin/rmdb"
-DEFAULT_CLIENT_PATH = "./rmdb_client/build/rmdb_client"
-DEFAULT_SQL_FILE = "./test_7.sql"
+SCRIPT_DIR = Path(__file__).resolve().parent
+ROOT_DIR = SCRIPT_DIR.parent
+
+DEFAULT_SERVER_PATH = str(ROOT_DIR / "build/bin/rmdb")
+DEFAULT_CLIENT_PATH = str(ROOT_DIR / "rmdb_client/build/rmdb_client")
+DEFAULT_SQL_FILE = str(SCRIPT_DIR / "test_7.sql")
 DEFAULT_DB_NAME = "test_db"
+
+
+def resolve_existing_path(path_str, base_dir):
+    path = Path(path_str)
+    if path.exists():
+        return str(path.resolve())
+    if not path.is_absolute():
+        candidate = (base_dir / path).resolve()
+        if candidate.exists():
+            return str(candidate)
+    return path_str
 
 def parse_sql_statements(sql_file):
     """按分号分割SQL语句，支持多行和注释跳过"""
@@ -358,6 +373,10 @@ def main():
     parser.add_argument("--output", help="输出文件")
     
     args = parser.parse_args()
+
+    args.sql = resolve_existing_path(args.sql, SCRIPT_DIR)
+    args.server = resolve_existing_path(args.server, ROOT_DIR)
+    args.client = resolve_existing_path(args.client, ROOT_DIR)
     
     # 检查文件是否存在
     if not os.path.exists(args.sql):

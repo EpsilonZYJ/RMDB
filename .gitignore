@@ -1,4 +1,6 @@
 .vscode
+.idea/
+.cache/
 rmdb/cmake-build-debug/
 rmdb/.idea/
 build/
@@ -19,3 +21,4 @@ rmdb/BufferPoolManagerTest_db/
 *.so
 *.class
 *.log
+__pycache__/
