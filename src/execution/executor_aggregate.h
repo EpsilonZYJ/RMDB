@@ -261,6 +261,8 @@ private:
     // 其他字段
     size_t len_{0};  // 结果记录长度
     std::unique_ptr<RmRecord> rm_record_;  // 当前记录
+    // SELECT 列到 GROUP BY 键的映射：仅当 agg_types_[i] == NO_AGG 时有效
+    std::vector<int> sel_group_key_idx_;
     
     // 辅助方法
     
@@ -299,6 +301,24 @@ private:
         for (size_t i = 0; i < sel_cols.size(); ++i) {
             const auto& sel_col = sel_cols[i];
             has_group_col_ |= agg_types_[i] == NO_AGG; // 在构造查询执行树时，已经保证没有出现在group by中的非聚合列不会出现在SELECT中
+
+            // 为 NO_AGG 列记录其对应的 GROUP BY 键下标，保证输出按 SELECT 顺序拼接
+            if (agg_types_[i] == NO_AGG) {
+                int group_idx = -1;
+                for (size_t j = 0; j < group_bys.size(); ++j) {
+                    if (group_bys[j].tab_name == sel_col.tab_name &&
+                        group_bys[j].col_name == sel_col.col_name) {
+                        group_idx = static_cast<int>(j);
+                        break;
+                    }
+                }
+                if (group_idx < 0) {
+                    throw InternalError("Non-aggregated select column must appear in GROUP BY.");
+                }
+                sel_group_key_idx_.push_back(group_idx);
+            } else {
+                sel_group_key_idx_.push_back(-1);
+            }
             
             // COUNT(*)特殊处理
             if (agg_types_[i] == AGG_COUNT && sel_col.tab_name.empty() && sel_col.col_name.empty()) {
@@ -526,28 +546,27 @@ public:
         auto record = std::make_unique<RmRecord>(len_);
         int offset = 0;
         
-        // 添加GROUP BY列的值
-        if (has_group_col_) {
-            for (size_t i = 0; i < group_bys_.size(); ++i) {
-                const auto& key = ht_iter_->first.grouping_key[i];
-                memcpy(record->data + offset, key.raw->data, group_bys_[i].len);
-                offset += group_bys_[i].len;
+        // 按 SELECT 列顺序输出：NO_AGG 列从 group key 读取，聚合列从聚合值读取
+        for (size_t i = 0; i < agg_types_.size(); ++i) {
+            if (agg_types_[i] == NO_AGG) {
+                int key_idx = sel_group_key_idx_[i];
+                const auto& key = ht_iter_->first.grouping_key[key_idx];
+                memcpy(record->data + offset, key.raw->data, sel_cols_[i].len);
+                offset += sel_cols_[i].len;
+            } else {
+                const auto& value = ht_iter_->second.values[i];
+                int len = agg_types_[i] == AGG_AVG ? sizeof(float) : sel_cols_[i].len; // AVG输出为float
+                if (agg_types_[i] == AGG_COUNT) {
+                    memcpy(record->data + offset, &value.int_val, len);
+                } else {
+                    memcpy(record->data + offset, value.raw->data, len);
+                }
+                offset += len;
             }
         }
         
-        // 添加聚合列的值
-        for (size_t i = 0; i < agg_types_.size(); ++i) {
-            if (agg_types_[i] == NO_AGG) continue;
-            
-            const auto& value = ht_iter_->second.values[i];
-            int len = agg_types_[i] == AGG_AVG ? sizeof(float) : sel_cols_[i].len; // AVG输出为float
-            if (agg_types_[i] == AGG_COUNT) {
-                memcpy(record->data + offset, &value.int_val, len);
-            } else {
-                memcpy(record->data + offset, value.raw->data, len);
-            } 
-
-            offset += len; // 其他聚合类型按原长度输出
+        if (offset != static_cast<int>(len_)) {
+            throw InternalError("Aggregate output length mismatch.");
         }
         
         return record;
@@ -566,4 +585,3 @@ public:
 
     std::string getType() { return "AggregateExecutor"; }
 };
-
