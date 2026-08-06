@@ -104,7 +104,6 @@ Optional arguments:
 ## Documentation
 
 - [Project Overview](docs/README%20copy.md)
-- [Development Log](docs/开发日志.md)
 - [RMDB User Guide](docs/RMDB使用文档.pdf)
 - [RMDB Environment Setup Guide](docs/RMDB环境配置文档.pdf)
 - [RMDB Project Structure](docs/RMDB项目结构.pdf)
