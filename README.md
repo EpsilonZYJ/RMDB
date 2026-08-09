@@ -1,11 +1,10 @@
-# RMDB
+# RMDB relational database
 
 <div align="center">
 <img src="./docs/RMDB.jpg"  width=25%  /> 
 </div>
 
-A teaching-oriented relational database project built on the RMDB framework.  
-It includes SQL parsing, query optimization, execution, storage management, transaction concurrency control, and recovery.
+A relational database project built on the RMDB framework. It includes SQL parsing, query optimization, execution, storage management, transaction concurrency control, and recovery.
 
 ## Requirements
 
