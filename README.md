@@ -1,4 +1,4 @@
-# RMDB relational database
+# RMDB
 
 <div align="center">
 <img src="./docs/RMDB.jpg"  width=25%  /> 
